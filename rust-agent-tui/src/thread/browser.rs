@@ -9,6 +9,8 @@ pub struct ThreadBrowser {
     pub store: Arc<dyn ThreadStore>,
     /// 内容滚动偏移
     pub scroll_offset: u16,
+    /// 是否处于删除确认状态
+    pub confirm_delete: bool,
 }
 
 impl ThreadBrowser {
@@ -18,6 +20,7 @@ impl ThreadBrowser {
             cursor: 0,
             store,
             scroll_offset: 0,
+            confirm_delete: false,
         }
     }
 

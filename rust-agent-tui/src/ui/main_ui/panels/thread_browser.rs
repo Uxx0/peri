@@ -141,6 +141,39 @@ pub(crate) fn render_thread_browser(f: &mut Frame, app: &mut App, area: Rect) {
         ]));
     }
 
+    // 确认删除提示
+    if browser.confirm_delete {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                " ⚠ ",
+                Style::default()
+                    .fg(theme::ERROR)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "确认删除？",
+                Style::default()
+                    .fg(theme::ERROR)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " Enter",
+                Style::default()
+                    .fg(theme::WARNING)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(":确认  ", Style::default().fg(theme::MUTED)),
+            Span::styled(
+                "其他键",
+                Style::default()
+                    .fg(theme::WARNING)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(":取消", Style::default().fg(theme::MUTED)),
+        ]));
+    }
+
     // 存储面板元数据供鼠标选区使用
     app.core.panel_area = Some(inner);
     app.core.panel_scroll_offset = browser.scroll_offset;

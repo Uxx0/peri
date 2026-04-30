@@ -697,6 +697,35 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
 // ─── Thread 浏览面板键盘处理 ──────────────────────────────────────────────────
 
 fn handle_thread_browser(app: &mut App, input: Input) {
+    // 确认删除模式下只处理 Enter（确认）和其他键（取消）
+    if app
+        .core
+        .thread_browser
+        .as_ref()
+        .map_or(false, |b| b.confirm_delete)
+    {
+        match input {
+            Input {
+                key: Key::Enter, ..
+            } => {
+                if let Some(b) = app.core.thread_browser.as_mut() {
+                    b.confirm_delete = false;
+                    if let Some(title) = b.delete_selected() {
+                        app.core
+                            .view_messages
+                            .push(MessageViewModel::system(format!("已删除对话: {}", title)));
+                    }
+                }
+            }
+            _ => {
+                if let Some(b) = app.core.thread_browser.as_mut() {
+                    b.confirm_delete = false;
+                }
+            }
+        }
+        return;
+    }
+
     match input {
         Input {
             key: Key::Char('c'),
@@ -740,10 +769,9 @@ fn handle_thread_browser(app: &mut App, input: Input) {
             ..
         } => {
             if let Some(b) = app.core.thread_browser.as_mut() {
-                if let Some(title) = b.delete_selected() {
-                    app.core
-                        .view_messages
-                        .push(MessageViewModel::system(format!("已删除对话: {}", title)));
+                // 仅在选中历史对话时（cursor > 0）才进入确认状态
+                if b.cursor > 0 {
+                    b.confirm_delete = true;
                 }
             }
         }
