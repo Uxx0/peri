@@ -555,6 +555,15 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 return Ok(Some(Action::Redraw));
             }
 
+            // thread_browser / agent_panel / cron_panel 打开时拦截粘贴，
+            // 防止文本进入后台 textarea（这些面板无文本输入字段）
+            if app.core.thread_browser.is_some()
+                || app.core.agent_panel.is_some()
+                || app.cron.cron_panel.is_some()
+            {
+                return Ok(Some(Action::Redraw));
+            }
+
             // 其他情况粘贴到 textarea
             app.core.textarea.insert_str(&text);
         }
@@ -928,7 +937,30 @@ fn handle_model_panel(app: &mut App, input: Input) {
             key: Key::Char(' '),
             ..
         } => {
-            app.core.model_panel.as_mut().unwrap().toggle_thinking();
+            // Space 在模型行选中模型，在 Thinking 行切换开关，在 Login 行打开配置
+            let cursor = app.core.model_panel.as_ref().unwrap().cursor;
+            match cursor {
+                ROW_OPUS => {
+                    app.core.model_panel.as_mut().unwrap().active_tab = AliasTab::Opus;
+                    app.model_panel_confirm();
+                }
+                ROW_SONNET => {
+                    app.core.model_panel.as_mut().unwrap().active_tab = AliasTab::Sonnet;
+                    app.model_panel_confirm();
+                }
+                ROW_HAIKU => {
+                    app.core.model_panel.as_mut().unwrap().active_tab = AliasTab::Haiku;
+                    app.model_panel_confirm();
+                }
+                ROW_THINKING => {
+                    app.core.model_panel.as_mut().unwrap().toggle_thinking();
+                }
+                ROW_LOGIN => {
+                    app.close_model_panel();
+                    app.open_login_panel();
+                }
+                _ => {}
+            }
         }
         Input {
             key: Key::Enter, ..
@@ -987,6 +1019,26 @@ fn handle_model_panel(app: &mut App, input: Input) {
 }
 
 fn handle_cron_panel(app: &mut App, input: Input) {
+    // 确认删除模式下只处理 Enter（确认）和 Esc（取消）
+    if app
+        .cron
+        .cron_panel
+        .as_ref()
+        .map_or(false, |p| p.confirm_delete)
+    {
+        match input {
+            Input {
+                key: Key::Enter, ..
+            } => {
+                app.cron_panel_confirm_delete();
+            }
+            _ => {
+                app.cron_panel_cancel_delete();
+            }
+        }
+        return;
+    }
+
     match input {
         Input {
             key: Key::Char('c'),
@@ -1016,7 +1068,7 @@ fn handle_cron_panel(app: &mut App, input: Input) {
             ctrl: true,
             ..
         } => {
-            app.cron_panel_delete();
+            app.cron_panel_request_delete();
         }
         _ => {}
     }

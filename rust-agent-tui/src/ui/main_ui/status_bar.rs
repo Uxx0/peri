@@ -337,7 +337,7 @@ fn render_second_row(f: &mut Frame, app: &App, area: Rect) {
                             .fg(theme::WARNING)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(":Thinking  ", Style::default().fg(theme::MUTED)),
+                    Span::styled(":选择/切换  ", Style::default().fg(theme::MUTED)),
                     Span::styled(
                         "Esc",
                         Style::default()

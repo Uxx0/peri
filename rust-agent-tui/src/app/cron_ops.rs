@@ -25,9 +25,19 @@ impl crate::app::App {
         }
     }
 
-    /// CronPanel: 删除当前任务
-    pub fn cron_panel_delete(&mut self) {
+    /// CronPanel: 请求删除当前任务（进入确认状态）
+    pub fn cron_panel_request_delete(&mut self) {
         if let Some(ref mut panel) = self.cron.cron_panel {
+            if panel.cursor < panel.tasks.len() {
+                panel.confirm_delete = true;
+            }
+        }
+    }
+
+    /// CronPanel: 确认删除当前任务
+    pub fn cron_panel_confirm_delete(&mut self) {
+        if let Some(ref mut panel) = self.cron.cron_panel {
+            panel.confirm_delete = false;
             let idx = panel.cursor;
             if idx < panel.tasks.len() {
                 let prompt_preview: String = panel.tasks[idx].prompt.chars().take(30).collect();
@@ -45,6 +55,13 @@ impl crate::app::App {
                     self.cron.cron_panel = None;
                 }
             }
+        }
+    }
+
+    /// CronPanel: 取消删除确认
+    pub fn cron_panel_cancel_delete(&mut self) {
+        if let Some(ref mut panel) = self.cron.cron_panel {
+            panel.confirm_delete = false;
         }
     }
 

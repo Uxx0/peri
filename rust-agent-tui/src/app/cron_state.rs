@@ -11,6 +11,8 @@ pub struct CronPanel {
     pub tasks: Vec<CronTask>,
     pub cursor: usize,
     pub scroll_offset: u16,
+    /// 是否处于删除确认状态
+    pub confirm_delete: bool,
 }
 
 impl CronPanel {
@@ -19,6 +21,7 @@ impl CronPanel {
             tasks,
             cursor: 0,
             scroll_offset: 0,
+            confirm_delete: false,
         }
     }
 
