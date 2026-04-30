@@ -123,7 +123,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
 fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 {
     let max_h = screen_height * 3 / 5; // 最多占 60% 屏高
     let raw = if let Some(panel) = &app.core.thread_browser {
-        (panel.total() as u16 + 4).max(6)
+        let base = (panel.total() as u16 + 4).max(6);
+        // 确认删除提示需要额外 2 行（空行 + 提示文本）
+        if panel.confirm_delete { base + 2 } else { base }
     } else if let Some(panel) = &app.core.login_panel {
         let n = panel.providers.len() as u16;
         match panel.mode {
@@ -139,13 +141,15 @@ fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 
     } else if let Some(panel) = &app.core.agent_panel {
         (panel.agents.len() as u16 * 2 + 6).max(6)
     } else if app.cron.cron_panel.is_some() {
-        (app.cron
+        let base = (app.cron
             .cron_panel
             .as_ref()
             .map(|p| p.tasks.len())
             .unwrap_or(0) as u16
             + 4)
-        .max(6)
+        .max(6);
+        // 确认删除提示替换帮助行，高度不变
+        base
     } else if let Some(crate::app::InteractionPrompt::Approval(p)) = &app.agent.interaction_prompt {
         (p.items.len() as u16 * 2 + 5).max(5)
     } else if let Some(crate::app::InteractionPrompt::Questions(p)) = &app.agent.interaction_prompt
