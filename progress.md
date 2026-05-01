@@ -1,5 +1,9 @@
 # Design Review Progress
 
+## 2026-05-02 第31轮：核心框架 Code Review 与去重优化
+
+审查 rust-create-agent 核心框架（executor/chain/LLM 适配层/state），合并 executor 中重复的 should_warn 调用和 pct 阈值判断；为 ChatAnthropic 显式声明 context_window；删除 grep.rs 中 115 行未使用的 parse_args 死代码；为 StopReason 补充 9 个单元测试。504 测试全通过。测试总数 293。
+
 ## 2026-04-30 第30轮 — 第21轮：UX 打磨与 Bug 修复
 
 | 轮 | 改动 | 测试 |

@@ -301,4 +301,67 @@ prompt"#;
         assert_eq!(agent.frontmatter.max_turns, Some(0));
         // 验证 tool.rs 中的 maxTurns:0 降级逻辑（这里只验证解析正确）
     }
+
+    #[test]
+    fn test_format_agent_id_kebab() {
+        assert_eq!(format_agent_id("code-reviewer"), "Code Reviewer");
+    }
+
+    #[test]
+    fn test_format_agent_id_snake() {
+        assert_eq!(format_agent_id("security_auditor"), "Security Auditor");
+    }
+
+    #[test]
+    fn test_format_agent_id_single_word() {
+        assert_eq!(format_agent_id("researcher"), "Researcher");
+    }
+
+    #[test]
+    fn test_format_agent_id_mixed_separators() {
+        assert_eq!(format_agent_id("my-cool_agent"), "My Cool Agent");
+    }
+
+    #[test]
+    fn test_format_agent_id_empty() {
+        assert_eq!(format_agent_id(""), "");
+    }
+
+    #[test]
+    fn test_tools_value_comma_separated() {
+        let content = r#"---
+name: test
+description: test
+tools: Read, Write, Edit
+---
+prompt"#;
+        let agent = parse_agent_file(content).unwrap();
+        assert_eq!(agent.tools(), vec!["Read", "Write", "Edit"]);
+    }
+
+    #[test]
+    fn test_tools_value_array() {
+        let content = r#"---
+name: test
+description: test
+tools:
+  - Read
+  - Glob
+---
+prompt"#;
+        let agent = parse_agent_file(content).unwrap();
+        assert_eq!(agent.tools(), vec!["Read", "Glob"]);
+    }
+
+    #[test]
+    fn test_tools_value_empty_string() {
+        let content = r#"---
+name: test
+description: test
+tools: ""
+---
+prompt"#;
+        let agent = parse_agent_file(content).unwrap();
+        assert!(agent.tools().is_empty());
+    }
 }
