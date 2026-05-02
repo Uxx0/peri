@@ -29,10 +29,10 @@ pub(crate) fn render_agent_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let inner = BorderedPanel::new(Span::styled(
         title,
         Style::default()
-            .fg(theme::MUTED)
+            .fg(theme::THINKING)
             .add_modifier(Modifier::BOLD),
     ))
-    .border_style(Style::default().fg(theme::MUTED))
+    .border_style(Style::default().fg(theme::BORDER))
     .render(f, popup_area);
 
     let mut lines: Vec<Line> = Vec::new();
@@ -43,17 +43,17 @@ pub(crate) fn render_agent_panel(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(Line::from(vec![
         Span::styled(
             if is_none_cursor { "❯ " } else { "  " },
-            Style::default().fg(theme::ACCENT),
+            Style::default().fg(theme::THINKING),
         ),
         Span::styled(
             "○ 无 Agent（默认）",
-            if is_none_cursor {
+            if is_none_selected {
+                Style::default()
+                    .fg(theme::SAGE)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_none_cursor {
                 Style::default()
                     .fg(theme::THINKING)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_none_selected {
-                Style::default()
-                    .fg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme::MUTED)
@@ -71,13 +71,13 @@ pub(crate) fn render_agent_panel(f: &mut Frame, app: &mut App, area: Rect) {
         let bullet = if is_selected { "●" } else { "○" };
         let cursor_char = if is_cursor { "❯" } else { " " };
 
-        let name_style = if is_cursor {
+        let name_style = if is_selected {
+            Style::default()
+                .fg(theme::SAGE)
+                .add_modifier(Modifier::BOLD)
+        } else if is_cursor {
             Style::default()
                 .fg(theme::THINKING)
-                .add_modifier(Modifier::BOLD)
-        } else if is_selected {
-            Style::default()
-                .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme::TEXT)
@@ -125,21 +125,21 @@ pub(crate) fn render_agent_panel(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled(
             " ↑↓",
             Style::default()
-                .fg(theme::WARNING)
+                .fg(theme::MUTED)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(":导航  ", Style::default().fg(theme::MUTED)),
         Span::styled(
             "Enter",
             Style::default()
-                .fg(theme::WARNING)
+                .fg(theme::MUTED)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(":选择  ", Style::default().fg(theme::MUTED)),
         Span::styled(
             "Esc",
             Style::default()
-                .fg(theme::WARNING)
+                .fg(theme::MUTED)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(":关闭", Style::default().fg(theme::MUTED)),

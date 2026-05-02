@@ -11,7 +11,15 @@ use perihelion_widgets::BorderedPanel;
 use crate::app::App;
 use crate::ui::theme;
 
-/// 统一提示浮层：输入 / 前缀时分组展示命令和 Skills 候选
+/// 统一候选项：命令或 Skill，按名称排序后扁平展示
+enum HintItem<'a> {
+    Cmd { name: &'a str, desc: &'a str },
+    Skill { name: &'a str, desc: &'a str },
+}
+
+const MAX_VIEWPORT: usize = 10;
+
+/// 统一提示浮层：输入 / 前缀时展示命令和 Skills 候选（按字母顺序排列）
 pub(crate) fn render_unified_hint(f: &mut Frame, app: &App, input_area: Rect) {
     let first_line = app
         .core
@@ -26,25 +34,48 @@ pub(crate) fn render_unified_hint(f: &mut Frame, app: &App, input_area: Rect) {
 
     let prefix = first_line.trim_start_matches('/');
     let cmd_candidates: Vec<(&str, &str)> = app.core.command_registry.match_prefix(prefix);
-    let cmd_show: Vec<_> = cmd_candidates.into_iter().take(6).collect();
     let skill_candidates: Vec<_> = app
         .core
         .skills
         .iter()
         .filter(|s| prefix.is_empty() || s.name.contains(prefix))
-        .take(4)
         .collect();
-    let total_count = cmd_show.len() + skill_candidates.len();
-    if total_count == 0 {
+
+    // 合并并按名称排序（全量，不截断）
+    let mut items: Vec<HintItem<'_>> = Vec::new();
+    for (name, desc) in &cmd_candidates {
+        items.push(HintItem::Cmd { name, desc });
+    }
+    for skill in &skill_candidates {
+        items.push(HintItem::Skill {
+            name: &skill.name,
+            desc: &skill.description,
+        });
+    }
+    items.sort_by(|a, b| a.name().cmp(b.name()));
+
+    if items.is_empty() {
         return;
     }
 
-    let has_skills = !skill_candidates.is_empty();
-    let hint_height = total_count as u16
-        + 2 // 边框
-        + 1 // "命令" 组标题
-        + if has_skills { 2 } else { 0 }; // "Skills" 组标题 + 分隔线
+    let total = items.len();
+    let cursor = app.core.hint_cursor;
 
+    // 计算视口：根据光标位置确定滚动偏移
+    let viewport = MAX_VIEWPORT.min(total);
+    let scroll_offset = if let Some(cur) = cursor {
+        // 确保光标在视口内
+        if cur < viewport {
+            0
+        } else {
+            cur - viewport + 1
+        }
+    } else {
+        0
+    };
+    let visible_items = &items[scroll_offset..scroll_offset + viewport];
+
+    let hint_height = viewport as u16 + 2; // 视口行数 + 边框
     let y = input_area.y.saturating_sub(hint_height);
     let hint_area = Rect {
         x: input_area.x,
@@ -53,108 +84,94 @@ pub(crate) fn render_unified_hint(f: &mut Frame, app: &App, input_area: Rect) {
         height: hint_height,
     };
 
-    let inner = BorderedPanel::new(Span::styled(" / ", Style::default().fg(theme::MUTED)))
-        .border_style(Style::default().fg(theme::MUTED))
+    let inner = BorderedPanel::new(Span::styled("", Style::default()))
+        .border_style(Style::default().fg(theme::BORDER))
         .render(f, hint_area);
 
-    let width = hint_area.width.saturating_sub(2); // 内部可用宽度
-    let selected = app.core.hint_cursor;
-    let mut i = 0; // 扁平候选索引（仅候选项递增，标题行和分隔线不递增）
-
+    let max_name_width = visible_items
+        .iter()
+        .map(|it| unicode_width::UnicodeWidthStr::width(it.name()))
+        .max()
+        .unwrap_or(0);
     let mut lines: Vec<Line> = Vec::new();
 
-    // "命令" 组标题
-    lines.push(Line::from(Span::styled(
-        "命令",
-        Style::default()
-            .fg(theme::MUTED)
-            .add_modifier(Modifier::BOLD),
-    )));
+    for (vi, item) in visible_items.iter().enumerate() {
+        let global_idx = scroll_offset + vi;
+        let is_selected = cursor == Some(global_idx);
+        let name = item.name();
 
-    // 命令候选行
-    for (name, desc) in &cmd_show {
-        let is_selected = selected == Some(i);
-        let typed_len = prefix.len();
-        let (matched, rest) = name.split_at(typed_len.min(name.len()));
-        lines.push(Line::from(vec![
+        // 高亮匹配前缀部分
+        let highlight = if !prefix.is_empty() {
+            name.find(prefix).map(|pos| {
+                let before = &name[..pos];
+                let matched = &name[pos..pos + prefix.len()];
+                let after = &name[pos + prefix.len()..];
+                (before, Some(matched), after)
+            })
+        } else {
+            None
+        };
+
+        let (before, matched, after) = match highlight {
+            Some(bma) => bma,
+            None => (name, None, ""),
+        };
+
+        let mut spans = vec![
             Span::styled(
                 if is_selected { "❯ /" } else { "  /" },
-                Style::default().fg(theme::ACCENT),
+                Style::default().fg(theme::THINKING),
             ),
-            Span::styled(
-                matched.to_string(),
+        ];
+
+        if let Some(m) = matched {
+            spans.push(Span::styled(
+                before.to_string(),
+                Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT }),
+            ));
+            spans.push(Span::styled(
+                m.to_string(),
                 Style::default()
-                    .fg(theme::ACCENT)
+                    .fg(theme::THINKING)
                     .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(rest.to_string(), Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT })),
-            Span::styled("  ", Style::default()),
-            Span::styled(desc.to_string(), Style::default().fg(theme::MUTED)),
-        ]));
-        i += 1;
-    }
-
-    // Skills 组（如有）
-    if has_skills {
-        // 分隔线
-        lines.push(Line::from(Span::styled(
-            "─".repeat(width as usize),
-            Style::default().fg(theme::MUTED),
-        )));
-        // "Skills" 组标题
-        lines.push(Line::from(Span::styled(
-            "Skills",
-            Style::default()
-                .fg(theme::MUTED)
-                .add_modifier(Modifier::BOLD),
-        )));
-
-        for skill in &skill_candidates {
-            let is_selected = selected == Some(i);
-            let name = &skill.name;
-            if !prefix.is_empty() {
-                if let Some(pos) = name.find(prefix) {
-                    let before = &name[..pos];
-                    let matched = &name[pos..pos + prefix.len()];
-                    let after = &name[pos + prefix.len()..];
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            if is_selected { "❯ /" } else { "  /" },
-                            Style::default().fg(theme::ACCENT),
-                        ),
-                        Span::styled(before.to_string(), Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT })),
-                        Span::styled(
-                            matched.to_string(),
-                            Style::default()
-                                .fg(theme::ACCENT)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(after.to_string(), Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT })),
-                        Span::styled("  ", Style::default()),
-                        Span::styled(
-                            skill.description.clone(),
-                            Style::default().fg(theme::MUTED),
-                        ),
-                    ]));
-                    i += 1;
-                    continue;
-                }
-            }
-            lines.push(Line::from(vec![
-                Span::styled(
-                    if is_selected { "❯ /" } else { "  /" },
-                    Style::default().fg(theme::ACCENT),
-                ),
-                Span::styled(name.clone(), Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT })),
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    skill.description.clone(),
-                    Style::default().fg(theme::MUTED),
-                ),
-            ]));
-            i += 1;
+            ));
+            spans.push(Span::styled(
+                after.to_string(),
+                Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT }),
+            ));
+        } else {
+            spans.push(Span::styled(
+                name.to_string(),
+                Style::default().fg(if is_selected { theme::THINKING } else { theme::TEXT }),
+            ));
         }
+
+        let name_display_width = unicode_width::UnicodeWidthStr::width(name);
+        let padding = max_name_width - name_display_width + 2;
+        spans.push(Span::styled(" ".repeat(padding), Style::default()));
+        spans.push(Span::styled(
+            item.desc().to_string(),
+            Style::default().fg(theme::MUTED),
+        ));
+
+        lines.push(Line::from(spans));
     }
 
     f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+impl<'a> HintItem<'a> {
+    fn name(&self) -> &'a str {
+        match self {
+            HintItem::Cmd { name, .. } => name,
+            HintItem::Skill { name, .. } => name,
+        }
+    }
+
+    fn desc(&self) -> &'a str {
+        match self {
+            HintItem::Cmd { desc, .. } => desc,
+            HintItem::Skill { desc, .. } => desc,
+        }
+    }
 }

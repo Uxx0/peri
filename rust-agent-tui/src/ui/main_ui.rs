@@ -130,12 +130,12 @@ fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 
     } else if let Some(panel) = &app.core.login_panel {
         let n = panel.providers.len() as u16;
         match panel.mode {
-            // Edit/New: 7 fields + 1 blank + 1 help + 2 borders = 11
-            LoginPanelMode::Edit | LoginPanelMode::New => 11,
+            // Edit/New: 1 top pad + 7 fields + 1 blank + 1 help + 2 borders = 12
+            LoginPanelMode::Edit | LoginPanelMode::New => 12,
             // ConfirmDelete: n providers + 4 confirm area + 2 borders
             LoginPanelMode::ConfirmDelete => (n + 6).max(7),
-            // Browse: n * 2 (name + models) + 2 help/blank + 2 borders
-            LoginPanelMode::Browse => (n * 2 + 4).max(6),
+            // Browse: n * 2 (name + models) + (n-1) spacing + 2 help/blank + 2 borders
+            LoginPanelMode::Browse => (n * 3 + 3).max(6),
         }
     } else if app.core.model_panel.is_some() {
         12

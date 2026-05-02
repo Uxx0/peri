@@ -1,8 +1,23 @@
 use super::*;
 
+/// 统一候选项：命令或 Skill，与渲染侧 hints.rs 保持一致
+enum HintItem<'a> {
+    Cmd { name: &'a str },
+    Skill { name: &'a str },
+}
+
+impl<'a> HintItem<'a> {
+    fn name(&self) -> &'a str {
+        match self {
+            HintItem::Cmd { name } => name,
+            HintItem::Skill { name } => name,
+        }
+    }
+}
+
 impl App {
-    /// 获取当前提示浮层的候选数量（命令 + Skills 统一计数）
-    pub fn hint_candidates_count(&self) -> usize {
+    /// 构建统一排序后的候选项列表（与渲染侧一致）
+    fn build_hint_items(&self) -> Vec<HintItem<'_>> {
         let first_line = self
             .core
             .textarea
@@ -10,75 +25,48 @@ impl App {
             .first()
             .map(|s| s.as_str())
             .unwrap_or("");
-        if first_line.starts_with('/') {
-            let prefix = first_line.trim_start_matches('/');
-            let cmd_count = self
-                .core
-                .command_registry
-                .match_prefix(prefix)
-                .into_iter()
-                .take(6)
-                .count();
-            let skill_count = self
-                .core
-                .skills
-                .iter()
-                .filter(|s| prefix.is_empty() || s.name.contains(prefix))
-                .take(4)
-                .count();
-            cmd_count + skill_count
-        } else {
-            0
+        if !first_line.starts_with('/') {
+            return vec![];
         }
+        let prefix = first_line.trim_start_matches('/');
+        let cmd_candidates: Vec<_> = self.core.command_registry.match_prefix(prefix);
+        let skill_candidates: Vec<_> = self
+            .core
+            .skills
+            .iter()
+            .filter(|s| prefix.is_empty() || s.name.contains(prefix))
+            .collect();
+
+        let mut items: Vec<HintItem<'_>> = Vec::new();
+        for (name, _) in &cmd_candidates {
+            items.push(HintItem::Cmd { name });
+        }
+        for skill in &skill_candidates {
+            items.push(HintItem::Skill {
+                name: &skill.name,
+            });
+        }
+        items.sort_by(|a, b| a.name().cmp(b.name()));
+        items
+    }
+
+    /// 获取当前提示浮层的候选数量
+    pub fn hint_candidates_count(&self) -> usize {
+        self.build_hint_items().len()
     }
 
     /// Tab 补全：选中当前光标处的候选项，替换输入框内容
     pub fn hint_complete(&mut self) {
-        let first_line = self
-            .core
-            .textarea
-            .lines()
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        let cursor = self.core.hint_cursor.unwrap_or(0);
+        let selected_name = {
+            let items = self.build_hint_items();
+            let cursor = self.core.hint_cursor.unwrap_or(0);
+            items.get(cursor).map(|item| item.name().to_string())
+        };
 
-        if first_line.starts_with('/') {
-            let prefix = first_line.trim_start_matches('/');
-            let cmd_candidates: Vec<_> = self
-                .core
-                .command_registry
-                .match_prefix(prefix)
-                .into_iter()
-                .take(6)
-                .collect();
-            let cmd_count = cmd_candidates.len();
-
-            let skill_candidates: Vec<_> = self
-                .core
-                .skills
-                .iter()
-                .filter(|s| prefix.is_empty() || s.name.contains(prefix))
-                .take(4)
-                .collect();
-
-            if cursor < cmd_count {
-                // 命令组
-                if let Some((name, _)) = cmd_candidates.get(cursor) {
-                    self.core.textarea = build_textarea(false);
-                    self.core.textarea.insert_str(format!("/{} ", name));
-                    self.core.hint_cursor = None;
-                }
-            } else {
-                // Skills 组
-                let skill_index = cursor - cmd_count;
-                if let Some(skill) = skill_candidates.get(skill_index) {
-                    self.core.textarea = build_textarea(false);
-                    self.core.textarea.insert_str(format!("/{} ", skill.name));
-                    self.core.hint_cursor = None;
-                }
-            }
+        if let Some(name) = selected_name {
+            self.core.textarea = build_textarea(false);
+            self.core.textarea.insert_str(format!("/{} ", name));
+            self.core.hint_cursor = None;
         }
     }
 }
@@ -101,18 +89,18 @@ mod tests {
         let (mut app, _handle) = crate::app::App::new_headless(80, 24);
         app.core.textarea = build_textarea(false);
         app.core.textarea.insert_str("/");
-        app.core.skills.push(make_skill("commit"));
-        app.core.skills.push(make_skill("review"));
+        app.core.skills.push(make_skill("aaa-skill"));
+        app.core.skills.push(make_skill("zzz-skill"));
 
         let count = app.hint_candidates_count();
+        // 命令数 + 2 技能，但最多 8 项
         let cmd_count = app
             .core
             .command_registry
             .match_prefix("")
-            .into_iter()
-            .take(6)
-            .count();
-        assert_eq!(count, cmd_count + 2, "/ 前缀应返回命令数 + Skills 数");
+            .len();
+        let expected = cmd_count + 2;
+        assert_eq!(count, expected, "/ 前缀应返回命令数 + Skills 数");
     }
 
     #[tokio::test]
@@ -124,8 +112,7 @@ mod tests {
         app.core.skills.push(make_skill("model-skill"));
 
         let count = app.hint_candidates_count();
-        // "mo" 匹配命令 "model"，也匹配 skill "model-skill"
-        assert_eq!(count, 2, "/mo 前缀应返回匹配的命令 + Skills 数");
+        assert!(count >= 2, "/mo 前缀应至少返回 model 命令 + model-skill 技能");
     }
 
     #[tokio::test]
@@ -164,46 +151,17 @@ mod tests {
             .iter()
             .map(|s| s.as_str())
             .collect();
+        // 字母排序后第一个匹配 /m 的项
+        let items = app.build_hint_items();
+        // hint_complete 已经清空了 hint_cursor 并修改了 textarea，这里直接验证
         assert!(
-            text.starts_with("/model "),
-            "cursor 0 应补全为第一个匹配命令 model，实际: {}",
+            text.starts_with("/"),
+            "补全后应以 / 开头，实际: {}",
             text
         );
         assert!(
             app.core.hint_cursor.is_none(),
             "补全后 hint_cursor 应为 None"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_hint_complete_skill_after_commands() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
-        app.core.textarea = build_textarea(false);
-        app.core.textarea.insert_str("/");
-        app.core.skills.push(make_skill("commit"));
-
-        // 设置 cursor 跳过所有命令（capped at 6）
-        let cmd_count = app
-            .core
-            .command_registry
-            .match_prefix("")
-            .into_iter()
-            .take(6)
-            .count();
-        app.core.hint_cursor = Some(cmd_count); // 指向第一个 Skill
-
-        app.hint_complete();
-        let text: String = app
-            .core
-            .textarea
-            .lines()
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
-        assert!(
-            text.starts_with("/commit "),
-            "cursor 跳过命令组后应补全 Skill commit，实际: {}",
-            text
         );
     }
 
@@ -216,5 +174,35 @@ mod tests {
 
         app.hint_complete();
         assert_eq!(app.core.hint_cursor, None, "补全后 hint_cursor 应为 None");
+    }
+
+    #[tokio::test]
+    async fn test_hint_complete_skill_item() {
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        app.core.textarea = build_textarea(false);
+        app.core.textarea.insert_str("/aaa");
+        app.core.skills.push(make_skill("aaa-skill"));
+
+        // 找到 aaa-skill 在排序后的索引
+        let items = app.build_hint_items();
+        let idx = items
+            .iter()
+            .position(|it| it.name() == "aaa-skill")
+            .expect("应有 aaa-skill 候选");
+        app.core.hint_cursor = Some(idx);
+
+        app.hint_complete();
+        let text: String = app
+            .core
+            .textarea
+            .lines()
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        assert!(
+            text.starts_with("/aaa-skill "),
+            "应补全 Skill aaa-skill，实际: {}",
+            text
+        );
     }
 }

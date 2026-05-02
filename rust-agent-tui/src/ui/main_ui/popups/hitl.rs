@@ -30,7 +30,7 @@ pub(crate) fn render_hitl_popup(f: &mut Frame, app: &App, area: Rect) {
     let inner = BorderedPanel::new(Span::styled(
         title,
         Style::default()
-            .fg(theme::WARNING)
+            .fg(theme::THINKING)
             .add_modifier(Modifier::BOLD),
     ))
     .border_style(Style::default().fg(theme::WARNING))
@@ -80,7 +80,7 @@ pub(crate) fn render_hitl_popup(f: &mut Frame, app: &App, area: Rect) {
         let input_preview = format_input_preview(&item.input, max_width.saturating_sub(6));
         lines.push(Line::from(vec![
             Span::raw("     "),
-            Span::styled(input_preview, row_style.fg(theme::DIM)),
+            Span::styled(input_preview, Style::default().fg(theme::MUTED)),
         ]));
     }
 
@@ -100,7 +100,7 @@ pub(crate) fn render_hitl_popup(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 "Enter",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":确认", Style::default().fg(theme::MUTED)),
@@ -110,14 +110,14 @@ pub(crate) fn render_hitl_popup(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 "Space",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":切换  ", Style::default().fg(theme::MUTED)),
             Span::styled(
                 "Enter",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":确认", Style::default().fg(theme::MUTED)),

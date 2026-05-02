@@ -292,8 +292,8 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 // Up：浮层导航 > 历史恢复（仅首行）> textarea 光标
                 Input { key: Key::Up, .. } if !app.core.loading => {
                     let hint_count = app.hint_candidates_count();
-                    if app.core.hint_cursor.is_some() && hint_count > 0 {
-                        let cur = app.core.hint_cursor.unwrap();
+                    if hint_count > 0 {
+                        let cur = app.core.hint_cursor.unwrap_or(0);
                         app.core.hint_cursor = if cur == 0 {
                             Some(hint_count - 1)
                         } else {
@@ -317,8 +317,8 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 // Down：浮层导航 > 历史恢复（仅末行）> textarea 光标
                 Input { key: Key::Down, .. } if !app.core.loading => {
                     let hint_count = app.hint_candidates_count();
-                    if app.core.hint_cursor.is_some() && hint_count > 0 {
-                        let cur = app.core.hint_cursor.unwrap();
+                    if hint_count > 0 {
+                        let cur = app.core.hint_cursor.unwrap_or(hint_count - 1);
                         app.core.hint_cursor = if cur + 1 >= hint_count {
                             Some(0)
                         } else {
@@ -391,10 +391,13 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                     }
                 }
 
-                // Enter 在提示浮层激活时：确认选中
+                // Enter 在有候选项时：确认选中（无选中则默认第一项）
                 Input {
                     key: Key::Enter, ..
-                } if !app.core.loading && app.core.hint_cursor.is_some() => {
+                } if !app.core.loading && app.hint_candidates_count() > 0 => {
+                    if app.core.hint_cursor.is_none() {
+                        app.core.hint_cursor = Some(0);
+                    }
                     app.hint_complete();
                 }
 
@@ -508,13 +511,9 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                         app.exit_history();
                     }
                     app.core.textarea.input(input);
-                    // 输入内容变化时：有候选自动选中第一个，无候选则清零
+                    // 输入内容变化时：重置光标（不预选，等用户按 Tab/上下键激活）
                     if !app.core.loading {
-                        app.core.hint_cursor = if app.hint_candidates_count() > 0 {
-                            Some(0)
-                        } else {
-                            None
-                        };
+                        app.core.hint_cursor = None;
                     }
                 }
 

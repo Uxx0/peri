@@ -18,17 +18,24 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
-    let (border_color, title) = match panel.mode {
-        LoginPanelMode::Browse => (theme::MUTED, " /login — Provider 管理 "),
-        LoginPanelMode::Edit => (theme::WARNING, " /login — 编辑 Provider "),
-        LoginPanelMode::New => (theme::SAGE, " /login — 新建 Provider "),
-        LoginPanelMode::ConfirmDelete => (theme::ERROR, " /login — 确认删除 "),
+    let border_color = match panel.mode {
+        LoginPanelMode::Browse => theme::BORDER,
+        LoginPanelMode::Edit => theme::WARNING,
+        LoginPanelMode::New => theme::SAGE,
+        LoginPanelMode::ConfirmDelete => theme::ERROR,
+    };
+
+    let title = match panel.mode {
+        LoginPanelMode::Browse => " /login — Provider 管理 ",
+        LoginPanelMode::Edit => " /login — 编辑 Provider ",
+        LoginPanelMode::New => " /login — 新建 Provider ",
+        LoginPanelMode::ConfirmDelete => " /login — 确认删除 ",
     };
 
     let inner = BorderedPanel::new(Span::styled(
         title,
         Style::default()
-            .fg(border_color)
+            .fg(theme::THINKING)
             .add_modifier(Modifier::BOLD),
     ))
     .border_style(Style::default().fg(border_color))
@@ -44,32 +51,30 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
         LoginPanelMode::Browse => {
             let mut lines: Vec<Line> = Vec::new();
             for (i, p) in panel.providers.iter().enumerate() {
+                if i > 0 {
+                    lines.push(Line::from(""));
+                }
                 let is_cursor = i == panel.cursor;
                 let is_active = p.id == active_provider_id;
                 let bullet = if is_active { "●" } else { "○" };
                 let cursor_char = if is_cursor { "❯" } else { " " };
                 let name = p.display_name().to_string();
                 let type_tag = format!("({})", p.provider_type);
-                let row_style = if is_cursor {
+                let row_style = if is_active {
+                    Style::default().fg(theme::SAGE)
+                } else if is_cursor {
                     Style::default().fg(theme::THINKING)
-                } else if is_active {
-                    Style::default().fg(theme::ACCENT)
                 } else {
                     Style::default().fg(theme::TEXT)
                 };
+                let cursor_style = Style::default().fg(theme::THINKING);
                 lines.push(Line::from(vec![
-                    Span::styled(format!("{} {} ", cursor_char, bullet), row_style),
+                    Span::styled(format!("{} ", cursor_char), cursor_style),
+                    Span::styled(format!("{} ", bullet), row_style),
                     Span::styled(format!("{} ", name), row_style.add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        type_tag,
-                        row_style.fg(if is_cursor {
-                            theme::TEXT
-                        } else {
-                            theme::MUTED
-                        }),
-                    ),
+                    Span::styled(type_tag, Style::default().fg(theme::MUTED)),
                 ]));
-                // 模型名子行（一行展示三个模型，不同文字颜色区分）
+                // 模型名子行
                 let m = &p.models;
                 let fmt_model = |v: &str| -> String {
                     if v.is_empty() {
@@ -78,34 +83,23 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                         v.to_string()
                     }
                 };
-                let label_fg = if is_cursor { theme::TEXT } else { theme::TEXT };
-                let (opus_fg, sonnet_fg, haiku_fg) = if is_cursor {
-                    (theme::SAGE, theme::ACCENT, theme::WARNING)
-                } else {
-                    (theme::SAGE, theme::ACCENT, theme::WARNING)
-                };
-                let sep = if is_cursor {
-                    Style::default().fg(theme::THINKING)
-                } else {
-                    Style::default().fg(theme::MUTED)
-                };
                 lines.push(Line::from(vec![
-                    Span::styled("       ", sep),
+                    Span::styled("       ", Style::default().fg(theme::MUTED)),
                     Span::styled(
                         "Opus ",
-                        Style::default().fg(label_fg).add_modifier(Modifier::BOLD),
+                        Style::default().fg(theme::MUTED).add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(fmt_model(&m.opus), Style::default().fg(opus_fg)),
+                    Span::styled(fmt_model(&m.opus), Style::default().fg(theme::MUTED)),
                     Span::styled(
                         "  Sonnet ",
-                        Style::default().fg(label_fg).add_modifier(Modifier::BOLD),
+                        Style::default().fg(theme::MUTED).add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(fmt_model(&m.sonnet), Style::default().fg(sonnet_fg)),
+                    Span::styled(fmt_model(&m.sonnet), Style::default().fg(theme::MUTED)),
                     Span::styled(
                         "  Haiku ",
-                        Style::default().fg(label_fg).add_modifier(Modifier::BOLD),
+                        Style::default().fg(theme::MUTED).add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(fmt_model(&m.haiku), Style::default().fg(haiku_fg)),
+                    Span::styled(fmt_model(&m.haiku), Style::default().fg(theme::MUTED)),
                 ]));
             }
             if panel.providers.is_empty() {
@@ -119,28 +113,28 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     " Enter",
                     Style::default()
-                        .fg(theme::ACCENT)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":选中  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "Tab",
                     Style::default()
-                        .fg(theme::WARNING)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":编辑  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "Ctrl+N",
                     Style::default()
-                        .fg(theme::SAGE)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":新建  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "Ctrl+D",
                     Style::default()
-                        .fg(theme::ERROR)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":删除", Style::default().fg(theme::MUTED)),
@@ -150,6 +144,7 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
         }
 
         LoginPanelMode::Edit | LoginPanelMode::New => {
+            let mut lines: Vec<Line> = vec![Line::from("")];
             let fields: &[(LoginEditField, &str, &str, usize)] = &[
                 (LoginEditField::Name, "Name        ", &panel.buf_name, panel.cur_name),
                 (LoginEditField::Type, "Type        ", &panel.buf_type, 0),
@@ -175,7 +170,6 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                 ),
             ];
 
-            let mut lines: Vec<Line> = Vec::new();
             for (field, label, value, cursor) in fields {
                 let is_active = *field == panel.edit_field;
                 let value_display = if *field == LoginEditField::Type {
@@ -225,28 +219,28 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     " ↑↓",
                     Style::default()
-                        .fg(theme::WARNING)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":切换字段  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "←→/Space",
                     Style::default()
-                        .fg(theme::WARNING)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":切换Type  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "Enter",
                     Style::default()
-                        .fg(theme::WARNING)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":保存  ", Style::default().fg(theme::MUTED)),
                 Span::styled(
                     "Ctrl+V",
                     Style::default()
-                        .fg(theme::WARNING)
+                        .fg(theme::MUTED)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(":粘贴  ", Style::default().fg(theme::MUTED)),
@@ -264,15 +258,17 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                 let is_active = p.id == active_provider_id;
                 let bullet = if is_active { "●" } else { "○" };
                 let cursor_char = if is_cursor { "❯" } else { " " };
-                let row_style = if is_cursor {
+                let row_style = if is_active {
+                    Style::default().fg(theme::SAGE)
+                } else if is_cursor {
                     Style::default().fg(theme::THINKING)
-                } else if is_active {
-                    Style::default().fg(theme::ACCENT)
                 } else {
                     Style::default().fg(theme::TEXT)
                 };
+                let cursor_style = Style::default().fg(theme::THINKING);
                 list_lines.push(Line::from(vec![
-                    Span::styled(format!("{} {} ", cursor_char, bullet), row_style),
+                    Span::styled(format!("{} ", cursor_char), cursor_style),
+                    Span::styled(format!("{} ", bullet), row_style),
                     Span::styled(
                         p.display_name().to_string(),
                         row_style.add_modifier(Modifier::BOLD),
@@ -305,14 +301,14 @@ pub(crate) fn render_login_panel(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(
                             " Enter",
                             Style::default()
-                                .fg(theme::ERROR)
+                                .fg(theme::MUTED)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(":确认删除  ", Style::default().fg(theme::MUTED)),
                         Span::styled(
                             "Esc",
                             Style::default()
-                                .fg(theme::SAGE)
+                                .fg(theme::MUTED)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(":取消", Style::default().fg(theme::MUTED)),

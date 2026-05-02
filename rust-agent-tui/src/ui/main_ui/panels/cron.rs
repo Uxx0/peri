@@ -21,10 +21,10 @@ pub(crate) fn render_cron_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let inner = BorderedPanel::new(Span::styled(
         title,
         Style::default()
-            .fg(theme::MUTED)
+            .fg(theme::THINKING)
             .add_modifier(Modifier::BOLD),
     ))
-    .border_style(Style::default().fg(theme::MUTED))
+    .border_style(Style::default().fg(theme::BORDER))
     .render(f, area);
     let mut lines: Vec<Line> = Vec::new();
 
@@ -61,13 +61,13 @@ pub(crate) fn render_cron_panel(f: &mut Frame, app: &mut App, area: Rect) {
         };
 
         let status_style = if task.enabled {
-            Style::default().fg(theme::ACCENT)
+            Style::default().fg(theme::SAGE)
         } else {
             Style::default().fg(theme::MUTED)
         };
 
         lines.push(Line::from(vec![
-            Span::styled(cursor_char.to_string(), Style::default().fg(theme::ACCENT)),
+            Span::styled(cursor_char.to_string(), Style::default().fg(theme::THINKING)),
             Span::styled(format!("[{}] ", status_icon), status_style),
             Span::styled(format!("{} ", task.expression), style),
             Span::styled(format!("| {} | ", next), Style::default().fg(theme::MUTED)),
@@ -98,14 +98,14 @@ pub(crate) fn render_cron_panel(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(
                 " Enter",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":确认  ", Style::default().fg(theme::MUTED)),
             Span::styled(
                 "其他键",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":取消", Style::default().fg(theme::MUTED)),
@@ -115,21 +115,21 @@ pub(crate) fn render_cron_panel(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(
                 " Enter",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":切换  ", Style::default().fg(theme::MUTED)),
             Span::styled(
                 "Ctrl+D",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":删除  ", Style::default().fg(theme::MUTED)),
             Span::styled(
                 "Esc",
                 Style::default()
-                    .fg(theme::WARNING)
+                    .fg(theme::MUTED)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(":关闭", Style::default().fg(theme::MUTED)),

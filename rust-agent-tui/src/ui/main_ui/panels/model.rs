@@ -144,7 +144,7 @@ pub(crate) fn render_model_panel(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(
             "  Enter",
             Style::default()
-                .fg(theme::WARNING)
+                .fg(theme::MUTED)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" to confirm ", Style::default().fg(theme::MUTED)),
@@ -156,7 +156,7 @@ pub(crate) fn render_model_panel(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(
             "Esc",
             Style::default()
-                .fg(theme::WARNING)
+                .fg(theme::MUTED)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(" to exit", Style::default().fg(theme::MUTED)),
