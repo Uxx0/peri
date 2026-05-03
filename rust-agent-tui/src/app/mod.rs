@@ -114,6 +114,8 @@ pub struct App {
     pub status_panel: Option<status_panel::StatusPanel>,
     /// /memory 记忆文件面板状态
     pub memory_panel: Option<crate::app::memory_panel::MemoryPanel>,
+    /// 当前运行中的后台任务数量（状态栏指示器使用）
+    pub background_task_count: usize,
 }
 
 impl App {
@@ -214,6 +216,7 @@ impl App {
             mcp_ready_shown_until: std::cell::Cell::new(None),
             status_panel: None,
             memory_panel: None,
+            background_task_count: 0,
         }
     }
 
@@ -228,8 +231,28 @@ impl App {
         self.mcp_init_rx = Some(init_rx);
 
         let cwd = self.cwd.clone();
+        let tx = self.bg_event_tx.clone();
+        let oauth_cb: Box<dyn Fn(rust_agent_middlewares::mcp::OAuthFlowEvent) + Send + Sync> =
+            Box::new(move |ev| {
+                use rust_agent_middlewares::mcp::OAuthFlowEvent;
+                if let OAuthFlowEvent::AuthorizationNeeded {
+                    server_name,
+                    authorization_url,
+                    callback_tx,
+                } = ev
+                {
+                    let _ = tx.try_send(events::AgentEvent::OAuthAuthorizationNeeded {
+                        server_name,
+                        authorization_url,
+                        callback_tx,
+                    });
+                }
+                // AuthorizationCompleted / AuthorizationFailed 在 run_initialize 中
+                // 由 connect_result 的 Ok/Err 分支自然反映到 server_infos()，
+                // 无需额外事件转发。
+            });
         tokio::spawn(async move {
-            McpClientPool::run_initialize(pool, std::path::Path::new(&cwd), init_tx, None).await;
+            McpClientPool::run_initialize(pool, std::path::Path::new(&cwd), init_tx, Some(oauth_cb)).await;
         });
     }
 

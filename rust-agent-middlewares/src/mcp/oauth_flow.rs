@@ -226,6 +226,11 @@ impl OAuthFlowManager {
         )
     }
 
+    /// 获取共享的 Token 存储引用
+    pub fn token_store(&self) -> &Arc<FileCredentialStore> {
+        &self.token_store
+    }
+
     /// 发送事件给调用方
     fn emit_event(&self, event: OAuthFlowEvent) {
         (self.event_callback)(event);

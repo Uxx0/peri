@@ -1,4 +1,4 @@
-use rust_agent_middlewares::mcp::{ClientStatus, ConfigSource, Resource, ServerInfo, Tool};
+use rust_agent_middlewares::mcp::{ClientStatus, Resource, ServerInfo, Tool};
 
 /// 详情视图中的操作菜单项
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +40,8 @@ pub enum McpPanelView {
         resources: Vec<Resource>,
         /// 可用的操作菜单
         actions: Vec<DetailAction>,
+        /// 是否展开显示工具列表
+        show_tools: bool,
     },
 }
 
@@ -137,6 +139,7 @@ impl crate::app::App {
                         tools,
                         resources,
                         actions,
+                        show_tools: false,
                     };
                     panel.cursor = 0;
                     panel.scroll_offset = 0;
@@ -160,7 +163,11 @@ impl crate::app::App {
         };
         match action {
             DetailAction::ViewTools => {
-                // 暂时只显示在工具数量中，后续可扩展为独立视图
+                if let Some(ref mut panel) = self.mcp_panel {
+                    if let McpPanelView::ServerDetail { ref mut show_tools, .. } = panel.view {
+                        *show_tools = !*show_tools;
+                    }
+                }
             }
             DetailAction::ReAuthenticate => {
                 self.mcp_panel_back();
@@ -168,7 +175,21 @@ impl crate::app::App {
                 self.mcp_panel_request_oauth();
             }
             DetailAction::ClearAuth => {
-                // TODO: 清除 OAuth 凭证
+                self.mcp_panel_back();
+                self.set_mcp_cursor_to_server(&server_name);
+                let pool = self.mcp_pool.clone();
+                let tx = self.bg_event_tx.clone();
+                let name_clone = server_name.clone();
+                if let Some(pool) = pool {
+                    tokio::spawn(async move {
+                        let result = pool.clear_oauth(&name_clone).await;
+                        let _ = tx.try_send(super::events::AgentEvent::McpActionCompleted {
+                            server_name: name_clone,
+                            action: "clear_auth".to_string(),
+                            success: result.is_ok(),
+                        });
+                    });
+                }
             }
             DetailAction::Reconnect => {
                 self.mcp_panel_back();
@@ -208,18 +229,13 @@ impl crate::app::App {
 
     pub fn mcp_panel_scroll_up(&mut self, delta: u16) {
         if let Some(ref mut panel) = self.mcp_panel {
-            if !panel.view.is_server_list() {
-                panel.scroll_offset = panel.scroll_offset.saturating_sub(delta);
-            }
+            panel.scroll_offset = panel.scroll_offset.saturating_sub(delta);
         }
     }
 
-    pub fn mcp_panel_scroll_down(&mut self, delta: u16, content_height: u16, visible_height: u16) {
+    pub fn mcp_panel_scroll_down(&mut self, delta: u16) {
         if let Some(ref mut panel) = self.mcp_panel {
-            if !panel.view.is_server_list() {
-                let max_scroll = content_height.saturating_sub(visible_height);
-                panel.scroll_offset = (panel.scroll_offset + delta).min(max_scroll);
-            }
+            panel.scroll_offset = panel.scroll_offset.saturating_add(delta);
         }
     }
 

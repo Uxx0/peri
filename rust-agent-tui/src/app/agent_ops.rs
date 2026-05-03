@@ -289,7 +289,11 @@ impl App {
             AgentEvent::SubAgentStart {
                 agent_id,
                 task_preview,
+                is_background,
             } => {
+                if is_background {
+                    self.background_task_count += 1;
+                }
                 self.agent.subagent_depth += 1;
                 // 跨切面：Langfuse
                 if let Some(ref tracer) = self.langfuse.langfuse_tracer {
@@ -299,6 +303,7 @@ impl App {
                 let actions = self.core.pipeline.handle_event(AgentEvent::SubAgentStart {
                     agent_id,
                     task_preview,
+                    is_background,
                 });
                 for action in actions {
                     self.apply_pipeline_action(action);
@@ -377,6 +382,33 @@ impl App {
                         .unwrap_or_default();
                 }
                 let vm = MessageViewModel::system(format!("[i] OAuth 授权失败: {} - {}", server_name, error));
+                self.core.view_messages.push(vm.clone());
+                let _ = self.core.render_tx.send(RenderEvent::AddMessage(vm));
+                (true, false, false)
+            }
+            AgentEvent::McpActionCompleted {
+                server_name,
+                action,
+                success,
+            } => {
+                if let Some(ref mut panel) = self.mcp_panel {
+                    panel.servers = self
+                        .mcp_pool
+                        .as_ref()
+                        .map(|p| p.server_infos())
+                        .unwrap_or_default();
+                }
+                let msg = match (action.as_str(), success) {
+                    ("clear_auth", true) => {
+                        format!("[i] OAuth credentials cleared: {}", server_name)
+                    }
+                    ("clear_auth", false) => {
+                        format!("[i] Failed to clear credentials: {}", server_name)
+                    }
+                    (_, true) => format!("[i] Action completed: {}", server_name),
+                    (_, false) => format!("[i] Action failed: {}", server_name),
+                };
+                let vm = MessageViewModel::system(msg);
                 self.core.view_messages.push(vm.clone());
                 let _ = self.core.render_tx.send(RenderEvent::AddMessage(vm));
                 (true, false, false)
@@ -884,6 +916,25 @@ impl App {
                 for action in actions {
                     self.apply_pipeline_action(action);
                 }
+                (true, false, false)
+            }
+            AgentEvent::BackgroundTaskCompleted {
+                agent_name,
+                success,
+                output,
+                ..
+            } => {
+                // 递减后台任务计数
+                self.background_task_count = self.background_task_count.saturating_sub(1);
+                // 追加通知到消息区
+                let notification = if success {
+                    format!("[i] Background task '{}' completed\n{}", agent_name, output)
+                } else {
+                    format!("[i] Background task '{}' failed\n{}", agent_name, output)
+                };
+                let vm = MessageViewModel::system(notification);
+                self.core.view_messages.push(vm.clone());
+                let _ = self.core.render_tx.send(RenderEvent::AddMessage(vm));
                 (true, false, false)
             }
         }

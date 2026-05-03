@@ -176,9 +176,10 @@ fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 
                 let section_headers = 2; // Project + User headers (最多)
                 panel.servers.len() + section_headers + 6
             }
-            crate::app::McpPanelView::ServerDetail { actions, .. } => {
-                // separator(1) + title(1) + blank(1) + info_lines(6) + blank(1) + actions
-                actions.len() + 10
+            crate::app::McpPanelView::ServerDetail { actions, tools, show_tools, .. } => {
+                // separator(1) + title(1) + blank(1) + info_lines(6) + tools_list + blank(1) + actions
+                let tools_lines = if *show_tools { tools.len() } else { 0 };
+                actions.len() + 10 + tools_lines
             }
         };
         (line_count as u16).max(8)

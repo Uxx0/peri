@@ -48,6 +48,7 @@ pub enum AgentEvent {
     SubAgentStart {
         agent_id: String,
         task_preview: String,
+        is_background: bool,
     },
     /// SubAgent 执行结束（由 Agent ToolEnd 映射而来）
     SubAgentEnd {
@@ -88,5 +89,18 @@ pub enum AgentEvent {
     OAuthAuthorizationFailed {
         server_name: String,
         error: String,
+    },
+    /// 后台 agent 任务完成通知
+    BackgroundTaskCompleted {
+        task_id: String,
+        agent_name: String,
+        success: bool,
+        output: String,
+    },
+    /// MCP 面板异步操作完成
+    McpActionCompleted {
+        server_name: String,
+        action: String,
+        success: bool,
     },
 }

@@ -150,8 +150,24 @@ impl McpClientPool {
                     }
                 }
                 TransportConfig::StreamableHttp { ref url, ref headers, ref oauth } => {
-                    if let (Some(ref oauth_cfg), Some(ref mut mgr)) = (oauth, &mut oauth_manager) {
-                        match mgr.run_oauth_flow(name, url, oauth_cfg).await {
+                    let oauth_cfg = oauth.as_ref().cloned().or_else(|| {
+                        // 没有显式 OAuth 配置的 HTTP 服务器：检查磁盘是否有已保存的凭证
+                        // 如果有，用默认配置触发 OAuth 恢复流程
+                        if let Some(ref mgr) = oauth_manager {
+                            let token_store = mgr.token_store();
+                            match tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(token_store.load_server(name))) {
+                                Ok(Some(_)) => {
+                                    tracing::info!(server = %name, "发现已保存的 OAuth 凭证，使用默认配置恢复");
+                                    Some(super::config::OAuthConfig::default())
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                    if let (Some(ref cfg), Some(ref mut mgr)) = (oauth_cfg, &mut oauth_manager) {
+                        match mgr.run_oauth_flow(name, url, cfg).await {
                             Ok(()) => {
                                 used_oauth = true;
                                 if let Some(am) = mgr.get_authorization_manager(name) {
@@ -160,11 +176,12 @@ impl McpClientPool {
                                     tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                                 }
                             }
-                            Err(e) => { Self::insert_failed(&pool, name, format!("OAuth 授权失败: {e}")); continue; }
+                            Err(e) => {
+                                // OAuth 恢复失败（如凭证过期），回退到裸连接，让 401 错误处理接管
+                                tracing::warn!(server = %name, error = %e, "OAuth 恢复失败，尝试裸连接");
+                                tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
+                            }
                         }
-                    } else if oauth.is_some() {
-                        used_oauth = true;
-                        tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                     } else {
                         tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                     }
@@ -390,6 +407,35 @@ impl McpClientPool {
         }
     }
 
+    /// 清除指定服务器的 OAuth 凭证并断开连接
+    pub async fn clear_oauth(self: &Arc<Self>, server_name: &str) -> Result<(), McpPoolError> {
+        // 1. 清除 token 文件中的凭证
+        let store = FileCredentialStore::new();
+        let _ = store.clear_server(server_name).await;
+
+        // 2. 关闭连接
+        if let Some(mut svc) = self.services.lock().await.remove(server_name) {
+            let _ = svc.close_with_timeout(SHUTDOWN_TIMEOUT).await;
+        }
+
+        // 3. 更新 handle 为 NeedsAuthorization
+        let (source, url) = self.configs.read().get(server_name)
+            .map(|c| (c.source.clone(), c.url.clone()))
+            .unwrap_or((None, None));
+        self.clients.write().insert(server_name.to_string(), Arc::new(McpClientHandle {
+            name: server_name.to_string(),
+            peer: None,
+            tools: vec![],
+            resources: vec![],
+            status: ClientStatus::Failed("OAuth credentials cleared".to_string()),
+            oauth_status: OAuthStatus::NeedsAuthorization,
+            source,
+            url,
+        }));
+
+        Ok(())
+    }
+
     pub async fn remove_server(self: &Arc<Self>, server_name: &str) {
         self.clients.write().remove(server_name);
         if let Some(mut svc) = self.services.lock().await.remove(server_name) { let _ = svc.close_with_timeout(SHUTDOWN_TIMEOUT).await; }
@@ -452,8 +498,22 @@ impl McpClientPool {
                     }
                 }
                 TransportConfig::StreamableHttp { ref url, ref headers, ref oauth } => {
-                    if let (Some(ref oauth_cfg), Some(ref mut mgr)) = (oauth, &mut oauth_manager) {
-                        match mgr.run_oauth_flow(name, url, oauth_cfg).await {
+                    let oauth_cfg = oauth.as_ref().cloned().or_else(|| {
+                        if let Some(ref mgr) = oauth_manager {
+                            let token_store = mgr.token_store();
+                            match tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(token_store.load_server(name))) {
+                                Ok(Some(_)) => {
+                                    tracing::info!(server = %name, "发现已保存的 OAuth 凭证，使用默认配置恢复");
+                                    Some(super::config::OAuthConfig::default())
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                    if let (Some(ref cfg), Some(ref mut mgr)) = (oauth_cfg, &mut oauth_manager) {
+                        match mgr.run_oauth_flow(name, url, cfg).await {
                             Ok(()) => {
                                 used_oauth = true;
                                 if let Some(am) = mgr.get_authorization_manager(name) {
@@ -462,11 +522,11 @@ impl McpClientPool {
                                     tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                                 }
                             }
-                            Err(e) => { Self::insert_failed(&pool, name, format!("OAuth 授权失败: {e}")); continue; }
+                            Err(e) => {
+                                tracing::warn!(server = %name, error = %e, "OAuth 恢复失败，尝试裸连接");
+                                tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
+                            }
                         }
-                    } else if oauth.is_some() {
-                        used_oauth = true;
-                        tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                     } else {
                         tokio::time::timeout(timeout, rmcp::service::serve_client((), build_http_transport(url, headers))).await
                     }

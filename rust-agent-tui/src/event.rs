@@ -597,8 +597,31 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
             app.core.textarea.insert_str(&text);
         }
         Event::Mouse(mouse) => match mouse.kind {
-            MouseEventKind::ScrollUp => app.scroll_up(),
-            MouseEventKind::ScrollDown => app.scroll_down(),
+            MouseEventKind::ScrollUp => {
+                // MCP 面板区域滚轮滚动面板，否则滚动消息区
+                if let Some(area) = app.core.panel_area {
+                    if mouse.row >= area.y && mouse.row < area.y + area.height
+                        && mouse.column >= area.x && mouse.column < area.x + area.width
+                        && app.mcp_panel.is_some()
+                    {
+                        app.mcp_panel_scroll_up(3);
+                        return Ok(Some(Action::Redraw));
+                    }
+                }
+                app.scroll_up();
+            }
+            MouseEventKind::ScrollDown => {
+                if let Some(area) = app.core.panel_area {
+                    if mouse.row >= area.y && mouse.row < area.y + area.height
+                        && mouse.column >= area.x && mouse.column < area.x + area.width
+                        && app.mcp_panel.is_some()
+                    {
+                        app.mcp_panel_scroll_down(3);
+                        return Ok(Some(Action::Redraw));
+                    }
+                }
+                app.scroll_down();
+            }
             MouseEventKind::Down(MouseButton::Left) => {
                 // 面板区域：开始面板选区
                 if let Some(area) = app.core.panel_area {

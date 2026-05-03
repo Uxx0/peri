@@ -11,7 +11,7 @@ use crate::app::{DetailAction, McpPanelView, App};
 use crate::ui::main_ui::highlight_line_spans;
 use crate::ui::theme;
 
-use rust_agent_middlewares::mcp::{ClientStatus, ConfigSource, OAuthStatus};
+use rust_agent_middlewares::mcp::{ClientStatus, ConfigSource, OAuthStatus, ServerInfo};
 
 /// MCP 管理面板渲染
 pub(crate) fn render_mcp_panel(f: &mut Frame, app: &mut App, area: Rect) {
@@ -27,90 +27,88 @@ pub(crate) fn render_mcp_panel(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_server_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let panel = match app.mcp_panel.as_ref() {
-        Some(p) => p,
-        None => return,
-    };
-    let mut lines: Vec<Line> = Vec::new();
-    let width = area.width as usize;
-
-    // 分隔线
-    let separator: String = "─".repeat(width);
-    lines.push(Line::from(Span::styled(
-        separator,
-        Style::default().fg(theme::BORDER),
-    )));
-
-    // 标题
-    lines.push(Line::from(Span::styled(
-        "  Manage MCP servers",
-        Style::default()
-            .fg(theme::TEXT)
-            .add_modifier(Modifier::BOLD),
-    )));
-
-    // 服务器计数
-    let count = panel.servers.len();
-    lines.push(Line::from(Span::styled(
-        format!("  {} servers", count),
-        Style::default().fg(theme::MUTED),
-    )));
-    lines.push(Line::from(""));
-
-    // 按来源分组
-    let (project_servers, user_servers) = partition_by_source(&panel.servers);
-
-    if !project_servers.is_empty() {
-        // Project MCPs section header
-        let header_text = match &project_servers[0].source {
-            Some(ConfigSource::Project(path)) => {
-                format!("    Project MCPs ({})", path.display())
-            }
-            _ => "    Project MCPs".to_string(),
+    // Phase 1: 读取面板数据并构建所有行（不可变借用 panel）
+    let (mut lines, scroll_offset) = {
+        let panel = match app.mcp_panel.as_ref() {
+            Some(p) => p,
+            None => return,
         };
-        lines.push(Line::from(Span::styled(
-            header_text,
-            Style::default()
-                .fg(theme::MUTED)
-                .add_modifier(Modifier::ITALIC),
-        )));
-        render_server_group(&mut lines, &project_servers, panel.cursor, &project_start_offset(&app));
-        lines.push(Line::from(""));
-    }
+        let scroll_offset = panel.scroll_offset;
+        let cursor = panel.cursor;
+        let servers = &panel.servers;
+        let mut lines: Vec<Line> = Vec::new();
+        let width = area.width as usize;
 
-    if !user_servers.is_empty() {
-        // User MCPs section header
-        let header_text = match &user_servers[0].source {
-            Some(ConfigSource::Global(path)) => {
-                format!("    User MCPs ({})", path.display())
-            }
-            _ => "    User MCPs".to_string(),
-        };
+        // 分隔线
+        let separator: String = "─".repeat(width);
         lines.push(Line::from(Span::styled(
-            header_text,
-            Style::default()
-                .fg(theme::MUTED)
-                .add_modifier(Modifier::ITALIC),
+            separator,
+            Style::default().fg(theme::BORDER),
         )));
-        render_server_group(&mut lines, &user_servers, panel.cursor, &user_start_offset(&app));
-        lines.push(Line::from(""));
-    }
 
-    if panel.servers.is_empty() {
-        lines.push(Line::from(""));
+        // 标题
         lines.push(Line::from(Span::styled(
-            "  No MCP servers configured. Edit .mcp.json or settings.json",
+            "  Manage MCP servers",
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        // 服务器计数
+        let count = servers.len();
+        lines.push(Line::from(Span::styled(
+            format!("  {} servers", count),
             Style::default().fg(theme::MUTED),
         )));
-    }
+        lines.push(Line::from(""));
 
-    // 底部帮助链接
-    lines.push(Line::from(Span::styled(
-        "  https://docs.anthropic.com/en/docs/agents-and-tools/mcp for help",
-        Style::default().fg(theme::MUTED),
-    )));
+        // 按来源分组
+        let (project_servers, user_servers) = partition_by_source(servers);
 
-    // 存储面板元数据
+        if !project_servers.is_empty() {
+            let header_text = match &project_servers[0].source {
+                Some(ConfigSource::Project(path)) => format!("    Project MCPs ({})", path.display()),
+                _ => "    Project MCPs".to_string(),
+            };
+            lines.push(Line::from(Span::styled(
+                header_text,
+                Style::default().fg(theme::MUTED).add_modifier(Modifier::ITALIC),
+            )));
+            render_server_group(&mut lines, &project_servers, cursor, &project_start_offset(servers));
+            lines.push(Line::from(""));
+        }
+
+        if !user_servers.is_empty() {
+            let header_text = match &user_servers[0].source {
+                Some(ConfigSource::Global(path)) => format!("    User MCPs ({})", path.display()),
+                _ => "    User MCPs".to_string(),
+            };
+            lines.push(Line::from(Span::styled(
+                header_text,
+                Style::default().fg(theme::MUTED).add_modifier(Modifier::ITALIC),
+            )));
+            render_server_group(&mut lines, &user_servers, cursor, &user_start_offset(servers));
+            lines.push(Line::from(""));
+        }
+
+        if servers.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  No MCP servers configured. Edit .mcp.json or settings.json",
+                Style::default().fg(theme::MUTED),
+            )));
+        }
+
+        // 底部帮助链接
+        lines.push(Line::from(Span::styled(
+            "  https://docs.anthropic.com/en/docs/agents-and-tools/mcp for help",
+            Style::default().fg(theme::MUTED),
+        )));
+
+        (lines, scroll_offset)
+    }; // panel 借用在此结束
+
+    // Phase 2: 写入元数据和渲染（可变借用 app）
     app.core.panel_area = Some(area);
     app.core.panel_scroll_offset = 0;
     app.core.panel_plain_lines = lines
@@ -120,7 +118,7 @@ fn render_server_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     apply_panel_selection(app, &mut lines, area);
 
-    let mut scroll_state = ScrollState::with_offset(0);
+    let mut scroll_state = ScrollState::with_offset(scroll_offset);
     ScrollableArea::new(Text::from(lines))
         .scrollbar_style(Style::default().fg(theme::MUTED))
         .render(f, area, &mut scroll_state);
@@ -171,7 +169,7 @@ fn render_server_group(
 }
 
 fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
-    let (server_name, tools, resources, actions, cursor) = {
+    let (server_name, tools, resources, actions, show_tools, cursor, scroll_offset) = {
         let panel = match app.mcp_panel.as_ref() {
             Some(p) => p,
             None => return,
@@ -181,6 +179,7 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
             tools,
             resources,
             actions,
+            show_tools,
         } = &panel.view
         else {
             return;
@@ -190,7 +189,9 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
             tools.clone(),
             resources.clone(),
             actions.clone(),
+            *show_tools,
             panel.cursor,
+            panel.scroll_offset,
         )
     };
 
@@ -271,6 +272,16 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // Tools 行
     lines.push(detail_line(label_width, "Tools:", &format!("{} tools", tools.len()), Style::default().fg(theme::TEXT)));
 
+    // 展开工具列表
+    if show_tools {
+        for (i, tool) in tools.iter().enumerate() {
+            lines.push(Line::from(Span::styled(
+                format!("      {}. {}", i + 1, tool.name),
+                Style::default().fg(theme::MUTED),
+            )));
+        }
+    }
+
     lines.push(Line::from(""));
 
     // Action 菜单
@@ -279,7 +290,7 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
         let cursor_char = if is_cursor { "❯ " } else { "  " };
         let num = i + 1;
         let label = match action {
-            DetailAction::ViewTools => "View tools",
+            DetailAction::ViewTools => if show_tools { "Hide tools" } else { "View tools" },
             DetailAction::ReAuthenticate => "Re-authenticate",
             DetailAction::ClearAuth => "Clear authentication",
             DetailAction::Reconnect => "Reconnect",
@@ -306,7 +317,7 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     apply_panel_selection(app, &mut lines, area);
 
-    let mut scroll_state = ScrollState::with_offset(0);
+    let mut scroll_state = ScrollState::with_offset(scroll_offset);
     ScrollableArea::new(Text::from(lines))
         .scrollbar_style(Style::default().fg(theme::MUTED))
         .render(f, area, &mut scroll_state);
@@ -338,16 +349,13 @@ fn partition_by_source<'a>(
 }
 
 /// 计算 project 组在 flat servers 列表中的起始偏移
-fn project_start_offset(_app: &App) -> usize {
+fn project_start_offset(_servers: &[ServerInfo]) -> usize {
     0
 }
 
 /// 计算 user 组在 flat servers 列表中的起始偏移
-fn user_start_offset(app: &App) -> usize {
-    app.mcp_panel
-        .as_ref()
-        .map(|p| p.servers.iter().filter(|s| matches!(s.source, Some(ConfigSource::Project(_)))).count())
-        .unwrap_or(0)
+fn user_start_offset(servers: &[ServerInfo]) -> usize {
+    servers.iter().filter(|s| matches!(s.source, Some(ConfigSource::Project(_)))).count()
 }
 
 fn apply_panel_selection(app: &mut App, lines: &mut Vec<Line>, area: Rect) {

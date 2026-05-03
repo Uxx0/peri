@@ -207,6 +207,7 @@ impl MessagePipeline {
             AgentEvent::SubAgentStart {
                 agent_id,
                 task_preview,
+                is_background: _,
             } => {
                 let input = serde_json::json!({"subagent_type": &agent_id, "prompt": &task_preview});
                 let tc_id = format!("subagent_{}", agent_id);
@@ -244,7 +245,9 @@ impl MessagePipeline {
             | AgentEvent::ContextWarning { .. }
             | AgentEvent::OAuthAuthorizationNeeded { .. }
             | AgentEvent::OAuthAuthorizationCompleted { .. }
-            | AgentEvent::OAuthAuthorizationFailed { .. } => {
+            | AgentEvent::OAuthAuthorizationFailed { .. }
+            | AgentEvent::BackgroundTaskCompleted { .. }
+            | AgentEvent::McpActionCompleted { .. } => {
                 vec![PipelineAction::None]
             }
         }
@@ -905,6 +908,7 @@ mod tests {
         let _ = pipeline.handle_event(AgentEvent::SubAgentStart {
             agent_id: "test-agent".into(),
             task_preview: "parallel reads".into(),
+            is_background: false,
         });
 
         // SubAgent 内部并行启动两个 read_file
