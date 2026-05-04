@@ -97,7 +97,24 @@ fn parse_cli_args() -> CliArgs {
                     i += 1;
                 }
             }
-            _ => {}
+            "--help" | "-h" => {
+                eprintln!("peri-dag — DAG workflow engine\n");
+                eprintln!("USAGE:");
+                eprintln!("    peri-dag [OPTIONS]\n");
+                eprintln!("OPTIONS:");
+                eprintln!("    --workflow-dir <DIR>  Watch directory for workflow YAML files");
+                eprintln!("    --help, -h            Show this help message\n");
+                eprintln!("ENVIRONMENT:");
+                eprintln!("    DATABASE_URL  SQLite connection string (default: sqlite:peri-dag.db?mode=rwc)");
+                eprintln!("    PORT          HTTP server port (default: 3000)");
+                eprintln!("    RUST_LOG      Log level (default: info)");
+                std::process::exit(0);
+            }
+            _ => {
+                if args[i].starts_with('-') {
+                    tracing::warn!(arg = %args[i], "unknown argument, try --help");
+                }
+            }
         }
         i += 1;
     }

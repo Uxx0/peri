@@ -201,9 +201,9 @@ fn resolve_path(path: &str, base_dir: &Path) -> String {
     // If the path already contains a directory separator (e.g. "./dir/file.yaml"),
     // treat it as already resolved — don't join with base_dir again.
     let p = Path::new(path);
-    if p.parent().map_or(false, |parent| {
-        parent != Path::new("") && parent != Path::new(".")
-    }) {
+    if p.parent()
+        .is_some_and(|parent| parent != Path::new("") && parent != Path::new("."))
+    {
         return path.to_string();
     }
     base_dir.join(path).to_string_lossy().to_string()

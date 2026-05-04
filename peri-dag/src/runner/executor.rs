@@ -192,6 +192,7 @@ async fn execute_shell_command(
 
 // ─── Agent Execution ──────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn run_agent(
     pool: &SqlitePool,
     node_run_id: &str,

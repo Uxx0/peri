@@ -8,6 +8,21 @@ let refreshTimer = null;
 let dagZoom = 1, dagPanX = 0, dagPanY = 0;
 let dragging = false, dragStart = {};
 
+// ── Toast notifications ──────────────────────────────────────────────
+function showToast(msg, type='error') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.classList.add('fade-out'); setTimeout(() => el.remove(), 300); }, 4000);
+}
+
 // ── Status helpers ──────────────────────────────────────────────────
 const NODE_ICONS = { shell: '\u25B6', agent: '\u2726', reference: '\u21BB' };
 
@@ -43,6 +58,27 @@ function showTemplatePreview(name) {
   document.getElementById('preview-name').textContent = tpl.name;
   document.getElementById('preview-desc').textContent = tpl.description || `v${tpl.version} · ${tpl.node_count} nodes`;
   document.getElementById('preview-run-btn').onclick = () => runTemplate(name);
+
+  // Render inputs form if the template declares inputs
+  const inputsEl = document.getElementById('preview-inputs');
+  const inputs = tpl.inputs || {};
+  const inputKeys = Object.keys(inputs);
+  if (inputKeys.length > 0) {
+    inputsEl.style.display = 'block';
+    inputsEl.innerHTML = '<div class="inputs-title">Inputs</div>' +
+      inputKeys.map(k => {
+        const def = inputs[k];
+        const req = def.required ? ' <span class="req">*</span>' : '';
+        const ph = def.default ? `placeholder="default: ${esc(def.default)}"` : '';
+        return `<div class="input-field">
+          <label>${esc(k)}${req}</label>
+          <input type="text" data-input-key="${esc(k)}" ${ph} value="${esc(def.default || '')}">
+        </div>`;
+      }).join('');
+  } else {
+    inputsEl.style.display = 'none';
+    inputsEl.innerHTML = '';
+  }
 
   const previewNodes = (tpl.nodes || []).map(n => ({
     node_id: n.id, node_type: n.node_type, depends: n.depends, status: 'pending'
@@ -95,16 +131,35 @@ async function loadTemplates() {
 }
 
 async function runTemplate(name) {
+  // Collect inputs from the preview form
+  const inputsEl = document.getElementById('preview-inputs');
+  const inputs = {};
+  if (inputsEl) {
+    inputsEl.querySelectorAll('input[data-input-key]').forEach(inp => {
+      const key = inp.dataset.inputKey;
+      if (inp.value.trim()) inputs[key] = inp.value.trim();
+    });
+  }
+
   try {
-    const r = await fetch(`${API_TPL}/${encodeURIComponent(name)}/run`, { method:'POST' });
+    const r = await fetch(`${API_TPL}/${encodeURIComponent(name)}/run`, {
+      method:'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: Object.keys(inputs).length ? inputs : undefined }),
+    });
     const d = await r.json();
     if (r.ok) {
       selectedRunId = d.run_id;
       showRunView();
       loadRuns();
       selectRun(d.run_id);
+      showToast('Workflow started', 'success');
+    } else {
+      showToast(d.error || 'Failed to start workflow', 'error');
     }
-  } catch(e) {}
+  } catch(e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
 }
 
 // ── Runs ────────────────────────────────────────────────────────────
@@ -124,6 +179,7 @@ async function loadRuns() {
           <span>v${esc(run.workflow_version)}</span>
           <span>${run.node_count} nodes</span>
           <span>${fmtTime(run.created_at)}</span>
+          <span>${fmtDuration(run.started_at, run.finished_at)}</span>
         </div>
       </div>`;
     }).join('');
@@ -300,7 +356,7 @@ function renderLogs(run) {
   const panel = document.getElementById('log-panel');
   if (!nodes.length) { panel.innerHTML = '<div class="log-empty">No nodes</div>'; return; }
 
-  panel.innerHTML = `<h3>${statusBadge(run.status)} ${esc(run.workflow_name)}</h3>` +
+  panel.innerHTML = `<h3>${statusBadge(run.status)} ${esc(run.workflow_name)} <span style="font-weight:400">${fmtDuration(run.started_at, run.finished_at)}</span></h3>` +
     nodes.map(n => {
       const isFailed = n.status === 'failed';
       const hasError = !!n.error_message;
@@ -359,6 +415,17 @@ async function fetchLogs(nodeRunId, el) {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 function fmtTime(t) { if(!t)return'-'; const d=new Date(t); return d.toLocaleTimeString(); }
+function fmtDuration(start, end) {
+  if (!start) return '';
+  const s = new Date(start);
+  const e = end ? new Date(end) : new Date();
+  const ms = e - s;
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  const m = Math.floor(ms / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  return m + 'm ' + sec + 's';
+}
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function basename(p) { return (p||'').split('/').pop(); }
 

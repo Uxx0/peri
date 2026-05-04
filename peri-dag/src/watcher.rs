@@ -95,6 +95,25 @@ async fn run_scan(
                     })
                     .collect();
 
+                let tpl_inputs: std::collections::HashMap<String, crate::api::TemplateInputDef> =
+                    wf.inputs
+                        .iter()
+                        .map(|(k, def)| {
+                            (
+                                k.clone(),
+                                crate::api::TemplateInputDef {
+                                    input_type: match def.input_type {
+                                        crate::schema::InputType::String => "string".to_string(),
+                                        crate::schema::InputType::Number => "number".to_string(),
+                                        crate::schema::InputType::Boolean => "boolean".to_string(),
+                                    },
+                                    default: def.default.clone(),
+                                    required: def.required,
+                                },
+                            )
+                        })
+                        .collect();
+
                 template_list.push(WorkflowTemplate {
                     name: name.clone(),
                     version,
@@ -102,6 +121,7 @@ async fn run_scan(
                     node_count: wf.nodes.len(),
                     file_path: file_path.clone(),
                     nodes: tpl_nodes,
+                    inputs: tpl_inputs,
                 });
 
                 if first {

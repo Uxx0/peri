@@ -1,0 +1,34 @@
+# 通知子 workflow —— 发送消息到指定频道
+# 可被其他 workflow 通过 reference 引用
+#
+# 用法（在父 workflow 中）:
+#   references:
+#     notify: "./notify.yaml"
+#   nodes:
+#     - id: send-alert
+#       type: reference
+#       ref: notify
+#       with:
+#         channel: "#deploy"
+#         message: "Deploy done"
+
+name: notify
+version: "1.0"
+description: "Send notification to a channel"
+
+inputs:
+  channel:
+    type: string
+    required: true
+  message:
+    type: string
+    required: true
+  level:
+    type: string
+    default: "info"
+
+nodes:
+  - id: send
+    type: shell
+    run: |
+      echo "[{{ inputs.level }}] Sending to {{ inputs.channel }}: {{ inputs.message }}"

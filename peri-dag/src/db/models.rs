@@ -239,6 +239,13 @@ pub struct SubmitWorkflowRequest {
     pub inputs: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RunTemplateRequest {
+    /// Runtime input values for the workflow.
+    #[serde(default)]
+    pub inputs: Option<HashMap<String, String>>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SubmitWorkflowResponse {
     pub run_id: String,

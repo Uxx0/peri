@@ -70,7 +70,7 @@ async fn execute_dag(
             let deps_ready = node_depends(node).iter().all(|dep| {
                 node_index
                     .get(dep.as_str())
-                    .map_or(false, |&di| completed.contains(&di))
+                    .is_some_and(|&di| completed.contains(&di))
             });
 
             if !deps_ready {

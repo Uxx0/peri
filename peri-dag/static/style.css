@@ -80,11 +80,33 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; backg
 #preview-header {
   display:none; padding:10px 16px; border-bottom:1px solid var(--border);
   background:var(--bg2); align-items:center; gap:12px; flex-shrink:0;
+  flex-wrap: wrap;
 }
 #preview-header.visible { display:flex; }
-#preview-header .info { flex:1; }
+#preview-header .info { flex:1; min-width: 200px; }
 #preview-header .info h2 { font-size:14px; font-weight:600; margin-bottom:2px; }
 #preview-header .info p { font-size:11px; color:var(--text2); }
+#preview-inputs { display:none; flex-basis: 100%; margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+.inputs-title { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; width: 100%; }
+.input-field { display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
+.input-field label { font-size: 10px; color: var(--text2); font-weight: 600; }
+.input-field label .req { color: #cf222e; }
+.input-field input {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  font-size: 12px; font-family: inherit; background: var(--bg);
+}
+
+/* Toast notifications */
+#toast-container { position: fixed; top: 12px; right: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 6px; }
+.toast {
+  padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  max-width: 360px; animation: slideIn 0.2s ease-out;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.toast-error { background: #ffebe9; color: #cf222e; border: 1px solid #ffc0c7; }
+.toast-success { background: #dafbe1; color: #1a7f37; border: 1px solid #a7f0ba; }
+.toast.fade-out { opacity: 0; transition: opacity 0.3s; }
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* Logs panel */
 #log-panel { flex:1; overflow:auto; padding:12px 16px 16px; }

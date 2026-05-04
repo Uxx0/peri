@@ -1,0 +1,88 @@
+# 完整 CI Pipeline —— 演示 workflow 引用的所有用法
+#
+# 用法:
+#   peri-dag --workflow-dir examples/ ci-pipeline
+#   或通过 API:
+#     POST /api/v1/workflows  { "yaml": "<yaml content>", "inputs": { "tag": "v1.2.3" } }
+
+name: ci-pipeline
+version: "1.0"
+description: "Full CI pipeline demonstrating workflow references"
+
+references:
+  build: "./build-lib.yaml"
+  notify: "./notify.yaml"
+
+inputs:
+  tag:
+    type: string
+    required: true
+  repo:
+    type: string
+    default: "https://github.com/org/repo.git"
+  env:
+    type: string
+    default: "staging"
+
+env:
+  DEPLOY_ENV: "{{ inputs.env }}"
+  CI: "true"
+
+defaults:
+  timeout: 120
+
+nodes:
+  # ── 引用 build-lib 子 workflow ──────────────────────────────────
+  #   with 中的模板变量在执行时解析（使用父级 inputs 上下文）
+  #   展开后生成: do-build/checkout → do-build/build → do-build/test
+  - id: do-build
+    type: reference
+    ref: build
+    with:
+      repo_url: "{{ inputs.repo }}"
+      branch: "{{ inputs.tag }}"
+    continue_on_error: false
+
+  # ── 引用 notify 子 workflow（构建成功通知）────────────────────
+  #   depends: [do-build] → 展开后等待 do-build 下所有出口节点完成
+  #   即 do-build/test（build-lib 中没有后续依赖的节点）
+  - id: notify-build-ok
+    type: reference
+    ref: notify
+    with:
+      channel: "#ci"
+      message: "Build {{ inputs.tag }} passed"
+    depends: [do-build]
+
+  # ── 部署节点 ────────────────────────────────────────────────────
+  #   depends: [do-build/build] → 跨边界引用子节点的特定节点
+  #   只等 build 完成，不需要等 test（并行部署和测试）
+  - id: deploy
+    type: shell
+    run: |
+      echo "Deploying {{ inputs.tag }} to {{ inputs.env }}"
+      echo "Artifact: {{ needs.do-build/build.artifact_path }}"
+      # 实际部署脚本...
+    depends: [do-build/build]
+    env:
+      DEPLOY_TAG: "{{ inputs.tag }}"
+
+  # ── 代码审查（agent 节点）──────────────────────────────────────
+  #   cwd 使用子 workflow checkout 节点的输出
+  - id: review
+    type: agent
+    prompt: "Review the changes in this PR for tag {{ inputs.tag }}"
+    model: sonnet
+    cwd: "{{ needs.do-build/checkout.repo_dir }}"
+    depends: [do-build/checkout]
+
+  # ── 最终通知 ────────────────────────────────────────────────────
+  #   同时等待 deploy 和 review 完成
+  - id: notify-done
+    type: reference
+    ref: notify
+    with:
+      channel: "#ci"
+      message: "Pipeline for {{ inputs.tag }} completed"
+      level: "info"
+    depends: [deploy, review, notify-build-ok]

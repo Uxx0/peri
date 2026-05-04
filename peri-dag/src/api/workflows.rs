@@ -24,6 +24,19 @@ pub struct WorkflowTemplate {
     pub node_count: usize,
     pub file_path: String,
     pub nodes: Vec<TemplateNodeInfo>,
+    #[serde(default)]
+    pub inputs: std::collections::HashMap<String, TemplateInputDef>,
+}
+
+/// Input definition exposed to the frontend for rendering input forms.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TemplateInputDef {
+    #[serde(rename = "type")]
+    pub input_type: String,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub required: bool,
 }
 
 /// Lightweight node info for template preview rendering.
@@ -250,7 +263,9 @@ pub async fn list_templates(State(state): State<Arc<AppState>>) -> impl IntoResp
 pub async fn run_template(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
+    body: Option<Json<crate::db::RunTemplateRequest>>,
 ) -> impl IntoResponse {
+    let inputs_opt = body.and_then(|Json(b)| b.inputs);
     let templates = state.templates.read().unwrap().clone();
     let template = match templates.iter().find(|t| t.name == name) {
         Some(t) => t.clone(),
@@ -282,8 +297,8 @@ pub async fn run_template(
         }
     };
 
-    // Templates use defaults (no user-provided inputs)
-    let inputs = validate_inputs(&wf.inputs, &None).unwrap_or_default();
+    // Validate and apply inputs from request body
+    let inputs = validate_inputs(&wf.inputs, &inputs_opt).unwrap_or_default();
 
     // Load and expand references
     let expanded_wf = match runner::load_workflow(&template.file_path, inputs).await {
@@ -376,6 +391,25 @@ fn validate_inputs(
 
     for (key, def) in declared {
         if let Some(val) = provided.and_then(|p| p.get(key)) {
+            // Type validation
+            match def.input_type {
+                crate::schema::InputType::Number => {
+                    if val.parse::<f64>().is_err() {
+                        anyhow::bail!("input '{}' must be a number, got '{}'", key, val);
+                    }
+                }
+                crate::schema::InputType::Boolean => {
+                    let lower = val.to_lowercase();
+                    if !matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no") {
+                        anyhow::bail!(
+                            "input '{}' must be a boolean (true/false), got '{}'",
+                            key,
+                            val
+                        );
+                    }
+                }
+                crate::schema::InputType::String => {}
+            }
             result.insert(key.clone(), val.clone());
         } else if let Some(default) = &def.default {
             result.insert(key.clone(), default.clone());
@@ -385,4 +419,118 @@ fn validate_inputs(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{InputDef, InputType};
+    use std::collections::HashMap;
+
+    fn make_input_def(input_type: InputType, required: bool, default: Option<&str>) -> InputDef {
+        InputDef {
+            input_type,
+            required,
+            default: default.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_validate_inputs_string_ok() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "name".to_string(),
+            make_input_def(InputType::String, true, None),
+        );
+        let mut provided = HashMap::new();
+        provided.insert("name".to_string(), "hello".to_string());
+        let result = validate_inputs(&declared, &Some(provided)).unwrap();
+        assert_eq!(result.get("name").unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_validate_inputs_number_ok() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "count".to_string(),
+            make_input_def(InputType::Number, true, None),
+        );
+        let mut provided = HashMap::new();
+        provided.insert("count".to_string(), "42".to_string());
+        let result = validate_inputs(&declared, &Some(provided)).unwrap();
+        assert_eq!(result.get("count").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_validate_inputs_number_invalid() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "count".to_string(),
+            make_input_def(InputType::Number, true, None),
+        );
+        let mut provided = HashMap::new();
+        provided.insert("count".to_string(), "abc".to_string());
+        let err = validate_inputs(&declared, &Some(provided)).unwrap_err();
+        assert!(err.to_string().contains("must be a number"));
+    }
+
+    #[test]
+    fn test_validate_inputs_boolean_ok() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "flag".to_string(),
+            make_input_def(InputType::Boolean, true, None),
+        );
+        for val in &["true", "false", "yes", "no", "1", "0", "True", "FALSE"] {
+            let mut provided = HashMap::new();
+            provided.insert("flag".to_string(), val.to_string());
+            assert!(validate_inputs(&declared, &Some(provided)).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_inputs_boolean_invalid() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "flag".to_string(),
+            make_input_def(InputType::Boolean, true, None),
+        );
+        let mut provided = HashMap::new();
+        provided.insert("flag".to_string(), "maybe".to_string());
+        let err = validate_inputs(&declared, &Some(provided)).unwrap_err();
+        assert!(err.to_string().contains("must be a boolean"));
+    }
+
+    #[test]
+    fn test_validate_inputs_required_missing() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "tag".to_string(),
+            make_input_def(InputType::String, true, None),
+        );
+        let err = validate_inputs(&declared, &None).unwrap_err();
+        assert!(err.to_string().contains("required input 'tag'"));
+    }
+
+    #[test]
+    fn test_validate_inputs_default_applied() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "env".to_string(),
+            make_input_def(InputType::String, false, Some("staging")),
+        );
+        let result = validate_inputs(&declared, &None).unwrap();
+        assert_eq!(result.get("env").unwrap(), "staging");
+    }
+
+    #[test]
+    fn test_validate_inputs_optional_not_provided() {
+        let mut declared = HashMap::new();
+        declared.insert(
+            "extra".to_string(),
+            make_input_def(InputType::String, false, None),
+        );
+        let result = validate_inputs(&declared, &None).unwrap();
+        assert!(result.get("extra").is_none());
+    }
 }
