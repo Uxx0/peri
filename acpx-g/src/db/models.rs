@@ -378,7 +378,8 @@ impl From<WorkflowRun> for WorkflowRunResponse {
         let inputs = r
             .inputs
             .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
+            .and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok())
+            .map(mask_sensitive_inputs);
         Self {
             id: r.id,
             workflow_name: r.workflow_name,
@@ -393,6 +394,34 @@ impl From<WorkflowRun> for WorkflowRunResponse {
             nodes: vec![],
         }
     }
+}
+
+/// Mask values of inputs whose keys look like secrets (key, secret, token, password, credential, api_key, etc.).
+fn mask_sensitive_inputs(inputs: HashMap<String, String>) -> serde_json::Value {
+    let sensitive_patterns = [
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "credential",
+        "private_key",
+        "access_key",
+        "auth",
+    ];
+    let mut map = serde_json::Map::new();
+    for (k, v) in inputs {
+        let lower = k.to_lowercase();
+        let is_sensitive = sensitive_patterns
+            .iter()
+            .any(|pattern| lower.contains(pattern));
+        if is_sensitive {
+            map.insert(k, serde_json::Value::String("***".to_string()));
+        } else {
+            map.insert(k, serde_json::Value::String(v));
+        }
+    }
+    serde_json::Value::Object(map)
 }
 
 impl From<NodeRun> for NodeRunResponse {
@@ -430,4 +459,70 @@ pub struct ListRunsResponse {
     pub total: i64,
     pub page: i64,
     pub per_page: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mask_sensitive_inputs_password() {
+        let mut inputs = HashMap::new();
+        inputs.insert("password".to_string(), "hunter2".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["password"], "***");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_api_key() {
+        let mut inputs = HashMap::new();
+        inputs.insert("api_key".to_string(), "sk-abc123".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["api_key"], "***");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_token() {
+        let mut inputs = HashMap::new();
+        inputs.insert("auth_token".to_string(), "bearer xyz".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["auth_token"], "***");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_normal_value() {
+        let mut inputs = HashMap::new();
+        inputs.insert("env".to_string(), "production".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["env"], "production");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_mixed() {
+        let mut inputs = HashMap::new();
+        inputs.insert("deploy_env".to_string(), "staging".to_string());
+        inputs.insert("secret_key".to_string(), "top-secret".to_string());
+        inputs.insert("tag".to_string(), "v1.0".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["deploy_env"], "staging");
+        assert_eq!(result["secret_key"], "***");
+        assert_eq!(result["tag"], "v1.0");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_case_insensitive() {
+        let mut inputs = HashMap::new();
+        inputs.insert("API_KEY".to_string(), "secret".to_string());
+        inputs.insert("Password".to_string(), "secret".to_string());
+        let result = mask_sensitive_inputs(inputs);
+        assert_eq!(result["API_KEY"], "***");
+        assert_eq!(result["Password"], "***");
+    }
+
+    #[test]
+    fn test_mask_sensitive_inputs_empty() {
+        let inputs = HashMap::new();
+        let result = mask_sensitive_inputs(inputs);
+        assert!(result.as_object().unwrap().is_empty());
+    }
 }

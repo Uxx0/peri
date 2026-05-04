@@ -476,7 +476,7 @@ pub async fn get_workflow(
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "workflow run not found"})),
+            Json(serde_json::json!({"error": format!("workflow run '{}' not found", run_id)})),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -505,7 +505,9 @@ pub async fn get_node_logs(
         ),
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "node not found in this run"})),
+            Json(
+                serde_json::json!({"error": format!("node '{}' not found in run '{}'", node_id, run_id)}),
+            ),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -541,7 +543,7 @@ pub async fn delete_workflow_run(
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "workflow run not found"})),
+            Json(serde_json::json!({"error": format!("workflow run '{}' not found", run_id)})),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -610,7 +612,7 @@ pub async fn cancel_workflow_run(
         }
         Ok(None) => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "workflow run not found"})),
+            Json(serde_json::json!({"error": format!("workflow run '{}' not found", run_id)})),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -631,7 +633,7 @@ pub async fn rerun_workflow(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "workflow run not found"})),
+                Json(serde_json::json!({"error": format!("workflow run '{}' not found", run_id)})),
             )
         }
         Err(e) => {
@@ -740,7 +742,7 @@ pub async fn run_template(
         None => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "template not found"})),
+                Json(serde_json::json!({"error": format!("template '{}' not found", name)})),
             );
         }
     };

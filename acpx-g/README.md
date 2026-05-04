@@ -32,8 +32,11 @@ The server serves a single-page application from `static/` with:
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/v1/workflows` | Submit and execute a workflow |
-| `GET` | `/api/v1/workflows` | List recent workflow runs (last 50) |
+| `GET` | `/api/v1/workflows` | List workflow runs (paginated) |
 | `GET` | `/api/v1/workflows/{run_id}` | Get run details + all node statuses |
+| `DELETE` | `/api/v1/workflows/{run_id}` | Delete a completed workflow run |
+| `POST` | `/api/v1/workflows/{run_id}/cancel` | Cancel a running/pending workflow |
+| `POST` | `/api/v1/workflows/{run_id}/rerun` | Re-run a workflow with optional input overrides |
 | `GET` | `/api/v1/workflows/{run_id}/nodes/{node_id}/logs` | Get node stdout/stderr |
 | `GET` | `/api/v1/templates` | List discovered workflow templates |
 | `POST` | `/api/v1/templates/{name}/run` | Run a template by name (with inputs) |
@@ -84,6 +87,45 @@ Response:
     { "node_id": "greet", "node_type": "shell", "status": "success", "stdout": "hello world\n" }
   ]
 }
+```
+
+### Cancel a Running Workflow
+
+```bash
+curl -X POST http://localhost:3000/api/v1/workflows/0193.../cancel
+```
+
+Response:
+```json
+{ "status": "cancelled", "run_id": "0193..." }
+```
+
+### Re-run a Workflow
+
+```bash
+# Re-run with original inputs
+curl -X POST http://localhost:3000/api/v1/workflows/0193.../rerun
+
+# Re-run with input overrides
+curl -X POST http://localhost:3000/api/v1/workflows/0193.../rerun \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"env": "production"}}'
+```
+
+Response:
+```json
+{ "run_id": "0194...", "status": "pending", "rerun_of": "0193..." }
+```
+
+### Delete a Workflow Run
+
+```bash
+curl -X DELETE http://localhost:3000/api/v1/workflows/0193...
+```
+
+Response:
+```json
+{ "deleted": "0193..." }
 ```
 
 ## Workflow Schema
@@ -145,6 +187,20 @@ nodes:
       default: "./scripts/deploy.sh"
     depends: [build]
 
+  # Conditional execution: only run when env is "production"
+  - id: deploy-prod
+    type: shell
+    if: "{{ inputs.env }} == production"
+    depends: [deploy]
+    run: "./scripts/deploy-prod.sh"
+
+  # Continue even if this node fails
+  - id: notify
+    type: shell
+    depends: [deploy-prod]
+    continue_on_error: true
+    run: "echo 'Deployment complete'"
+
   # Agent: wraps acpx CLI (default subcommand: "peri")
   - id: review
     type: agent
@@ -178,7 +234,7 @@ Workflow inputs support type checking:
 |------|------------|
 | `string` | Accepted as-is |
 | `number` | Parsed as f64, rejects non-numeric |
-| `boolean` | Accepts `true`/`false` (string or bool) |
+| `boolean` | Accepts `true`/`false`/`yes`/`no`/`1`/`0` (case-insensitive) |
 
 Inputs with `required: true` and no `default` must be provided when submitting. Missing required inputs return a `400` error.
 
@@ -189,6 +245,51 @@ Inputs with `required: true` and no `default` must be provided when submitting. 
 | `shell` | Execute inline script, external file, or platform-specific scripts |
 | `agent` | Wrap `acpx` CLI as a node. Fields: `prompt` (required), `agent` (CLI subcommand, default `"peri"`), `model`, `cwd` |
 | `reference` | Call another workflow by alias (local path or HTTPS URL) |
+
+### Node Execution Options
+
+All node types support these optional execution controls:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `timeout` | integer | — | Max execution time in seconds. Exceeded → node fails |
+| `retry` | integer | `0` | Number of retries on failure (exponential backoff: 1s, 2s, 4s...) |
+| `if` | string | — | Conditional execution. Template expression evaluated at runtime; falsy → node is skipped |
+| `continue_on_error` | boolean | `false` | If `true`, downstream nodes execute even when this node fails |
+| `depends` | string[] | `[]` | List of node IDs that must complete before this node runs |
+| `shell` | string | `"sh"` | Shell command for `run` (e.g. `"bash -c"`) |
+
+**Conditional execution** (`if` field): supports truthiness evaluation and comparison operators:
+- Truthy: any non-empty value except `false`, `0`, `no`
+- Comparisons: `{{ inputs.env }} == production`, `{{ inputs.tag }} != v0`
+- Unresolved template variables (missing inputs) evaluate to empty string (falsy)
+
+**Example** (`examples/error-handling.yaml`):
+```yaml
+defaults:
+  retry: 0
+  timeout: 60
+
+nodes:
+  - id: checkout
+    type: shell
+    retry: 2              # retry up to 2 times for flaky networks
+
+  - id: build
+    type: shell
+    depends: [checkout]
+    timeout: 30           # 30-second timeout
+
+  - id: test
+    type: shell
+    depends: [build]
+    continue_on_error: true  # downstream nodes still run if tests fail
+
+  - id: deploy-prod
+    type: shell
+    if: "{{ inputs.deploy_env }} == production"  # only in production
+    depends: [test]
+```
 
 ### Script / Prompt Sources
 
