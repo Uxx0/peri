@@ -1071,11 +1071,6 @@ fn handle_thread_browser(app: &mut App, input: Input) {
                 .panel_area
                 .map(|a| a.height.saturating_sub(1))
                 .unwrap_or(10);
-            let visible = app.sessions[app.active]
-                .core
-                .panel_area
-                .map(|a| a.height.saturating_sub(1))
-                .unwrap_or(10);
             if let Some(b) = app.sessions[app.active].core.thread_browser.as_mut() {
                 b.move_cursor(1);
                 let visual_row = b.cursor as u16 * 3;

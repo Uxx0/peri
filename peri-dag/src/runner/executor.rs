@@ -29,7 +29,7 @@ pub async fn execute_node(
     let result = match node {
         NodeDef::Shell(shell) => {
             // Interpolate script content
-            let resolved = shell.run.resolve(platform);
+            let resolved = shell.run.resolve(platform)?;
             let raw_script = load_script(&resolved)?;
             let script = interpolate(&raw_script, ctx);
             let env = build_env(&shell.env, ctx);
@@ -44,7 +44,7 @@ pub async fn execute_node(
             .await
         }
         NodeDef::Agent(agent) => {
-            let resolved = agent.prompt.resolve(platform);
+            let resolved = agent.prompt.resolve(platform)?;
             let raw_prompt = load_prompt(&resolved)?;
             let prompt = interpolate(&raw_prompt, ctx);
             let cwd = agent.cwd.as_deref().map(|c| interpolate(c, ctx));

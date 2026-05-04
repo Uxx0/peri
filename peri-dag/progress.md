@@ -48,3 +48,23 @@ Template 卡片上的 Run 按钮直接调用 `runTemplate()`，没经过 inputs 
 
 **6. 三处重复 workflow 提交代码（低优先级）**
 `submit_workflow`、`run_template`、`submit_workflow_from_file` 有完全相同的 run 创建+node 插入+执行启动逻辑。抽取 `create_and_start_run()` 共享函数，消除约 60 行重复代码。
+
+## 2026-05-04 Round 3
+
+### 发现并修复的问题
+
+**1. PlatformFiles::resolve panic 导致服务崩溃（高优先级）**
+`PlatformFiles::resolve()` 在平台不匹配时 `panic!`，直接崩溃整个进程。改为返回 `anyhow::Result<String>`，让错误沿 executor 传播为节点失败，而非服务终止。同步更新 `ScriptSource::resolve` 和 `PromptSource::resolve` 的签名。
+
+**2. 模板卡片内联 JS 单引号注入（高优先级）**
+模板名含单引号时 `onclick="showTemplatePreview('name')"` 断开 JS 字符串，导致功能崩溃甚至 XSS。改用 `data-name` 属性 + `addEventListener` 事件委托，彻底消除字符串拼接注入风险。
+
+**3. DAG 图每次渲染重置缩放（中等优先级）**
+`renderGraph` 每次都设 `dagZoom=1/dagPanX=0/dagPanY=0`，运行中的 run 刷新时用户缩放被重置。改为只在节点数变化时重置（切换 run/template），刷新更新保留缩放状态。
+
+**4. 模板区域无标题（低优先级）**
+Templates 区域没有标题 header，Runs 区域有。新用户不知道上面是什么区域。添加了 Templates 标题 header。
+
+### 测试覆盖
+- 新增 5 个 schema 测试（PlatformFiles 匹配/默认/错误、ScriptSource inline/file）
+- 总计 29 个测试全部通过

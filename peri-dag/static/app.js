@@ -107,7 +107,7 @@ async function loadTemplates() {
       return;
     }
     el.innerHTML = tpls.map(t => `
-      <div class="template-card${selectedTemplateName===t.name?' active':''}" data-name="${esc(t.name)}" onclick="showTemplatePreview('${esc(t.name)}')">
+      <div class="template-card${selectedTemplateName===t.name?' active':''}" data-name="${esc(t.name)}">
         <div class="template-name">${esc(t.name)}</div>
         <div class="template-desc">${esc(t.description || 'No description')}</div>
         <div class="template-meta">
@@ -115,11 +115,22 @@ async function loadTemplates() {
           <span class="tag">${t.node_count} nodes</span>
           <span class="tag" title="${esc(t.file_path)}">${esc(basename(t.file_path))}</span>
         </div>
-        <div class="template-actions" onclick="event.stopPropagation()">
-          <button class="btn btn-primary btn-sm" onclick="runTemplateFromCard('${esc(t.name)}')">&#9654; Run</button>
+        <div class="template-actions">
+          <button class="btn btn-primary btn-sm run-btn" data-name="${esc(t.name)}">&#9654; Run</button>
         </div>
       </div>
     `).join('');
+
+    // Event delegation for template cards
+    el.querySelectorAll('.template-card').forEach(card => {
+      card.addEventListener('click', () => showTemplatePreview(card.dataset.name));
+    });
+    el.querySelectorAll('.run-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        runTemplateFromCard(btn.dataset.name);
+      });
+    });
 
     // Auto-select first template on initial load
     if (!selectedRunId && !selectedTemplateName) {
@@ -266,7 +277,13 @@ function renderGraph(nodes, runCtx) {
   const totalW = maxPerLevel * (NODE_W + NODE_GAP) - NODE_GAP + PAD * 2;
   const totalH = levels.length * (NODE_H + LEVEL_GAP) - LEVEL_GAP + PAD * 2;
 
-  dagZoom = 1; dagPanX = 0; dagPanY = 0;
+  // Only reset zoom/pan when switching between different content (run vs template)
+  const prevNodes = svgEl.dataset.nodeCount || '';
+  const curNodes = String(nodes.length);
+  if (prevNodes !== curNodes) {
+    dagZoom = 1; dagPanX = 0; dagPanY = 0;
+    svgEl.dataset.nodeCount = curNodes;
+  }
 
   const pos = {};
   levels.forEach((level, li) => {

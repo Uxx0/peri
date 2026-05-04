@@ -342,34 +342,34 @@ impl Platform {
 
 impl ScriptSource {
     /// 根据当前平台解析出最终要执行的脚本内容或文件路径。
-    pub fn resolve(&self, platform: Platform) -> ResolvedScript {
+    pub fn resolve(&self, platform: Platform) -> anyhow::Result<ResolvedScript> {
         match self {
-            ScriptSource::Inline(s) => ResolvedScript::Inline(s.clone()),
-            ScriptSource::File(f) => ResolvedScript::File(f.file.clone()),
+            ScriptSource::Inline(s) => Ok(ResolvedScript::Inline(s.clone())),
+            ScriptSource::File(f) => Ok(ResolvedScript::File(f.file.clone())),
             ScriptSource::Platform(pf) => {
-                let path = pf.resolve(platform);
-                ResolvedScript::File(path)
+                let path = pf.resolve(platform)?;
+                Ok(ResolvedScript::File(path))
             }
         }
     }
 }
 
 impl PromptSource {
-    pub fn resolve(&self, platform: Platform) -> ResolvedPrompt {
+    pub fn resolve(&self, platform: Platform) -> anyhow::Result<ResolvedPrompt> {
         match self {
-            PromptSource::Inline(s) => ResolvedPrompt::Inline(s.clone()),
-            PromptSource::File(f) => ResolvedPrompt::File(f.file.clone()),
+            PromptSource::Inline(s) => Ok(ResolvedPrompt::Inline(s.clone())),
+            PromptSource::File(f) => Ok(ResolvedPrompt::File(f.file.clone())),
             PromptSource::Platform(pf) => {
-                let path = pf.resolve(platform);
-                ResolvedPrompt::File(path)
+                let path = pf.resolve(platform)?;
+                Ok(ResolvedPrompt::File(path))
             }
         }
     }
 }
 
 impl PlatformFiles {
-    /// 按优先级匹配：当前 OS → default → 报错。
-    pub fn resolve(&self, platform: Platform) -> String {
+    /// 按优先级匹配：当前 OS → default → 错误。
+    pub fn resolve(&self, platform: Platform) -> anyhow::Result<String> {
         let key = match platform {
             Platform::Linux => &self.linux,
             Platform::MacOs => &self.macos,
@@ -377,15 +377,15 @@ impl PlatformFiles {
         };
 
         if let Some(path) = key {
-            return path.clone();
+            return Ok(path.clone());
         }
         if let Some(path) = &self.default {
-            return path.clone();
+            return Ok(path.clone());
         }
-        panic!(
+        Err(anyhow::anyhow!(
             "no script defined for platform {:?} and no default fallback",
             platform
-        );
+        ))
     }
 }
 
@@ -403,4 +403,65 @@ pub enum ResolvedScript {
 pub enum ResolvedPrompt {
     Inline(String),
     File(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_platform_files_resolve_matching() {
+        let pf = PlatformFiles {
+            linux: Some("./linux.sh".to_string()),
+            macos: Some("./mac.sh".to_string()),
+            windows: None,
+            default: None,
+        };
+        assert_eq!(pf.resolve(Platform::Linux).unwrap(), "./linux.sh");
+        assert_eq!(pf.resolve(Platform::MacOs).unwrap(), "./mac.sh");
+    }
+
+    #[test]
+    fn test_platform_files_resolve_default_fallback() {
+        let pf = PlatformFiles {
+            linux: None,
+            macos: None,
+            windows: None,
+            default: Some("./default.sh".to_string()),
+        };
+        assert_eq!(pf.resolve(Platform::Linux).unwrap(), "./default.sh");
+    }
+
+    #[test]
+    fn test_platform_files_resolve_no_match_error() {
+        let pf = PlatformFiles {
+            linux: Some("./linux.sh".to_string()),
+            macos: None,
+            windows: None,
+            default: None,
+        };
+        assert!(pf.resolve(Platform::Windows).is_err());
+    }
+
+    #[test]
+    fn test_script_source_inline() {
+        let src = ScriptSource::Inline("echo hello".to_string());
+        let resolved = src.resolve(Platform::Linux).unwrap();
+        match resolved {
+            ResolvedScript::Inline(s) => assert_eq!(s, "echo hello"),
+            _ => panic!("expected Inline"),
+        }
+    }
+
+    #[test]
+    fn test_script_source_file() {
+        let src = ScriptSource::File(FileSource {
+            file: "./script.sh".to_string(),
+        });
+        let resolved = src.resolve(Platform::MacOs).unwrap();
+        match resolved {
+            ResolvedScript::File(p) => assert_eq!(p, "./script.sh"),
+            _ => panic!("expected File"),
+        }
+    }
 }

@@ -49,7 +49,7 @@ pub enum InteractionPrompt {
 use crate::ui::theme;
 use ratatui::style::Style;
 use ratatui::text::Span;
-use rust_agent_middlewares::prelude::{HitlDecision, TodoItem};
+use rust_agent_middlewares::prelude::HitlDecision;
 use rust_create_agent::agent::react::AgentInput;
 use rust_create_agent::agent::AgentCancellationToken;
 use rust_create_agent::messages::{BaseMessage, ContentBlock, MessageContent};
