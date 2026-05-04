@@ -278,8 +278,6 @@ impl crate::app::App {
 
     /// 切换服务器的 disabled 状态
     fn mcp_panel_toggle_disabled(&mut self, server_name: &str, disabled: bool) {
-        use rust_agent_middlewares::mcp::ClientStatus;
-
         // 持久化 disabled 字段到配置文件
         let _ = rust_agent_middlewares::mcp::set_server_disabled(
             std::path::Path::new(&self.cwd),
