@@ -140,8 +140,9 @@ fn render_server_group(
                 Style::default().fg(theme::WARNING),
                 "needs authentication",
             ),
-            (ClientStatus::Failed(_), _) => ("◯", Style::default().fg(theme::MUTED), "disabled"),
-            (ClientStatus::Disconnected, _) => ("◯", Style::default().fg(theme::MUTED), "disabled"),
+            (ClientStatus::Failed(_), _) => ("✗", Style::default().fg(theme::ERROR), "error"),
+            (ClientStatus::Disabled, _) => ("◯", Style::default().fg(theme::MUTED), "disabled"),
+            (ClientStatus::Disconnected, _) => ("◯", Style::default().fg(theme::MUTED), "offline"),
         };
 
         let name_style = if is_cursor {
@@ -216,13 +217,16 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
     if let Some(info) = server_info {
         let (status_icon, status_style) = match (&info.status, &info.oauth_status) {
             (ClientStatus::Connected, _) => ("✔", Style::default().fg(theme::SAGE)),
+            (ClientStatus::Disabled, _) => ("⊘", Style::default().fg(theme::MUTED)),
             (_, OAuthStatus::NeedsAuthorization) => ("△", Style::default().fg(theme::WARNING)),
             _ => ("◯", Style::default().fg(theme::MUTED)),
         };
         let status_label = match (&info.status, &info.oauth_status) {
             (ClientStatus::Connected, _) => "connected",
+            (ClientStatus::Disabled, _) => "disabled",
             (_, OAuthStatus::NeedsAuthorization) => "needs authentication",
-            _ => "disabled",
+            (ClientStatus::Failed(_), _) => "error",
+            (ClientStatus::Disconnected, _) => "offline",
         };
         lines.push(detail_line(
             label_width,
@@ -330,6 +334,7 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
             DetailAction::ClearAuth => "Clear authentication",
             DetailAction::Reconnect => "Reconnect",
             DetailAction::Disable => "Disable",
+            DetailAction::Enable => "Enable",
         };
         let style = if is_cursor {
             Style::default()

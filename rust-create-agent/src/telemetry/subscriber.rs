@@ -44,8 +44,9 @@ pub fn init_tracing(service_name: &str) -> TracingGuard {
             }
         }
         None => {
-            // TUI 应用默认将日志写到 /tmp/{service_name}.log，避免干扰终端界面
-            let default_path = format!("/tmp/{}.log", service_name);
+            // TUI 应用默认将日志写到系统临时目录，避免干扰终端界面
+            let default_path = std::env::temp_dir().join(format!("{}.log", service_name));
+            let default_path = default_path.to_string_lossy().to_string();
             let file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)

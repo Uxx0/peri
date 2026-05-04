@@ -1,4 +1,4 @@
-use rust_agent_middlewares::mcp::{Resource, ServerInfo, Tool};
+use rust_agent_middlewares::mcp::{ClientStatus, Resource, ServerInfo, Tool};
 
 use super::AgentEvent;
 
@@ -13,8 +13,10 @@ pub enum DetailAction {
     ClearAuth,
     /// 重新连接
     Reconnect,
-    /// 禁用/删除
+    /// 禁用（已连接的服务器）
     Disable,
+    /// 启用（已禁用的服务器）
+    Enable,
 }
 
 /// MCP 管理面板
@@ -134,7 +136,12 @@ impl crate::app::App {
                         actions.push(DetailAction::ClearAuth);
                     }
                     actions.push(DetailAction::Reconnect);
-                    actions.push(DetailAction::Disable);
+                    // 根据当前状态显示 Enable 或 Disable
+                    if matches!(server.status, ClientStatus::Disabled) {
+                        actions.push(DetailAction::Enable);
+                    } else {
+                        actions.push(DetailAction::Disable);
+                    }
 
                     panel.view = McpPanelView::ServerDetail {
                         server_name: name,
@@ -204,7 +211,12 @@ impl crate::app::App {
             DetailAction::Disable => {
                 self.mcp_panel_back();
                 self.set_mcp_cursor_to_server(&server_name);
-                self.mcp_panel_request_delete();
+                self.mcp_panel_toggle_disabled(&server_name, true);
+            }
+            DetailAction::Enable => {
+                self.mcp_panel_back();
+                self.set_mcp_cursor_to_server(&server_name);
+                self.mcp_panel_toggle_disabled(&server_name, false);
             }
         }
     }
@@ -261,6 +273,75 @@ impl crate::app::App {
                 return;
             }
             panel.confirm_delete = Some(panel.servers[panel.cursor].name.clone());
+        }
+    }
+
+    /// 切换服务器的 disabled 状态
+    fn mcp_panel_toggle_disabled(&mut self, server_name: &str, disabled: bool) {
+        use rust_agent_middlewares::mcp::ClientStatus;
+
+        // 持久化 disabled 字段到配置文件
+        let _ = rust_agent_middlewares::mcp::set_server_disabled(
+            std::path::Path::new(&self.cwd),
+            server_name,
+            disabled,
+        );
+
+        if disabled {
+            // 禁用：断开连接，将 handle 状态设为 Disabled（保留 config 和 handle）
+            if let Some(pool) = self.mcp_pool.clone() {
+                let name_clone = server_name.to_string();
+                tokio::spawn(async move {
+                    pool.set_disabled(&name_clone).await;
+                });
+            }
+        } else {
+            // 启用：触发重连（使用 pool 中保存的 config）
+            if let Some(pool) = self.mcp_pool.clone() {
+                let tx = self.bg_event_tx.clone();
+                let pool2 = pool.clone();
+                let name2 = server_name.to_string();
+                let tx2 = tx.clone();
+                let oauth_cb: Box<
+                    dyn Fn(rust_agent_middlewares::mcp::OAuthFlowEvent) + Send + Sync,
+                > = Box::new(move |ev| {
+                    use rust_agent_middlewares::mcp::OAuthFlowEvent;
+                    if let OAuthFlowEvent::AuthorizationNeeded {
+                        server_name,
+                        authorization_url,
+                        callback_tx,
+                    } = ev
+                    {
+                        let _ = tx2.try_send(AgentEvent::OAuthAuthorizationNeeded {
+                            server_name,
+                            authorization_url,
+                            callback_tx,
+                        });
+                    }
+                });
+                tokio::spawn(async move {
+                    let result = pool2.reconnect(&name2, Some(oauth_cb)).await;
+                    let _ = tx
+                        .send(AgentEvent::McpActionCompleted {
+                            server_name: name2,
+                            action: "reconnect".to_string(),
+                            success: result.is_ok(),
+                        })
+                        .await;
+                });
+            }
+        }
+
+        // 刷新面板列表
+        if let Some(ref mut panel) = self.mcp_panel {
+            panel.servers = self
+                .mcp_pool
+                .as_ref()
+                .map(|p| p.server_infos())
+                .unwrap_or_default();
+            if panel.cursor >= panel.servers.len() && !panel.servers.is_empty() {
+                panel.cursor = panel.servers.len() - 1;
+            }
         }
     }
 

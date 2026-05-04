@@ -73,17 +73,24 @@ mod tests {
 
     #[test]
     fn test_memory_panel_new_entries() {
-        let panel = MemoryPanel::new("/test/project", Some(PathBuf::from("/home/user")));
+        let cwd = if cfg!(windows) {
+            "C:\\test\\project"
+        } else {
+            "/test/project"
+        };
+        let home = if cfg!(windows) {
+            "C:\\Users\\user"
+        } else {
+            "/home/user"
+        };
+        let panel = MemoryPanel::new(cwd, Some(PathBuf::from(home)));
         assert_eq!(panel.entries.len(), 2);
         assert_eq!(panel.entries[0].label, "项目说明");
         assert_eq!(panel.entries[1].label, "用户全局");
-        assert_eq!(
-            panel.entries[0].path,
-            PathBuf::from("/test/project/CLAUDE.md")
-        );
+        assert_eq!(panel.entries[0].path, PathBuf::from(cwd).join("CLAUDE.md"));
         assert_eq!(
             panel.entries[1].path,
-            PathBuf::from("/home/user/.claude/CLAUDE.md")
+            PathBuf::from(home).join(".claude").join("CLAUDE.md")
         );
     }
 

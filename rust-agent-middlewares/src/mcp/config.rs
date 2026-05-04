@@ -31,9 +31,17 @@ pub struct McpServerConfig {
     /// OAuth 2.0 配置
     #[serde(default)]
     pub oauth: Option<OAuthConfig>,
+    /// 是否禁用（默认 false，不序列化默认值以保持配置简洁）
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    pub disabled: Option<bool>,
     /// 配置来源（运行时标记，不序列化）
     #[serde(skip)]
     pub source: Option<ConfigSource>,
+}
+
+fn is_false(v: &Option<bool>) -> bool {
+    !v.unwrap_or(false)
 }
 
 /// MCP 服务器 OAuth 2.0 配置
@@ -188,6 +196,7 @@ pub fn expand_server_config(config: &McpServerConfig) -> McpServerConfig {
             client_secret: o.client_secret.as_ref().map(|s| expand_env_vars(s)),
             scopes: o.scopes.clone(),
         }),
+        disabled: config.disabled,
         source: config.source.clone(),
     }
 }
@@ -365,6 +374,113 @@ fn remove_server_from_config_with_paths(
     Ok(())
 }
 
+/// 在配置文件中设置指定 MCP 服务器的 disabled 状态
+/// 优先尝试项目级 .mcp.json，未找到则尝试全局 settings.json
+pub fn set_server_disabled(
+    cwd: &Path,
+    server_name: &str,
+    disabled: bool,
+) -> Result<(), McpConfigError> {
+    let global_path = dirs_next::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".zen-code")
+        .join("settings.json");
+    set_server_disabled_with_paths(cwd, &global_path, server_name, disabled)
+}
+
+/// 内部实现：允许注入全局路径（便于测试）
+fn set_server_disabled_with_paths(
+    cwd: &Path,
+    global_path: &Path,
+    server_name: &str,
+    disabled: bool,
+) -> Result<(), McpConfigError> {
+    // 1. 尝试项目级
+    let project_path = cwd.join(".mcp.json");
+    if project_path.exists() {
+        let content =
+            std::fs::read_to_string(&project_path).map_err(|e| McpConfigError::ReadError {
+                path: project_path.display().to_string(),
+                source: e,
+            })?;
+
+        let mut config: McpConfigFile =
+            serde_json::from_str(&content).map_err(|e| McpConfigError::ParseError {
+                path: project_path.display().to_string(),
+                source: e,
+            })?;
+
+        if let Some(server_cfg) = config.mcp_servers.get_mut(server_name) {
+            if disabled {
+                server_cfg.disabled = Some(true);
+            } else {
+                server_cfg.disabled = None;
+            }
+            let value = serde_json::to_value(&config).map_err(|e| McpConfigError::WriteError {
+                path: project_path.display().to_string(),
+                source: e.into(),
+            })?;
+            atomic_write_json(&project_path, &value)?;
+            return Ok(());
+        }
+    }
+
+    // 2. 尝试全局
+    if global_path.exists() {
+        let content =
+            std::fs::read_to_string(global_path).map_err(|e| McpConfigError::ReadError {
+                path: global_path.display().to_string(),
+                source: e,
+            })?;
+
+        let mut value: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| McpConfigError::ParseError {
+                path: global_path.display().to_string(),
+                source: e,
+            })?;
+
+        // 尝试 config.mcpServers 路径
+        let mut updated = false;
+        if let Some(config) = value
+            .get_mut("config")
+            .and_then(|c| c.get_mut("mcpServers"))
+        {
+            if let Some(servers) = config.as_object_mut() {
+                if let Some(server_val) = servers.get_mut(server_name) {
+                    if let Some(obj) = server_val.as_object_mut() {
+                        if disabled {
+                            obj.insert("disabled".to_string(), serde_json::Value::Bool(true));
+                        } else {
+                            obj.remove("disabled");
+                        }
+                        updated = true;
+                    }
+                }
+            }
+        }
+
+        // 尝试顶层 mcpServers 路径
+        if !updated {
+            if let Some(servers) = value.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
+                if let Some(server_val) = servers.get_mut(server_name) {
+                    if let Some(obj) = server_val.as_object_mut() {
+                        if disabled {
+                            obj.insert("disabled".to_string(), serde_json::Value::Bool(true));
+                        } else {
+                            obj.remove("disabled");
+                        }
+                    }
+                }
+            }
+        }
+
+        atomic_write_json(global_path, &value)?;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 fn test_config() -> McpServerConfig {
     McpServerConfig {
@@ -374,6 +490,7 @@ fn test_config() -> McpServerConfig {
         url: None,
         headers: None,
         oauth: None,
+        disabled: None,
         source: None,
     }
 }

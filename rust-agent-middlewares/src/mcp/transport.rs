@@ -67,6 +67,7 @@ mod tests {
             url: None,
             headers: None,
             oauth: None,
+            disabled: None,
             source: None,
         }
     }

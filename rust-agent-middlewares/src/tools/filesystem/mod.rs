@@ -60,11 +60,14 @@ mod tests {
 
     #[test]
     fn test_resolve_path_absolute() {
-        let result = resolve_path("/tmp", "/etc/hosts");
-        // /etc/hosts 存在，应被 canonicalize
-        if Path::new("/etc/hosts").exists() {
-            assert_eq!(result, Path::new("/etc/hosts").canonicalize().unwrap());
-        }
+        // 使用临时文件测试绝对路径解析，避免 Unix 特定路径依赖
+        let tmp = std::env::temp_dir();
+        let tmp_file = tmp.join("resolve_test_absolute.txt");
+        std::fs::write(&tmp_file, "test").ok();
+        let result = resolve_path(&tmp.to_string_lossy(), &tmp_file.to_string_lossy());
+        assert!(result.is_absolute());
+        assert!(result.exists());
+        let _ = std::fs::remove_file(&tmp_file);
     }
 
     #[test]
