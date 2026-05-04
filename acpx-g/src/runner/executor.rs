@@ -53,6 +53,7 @@ pub async fn execute_node(
             let env = build_env(&shell.env, ctx);
             let timeout = shell.exec.timeout.unwrap_or(default_timeout);
             let retry = shell.exec.retry.unwrap_or(default_retry);
+            let shell_cmd = shell.exec.shell.clone();
             run_shell(
                 pool,
                 &node_run_id,
@@ -60,6 +61,7 @@ pub async fn execute_node(
                 &env,
                 Some(timeout),
                 Some(retry),
+                shell_cmd.as_deref(),
             )
             .await
         }
@@ -209,16 +211,20 @@ async fn run_shell(
     env: &HashMap<String, String>,
     timeout_secs: Option<u64>,
     retries: Option<u32>,
+    shell_override: Option<&str>,
 ) -> anyhow::Result<()> {
     let script = script.to_string();
     let env = env.clone();
+    let shell_override = shell_override.map(|s| s.to_string());
 
     execute_with_retry(pool, node_run_id, retries, move || {
         let script = script.clone();
         let env = env.clone();
+        let shell_override = shell_override.clone();
         Box::pin(async move {
             let (exit_code, stdout, stderr) =
-                execute_shell_command(&script, &env, timeout_secs).await?;
+                execute_shell_command(&script, &env, timeout_secs, shell_override.as_deref())
+                    .await?;
             Ok(AttemptResult {
                 exit_code,
                 stdout,
@@ -233,8 +239,23 @@ async fn execute_shell_command(
     script: &str,
     env: &HashMap<String, String>,
     timeout_secs: Option<u64>,
+    shell_override: Option<&str>,
 ) -> anyhow::Result<(i64, String, String)> {
-    let mut cmd = if cfg!(target_os = "windows") {
+    let mut cmd = if let Some(shell) = shell_override {
+        // Parse shell override like "bash -c", "sh -c", "zsh -c", etc.
+        let parts: Vec<&str> = shell.split_whitespace().collect();
+        if parts.is_empty() {
+            let mut c = Command::new("bash");
+            c.arg("-c");
+            c
+        } else {
+            let mut c = Command::new(parts[0]);
+            for arg in &parts[1..] {
+                c.arg(*arg);
+            }
+            c
+        }
+    } else if cfg!(target_os = "windows") {
         let mut c = Command::new("cmd");
         c.arg("/C");
         c
@@ -583,5 +604,50 @@ mod tests {
         assert!(truncated.contains("[truncated"));
         // Verify result is valid UTF-8 (no panic from char boundary slice)
         let _ = truncated.chars().count();
+    }
+
+    #[tokio::test]
+    async fn test_execute_shell_command_default_shell() {
+        let env = HashMap::new();
+        let result = execute_shell_command("echo hello_shell_test", &env, Some(10), None).await;
+        assert!(result.is_ok());
+        let (code, stdout, _stderr) = result.unwrap();
+        assert_eq!(code, 0);
+        assert!(stdout.contains("hello_shell_test"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_shell_command_custom_shell() {
+        let env = HashMap::new();
+        // Override shell to "bash -c"
+        let result =
+            execute_shell_command("echo custom_shell_test", &env, Some(10), Some("bash -c")).await;
+        assert!(result.is_ok());
+        let (code, stdout, _stderr) = result.unwrap();
+        assert_eq!(code, 0);
+        assert!(stdout.contains("custom_shell_test"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_shell_command_timeout() {
+        let env = HashMap::new();
+        // This should timeout — sleep 10s with 1s timeout
+        let result = execute_shell_command("sleep 10", &env, Some(1), None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_shell_command_nonzero_exit() {
+        let env = HashMap::new();
+        let result = execute_shell_command("exit 42", &env, Some(5), None).await;
+        assert!(result.is_ok());
+        let (code, _, _) = result.unwrap();
+        assert_eq!(code, 42);
+    }
+
+    #[test]
+    fn test_max_stored_output_constant() {
+        assert_eq!(MAX_STORED_OUTPUT, 256 * 1024);
     }
 }

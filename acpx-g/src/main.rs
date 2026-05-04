@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use axum::{routing::delete, routing::get, routing::post, Router};
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -27,15 +28,30 @@ async fn main() -> anyhow::Result<()> {
         templates: templates.clone(),
     });
 
+    // Cancellation token for graceful watcher shutdown
+    let cancel_token = CancellationToken::new();
+    let watcher_cancel = cancel_token.clone();
+
     // Start workflow directory watcher if configured
-    if let Some(ref workflow_dir) = cli.workflow_dir {
+    let watcher_handle = if let Some(ref workflow_dir) = cli.workflow_dir {
         tracing::info!(dir = %workflow_dir, "starting workflow directory watcher");
-        tokio::spawn(watcher::watch_directory(
-            pool.clone(),
-            templates,
-            workflow_dir.clone(),
-        ));
-    }
+        let pool_clone = pool.clone();
+        let templates_clone = templates.clone();
+        let dir = workflow_dir.clone();
+        Some(tokio::spawn(async move {
+            tokio::select! {
+                _ = watcher::watch_directory(pool_clone, templates_clone, dir) => {},
+                _ = watcher_cancel.cancelled() => {
+                    tracing::info!("watcher shutting down");
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
+    // Build CORS layer: configurable via ACPX_CORS_ORIGIN env var
+    let cors = build_cors_layer();
 
     // Router
     let app = Router::new()
@@ -66,12 +82,7 @@ async fn main() -> anyhow::Result<()> {
             ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/static"))
                 .append_index_html_on_directories(true),
         )
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -82,12 +93,16 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    // Graceful shutdown: on Ctrl+C, stop accepting new connections and
+    // Graceful shutdown: on Ctrl+C, stop watcher, acceptor, and
     // mark any running workflows as failed in the DB.
     let shutdown_pool = pool.clone();
     let shutdown = async move {
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("shutting down gracefully...");
+
+        // Cancel the watcher first
+        cancel_token.cancel();
+
         // Mark any still-running workflows as failed
         let running =
             sqlx::query_as::<_, (String,)>("SELECT id FROM workflow_runs WHERE status = 'running'")
@@ -109,7 +124,45 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown)
         .await?;
 
+    // Wait for watcher to finish
+    if let Some(handle) = watcher_handle {
+        let _ = handle.await;
+    }
+
     Ok(())
+}
+
+/// Build CORS layer from environment configuration.
+/// - `ACPX_CORS_ORIGIN` not set or "any" → allow all origins
+/// - `ACPX_CORS_ORIGIN` = comma-separated list → allow specific origins
+fn build_cors_layer() -> CorsLayer {
+    let origin = std::env::var("ACPX_CORS_ORIGIN").unwrap_or_else(|_| "any".to_string());
+    let cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+
+    if origin == "any" {
+        cors.allow_origin(Any)
+    } else {
+        let origins: Vec<_> = origin
+            .split(',')
+            .filter_map(|s| {
+                let s = s.trim();
+                if s.is_empty() {
+                    None
+                } else {
+                    // Parse as header value string
+                    s.parse().ok()
+                }
+            })
+            .collect();
+        if origins.is_empty() {
+            tracing::warn!(
+                "ACPX_CORS_ORIGIN set but no valid origins found, falling back to allow all"
+            );
+            cors.allow_origin(Any)
+        } else {
+            cors.allow_origin(origins)
+        }
+    }
 }
 
 struct CliArgs {
@@ -136,9 +189,14 @@ fn parse_cli_args() -> CliArgs {
                 eprintln!("    --workflow-dir <DIR>  Watch directory for workflow YAML files");
                 eprintln!("    --help, -h            Show this help message\n");
                 eprintln!("ENVIRONMENT:");
-                eprintln!("    DATABASE_URL  SQLite connection string (default: sqlite:acpx-g.db?mode=rwc)");
-                eprintln!("    PORT          HTTP server port (default: 3000)");
-                eprintln!("    RUST_LOG      Log level (default: info)");
+                eprintln!("    DATABASE_URL              SQLite connection string (default: sqlite:acpx-g.db?mode=rwc)");
+                eprintln!("    PORT                      HTTP server port (default: 3000)");
+                eprintln!("    RUST_LOG                  Log level (default: info)");
+                eprintln!(
+                    "    ACPX_MAX_CONCURRENT       Max parallel nodes per workflow (default: 16)"
+                );
+                eprintln!("    ACPX_MAX_CONCURRENT_RUNS  Max parallel workflow runs (default: 8)");
+                eprintln!("    ACPX_CORS_ORIGIN          CORS origins: 'any' or comma-separated URLs (default: any)");
                 std::process::exit(0);
             }
             _ => {
@@ -150,4 +208,48 @@ fn parse_cli_args() -> CliArgs {
         i += 1;
     }
     CliArgs { workflow_dir }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_cli_args_no_args() {
+        // Simulate empty args (just binary name)
+        let args = vec!["acpx-g".to_string()];
+        let result = parse_cli_args_with(&args);
+        assert!(result.workflow_dir.is_none());
+    }
+
+    #[test]
+    fn test_parse_cli_args_workflow_dir() {
+        let args = vec![
+            "acpx-g".to_string(),
+            "--workflow-dir".to_string(),
+            "/tmp/wf".to_string(),
+        ];
+        let result = parse_cli_args_with(&args);
+        assert_eq!(result.workflow_dir.as_deref(), Some("/tmp/wf"));
+    }
+
+    #[test]
+    fn test_parse_cli_args_workflow_dir_missing_value() {
+        let args = vec!["acpx-g".to_string(), "--workflow-dir".to_string()];
+        let result = parse_cli_args_with(&args);
+        assert!(result.workflow_dir.is_none());
+    }
+
+    fn parse_cli_args_with(args: &[String]) -> CliArgs {
+        let mut workflow_dir = None;
+        let mut i = 1;
+        while i < args.len() {
+            if args[i].as_str() == "--workflow-dir" && i + 1 < args.len() {
+                workflow_dir = Some(args[i + 1].clone());
+                i += 1;
+            }
+            i += 1;
+        }
+        CliArgs { workflow_dir }
+    }
 }

@@ -27,15 +27,39 @@ fn max_concurrent_nodes() -> usize {
         .max(1)
 }
 
+/// Maximum concurrent workflow runs. Prevents OOM from unbounded task spawning.
+const DEFAULT_MAX_CONCURRENT_RUNS: usize = 8;
+
+fn max_concurrent_runs() -> usize {
+    std::env::var("ACPX_MAX_CONCURRENT_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_MAX_CONCURRENT_RUNS)
+        .max(1)
+}
+
+/// Global semaphore limiting how many workflows can execute concurrently.
+static RUN_SEMAPHORE: std::sync::OnceLock<Semaphore> = std::sync::OnceLock::new();
+
+fn run_semaphore() -> &'static Semaphore {
+    RUN_SEMAPHORE.get_or_init(|| Semaphore::new(max_concurrent_runs()))
+}
+
 /// Run a workflow to completion asynchronously.
 /// This spawns the actual execution so the caller (HTTP handler) can return immediately.
+/// Respects a global concurrency limit — if too many workflows are already running,
+/// this one will wait for a permit.
 pub async fn run_workflow(
     pool: Arc<SqlitePool>,
     run_id: String,
     workflow: Workflow,
     inputs: HashMap<String, String>,
 ) {
+    let semaphore = run_semaphore();
     tokio::spawn(async move {
+        // Acquire permit before execution — waits if at capacity
+        // Safety: RUN_SEMAPHORE lives for 'static via OnceLock
+        let _permit = semaphore.acquire().await.unwrap();
         if let Err(e) = execute_dag(pool.clone(), &run_id, &workflow, &inputs).await {
             tracing::error!(run_id = %run_id, error = %e, "workflow execution failed");
             let _ =
@@ -547,5 +571,47 @@ mod tests {
             },
         });
         assert_eq!(node_type_name(&agent), "agent");
+    }
+
+    #[test]
+    fn test_max_concurrent_runs_default() {
+        std::env::remove_var("ACPX_MAX_CONCURRENT_RUNS");
+        assert_eq!(max_concurrent_runs(), 8);
+    }
+
+    #[test]
+    fn test_max_concurrent_runs_custom() {
+        let key = "ACPX_MAX_CONCURRENT_RUNS";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "4");
+        assert_eq!(max_concurrent_runs(), 4);
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn test_max_concurrent_runs_minimum() {
+        let key = "ACPX_MAX_CONCURRENT_RUNS";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "0");
+        assert_eq!(max_concurrent_runs(), 1);
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn test_max_concurrent_runs_invalid_value() {
+        let key = "ACPX_MAX_CONCURRENT_RUNS";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "not_a_number");
+        assert_eq!(max_concurrent_runs(), 8);
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
     }
 }

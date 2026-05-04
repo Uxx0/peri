@@ -247,3 +247,28 @@ workflow 直接从 pending 跳到 failed 时（如事务错误），update_statu
 
 ### 测试覆盖
 - 98 个测试全部通过（新增 4 个：truncate short/exact/over/multibyte）
+
+## 2026-05-04 19:30 Round 13 — Concurrency Control, Graceful Shutdown, Transactional Delete, Shell Override, Configurable CORS
+
+### 核心改进
+
+**1. 并发工作流运行限制（OOM 防护）**
+新增全局 `ACPX_MAX_CONCURRENT_RUNS` 信号量（默认 8），限制同时执行的工作流数量。超出限制的提交请求排队等待，而非无限 spawn tokio 任务导致 OOM。
+
+**2. Watcher 优雅关机**
+Watcher 通过 `CancellationToken` 与主进程关机关联。Ctrl+C 时先取消 watcher 循环，再标记运行中的工作流为 failed，最后等待 watcher 任务退出。
+
+**3. DELETE 级联事务化**
+`delete_workflow_run` 改用数据库事务：在单个事务内删除 node_runs + workflow_run，避免中间状态（node_runs 已删但 workflow_run 仍在）。响应新增 `nodes_removed` 计数。
+
+**4. Shell 覆盖支持**
+`ExecConfig.shell` 字段终于被实际使用——节点可通过 `shell: "zsh -c"` 或 `shell: "sh -c"` 指定执行器，不再被忽略。
+
+**5. CORS 可配置**
+通过 `ACPX_CORS_ORIGIN` 环境变量配置 CORS 策略：`any`（默认）或逗号分隔的域名列表（如 `http://localhost:3000,https://app.example.com`）。
+
+**6. SQLite 外键启用**
+初始化时执行 `PRAGMA foreign_keys = ON`，确保外键约束生效。
+
+### 测试覆盖
+- 114 个测试全部通过（新增 16 个：concurrent_runs 配置 4 个、shell 执行 4 个、CLI 解析 3 个、分页查询 3 个、常量验证 2 个）

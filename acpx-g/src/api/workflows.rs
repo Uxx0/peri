@@ -478,10 +478,12 @@ pub async fn delete_workflow_run(
                     })),
                 );
             }
-            // Delete node_runs first (foreign key), then workflow_run
-            let _ = NodeRun::delete_by_run(&state.pool, &run_id).await;
-            match WorkflowRun::delete(&state.pool, &run_id).await {
-                Ok(_) => (StatusCode::OK, Json(serde_json::json!({"deleted": run_id}))),
+            // Use a transaction for atomic cascade delete
+            match delete_run_transactional(&state.pool, &run_id).await {
+                Ok(deleted) => (
+                    StatusCode::OK,
+                    Json(serde_json::json!({"deleted": run_id, "nodes_removed": deleted})),
+                ),
                 Err(e) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({"error": format!("{e}")})),
@@ -497,6 +499,21 @@ pub async fn delete_workflow_run(
             Json(serde_json::json!({"error": format!("{e}")})),
         ),
     }
+}
+
+/// Transactional cascade delete: delete node_runs then workflow_run atomically.
+async fn delete_run_transactional(pool: &SqlitePool, run_id: &str) -> anyhow::Result<u64> {
+    let mut tx = pool.begin().await?;
+    let node_result = sqlx::query("DELETE FROM node_runs WHERE run_id = ?")
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM workflow_runs WHERE id = ?")
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(node_result.rows_affected())
 }
 
 // ─── GET /api/v1/templates ───────────────────────────────────────
@@ -874,5 +891,34 @@ mod tests {
         provided.insert("val".to_string(), "1e10".to_string());
         let result = validate_inputs(&declared, &Some(provided)).unwrap();
         assert_eq!(result.get("val").unwrap(), "1e10");
+    }
+
+    #[test]
+    fn test_list_workflows_query_defaults() {
+        let query: ListWorkflowsQuery = serde_json::from_str("{}").unwrap();
+        assert_eq!(query.page, 1);
+        assert_eq!(query.per_page, 50);
+    }
+
+    #[test]
+    fn test_list_workflows_query_custom() {
+        let query: ListWorkflowsQuery =
+            serde_json::from_str(r#"{"page": 3, "per_page": 20}"#).unwrap();
+        assert_eq!(query.page, 3);
+        assert_eq!(query.per_page, 20);
+    }
+
+    #[test]
+    fn test_list_workflows_query_negative_page() {
+        // Negative page is clamped to 1 by the handler
+        let query: ListWorkflowsQuery =
+            serde_json::from_str(r#"{"page": -5, "per_page": 10}"#).unwrap();
+        assert_eq!(query.page, -5);
+        // Handler clamps: page.max(1) = 1
+    }
+
+    #[test]
+    fn test_yaml_size_limit_constant() {
+        assert_eq!(MAX_YAML_SIZE, 1024 * 1024);
     }
 }

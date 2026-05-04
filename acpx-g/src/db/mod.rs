@@ -53,6 +53,11 @@ pub async fn init(database_url: &str) -> anyhow::Result<SqlitePool> {
         .execute(&pool)
         .await;
 
+    // Enable foreign keys (SQLite has them off by default)
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await?;
+
     // Add indexes for common query patterns
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_workflow_runs_created_at ON workflow_runs(created_at DESC)",
