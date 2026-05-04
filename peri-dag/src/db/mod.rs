@@ -43,6 +43,16 @@ pub async fn init(database_url: &str) -> anyhow::Result<SqlitePool> {
     .execute(&pool)
     .await?;
 
+    // Add outputs column for node output persistence (idempotent)
+    let _ = sqlx::query("ALTER TABLE node_runs ADD COLUMN outputs TEXT")
+        .execute(&pool)
+        .await;
+
+    // Add depends column for storing expanded dependency info (idempotent)
+    let _ = sqlx::query("ALTER TABLE node_runs ADD COLUMN depends TEXT")
+        .execute(&pool)
+        .await;
+
     tracing::info!("database initialized");
     Ok(pool)
 }

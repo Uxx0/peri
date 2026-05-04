@@ -3,41 +3,39 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use tokio::process::Command;
 use tokio::time::{timeout as tokio_timeout, Duration};
-use uuid::Uuid;
 
 use crate::db::NodeRun;
+use crate::runner::template::interpolate;
+use crate::runner::template::interpolate_map;
+use crate::runner::template::TemplateContext;
 use crate::schema::{NodeDef, Platform};
 
 /// Execute a single node and persist results to DB.
-pub async fn execute_node(pool: &SqlitePool, run_id: &str, node: &NodeDef) -> anyhow::Result<()> {
-    // Create node_run record
-    let node_run = NodeRun {
-        id: Uuid::now_v7().to_string(),
-        run_id: run_id.to_string(),
-        node_id: node_id(node).to_string(),
-        node_type: node_type_name(node).to_string(),
-        status: "pending".to_string(),
-        attempt: 0,
-        started_at: None,
-        finished_at: None,
-        exit_code: None,
-        stdout: None,
-        stderr: None,
-        error_message: None,
-    };
-    node_run.insert(pool).await?;
+/// Returns the resolved outputs map on success.
+pub async fn execute_node(
+    pool: &SqlitePool,
+    run_id: &str,
+    node: &NodeDef,
+    ctx: &TemplateContext,
+) -> anyhow::Result<HashMap<String, String>> {
+    let nid = node_id(node);
+    let node_run = NodeRun::find_by_run_and_node(pool, run_id, nid)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("node_run not found for run={run_id} node={nid}"))?;
+    let node_run_id = node_run.id.clone();
 
-    // Resolve script/prompt
     let platform = Platform::detect();
 
-    match node {
+    let result = match node {
         NodeDef::Shell(shell) => {
+            // Interpolate script content
             let resolved = shell.run.resolve(platform);
-            let script = load_script(&resolved)?;
-            let env = build_env(&shell.env);
+            let raw_script = load_script(&resolved)?;
+            let script = interpolate(&raw_script, ctx);
+            let env = build_env(&shell.env, ctx);
             run_shell(
                 pool,
-                &node_run.id,
+                &node_run_id,
                 &script,
                 &env,
                 shell.exec.timeout,
@@ -47,36 +45,49 @@ pub async fn execute_node(pool: &SqlitePool, run_id: &str, node: &NodeDef) -> an
         }
         NodeDef::Agent(agent) => {
             let resolved = agent.prompt.resolve(platform);
-            let prompt = load_prompt(&resolved)?;
-            let env = build_env(&agent.env);
+            let raw_prompt = load_prompt(&resolved)?;
+            let prompt = interpolate(&raw_prompt, ctx);
+            let cwd = agent.cwd.as_deref().map(|c| interpolate(c, ctx));
+            let env = build_env(&agent.env, ctx);
             run_agent(
                 pool,
-                &node_run.id,
+                &node_run_id,
                 &prompt,
+                agent.agent.as_deref(),
                 agent.model.as_deref(),
-                agent.cwd.as_deref(),
+                cwd.as_deref(),
                 &env,
                 agent.exec.timeout,
                 agent.exec.retry,
             )
             .await
         }
-        NodeDef::Reference(_reference) => {
-            // Reference nodes are resolved at load time — they get inlined into the DAG.
-            // For now this is a stub.
-            NodeRun::update_result(
-                pool,
-                &node_run.id,
-                "success",
-                Some(0),
-                Some("reference node (not yet implemented)"),
-                None,
-                None,
-            )
-            .await?;
-            Ok(())
+        NodeDef::Reference(_) => {
+            // Should not happen — references are expanded at load time
+            anyhow::bail!("unexpected reference node (should be expanded at load time)")
         }
+    };
+
+    // On success, resolve and persist outputs
+    if result.is_ok() {
+        let outputs = get_node_outputs(node, ctx);
+        if !outputs.is_empty() {
+            let outputs_json = serde_json::to_string(&outputs)?;
+            NodeRun::update_outputs(pool, &node_run_id, &outputs_json).await?;
+        }
+        return Ok(outputs);
     }
+
+    result.map(|_| HashMap::new())
+}
+
+fn get_node_outputs(node: &NodeDef, ctx: &TemplateContext) -> HashMap<String, String> {
+    let raw = match node {
+        NodeDef::Shell(n) => &n.outputs,
+        NodeDef::Agent(n) => &n.outputs,
+        NodeDef::Reference(n) => &n.outputs,
+    };
+    interpolate_map(raw, ctx)
 }
 
 // ─── Shell Execution ──────────────────────────────────────────────
@@ -93,7 +104,6 @@ async fn run_shell(
     let mut last_error = None;
 
     for attempt in 0..max_attempts {
-        // Update attempt
         sqlx::query("UPDATE node_runs SET attempt = ? WHERE id = ?")
             .bind(attempt as i64)
             .bind(node_run_id)
@@ -127,7 +137,6 @@ async fn run_shell(
             }
             Err(e) => {
                 last_error = Some(e);
-                // exponential backoff between retries
                 tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
             }
         }
@@ -187,6 +196,7 @@ async fn run_agent(
     pool: &SqlitePool,
     node_run_id: &str,
     prompt: &str,
+    agent_name: Option<&str>,
     model: Option<&str>,
     cwd: Option<&str>,
     env: &HashMap<String, String>,
@@ -205,7 +215,7 @@ async fn run_agent(
 
         NodeRun::set_started(pool, node_run_id).await?;
 
-        let result = execute_agent_command(prompt, model, cwd, env, timeout_secs).await;
+        let result = execute_agent_command(prompt, agent_name, model, cwd, env, timeout_secs).await;
 
         match result {
             Ok((exit_code, stdout, stderr)) => {
@@ -251,20 +261,27 @@ async fn run_agent(
 
 async fn execute_agent_command(
     prompt: &str,
+    agent_name: Option<&str>,
     model: Option<&str>,
     cwd: Option<&str>,
     env: &HashMap<String, String>,
     timeout_secs: Option<u64>,
 ) -> anyhow::Result<(i64, String, String)> {
+    let agent = agent_name.unwrap_or("peri");
     let mut cmd = Command::new("acpx");
-    cmd.arg("run").arg("--prompt").arg(prompt);
+    cmd.arg("--approve-all").arg("--format").arg("text");
 
     if let Some(model) = model {
         cmd.arg("--model").arg(model);
     }
     if let Some(cwd) = cwd {
-        cmd.current_dir(cwd);
+        cmd.arg("--cwd").arg(cwd);
     }
+    if let Some(secs) = timeout_secs {
+        cmd.arg("--timeout").arg(secs.to_string());
+    }
+
+    cmd.arg(agent).arg("exec").arg(prompt);
 
     cmd.envs(env);
     cmd.kill_on_drop(true);
@@ -302,32 +319,25 @@ fn load_prompt(resolved: &crate::schema::ResolvedPrompt) -> anyhow::Result<Strin
     }
 }
 
-fn build_env(node_env: &HashMap<String, String>) -> HashMap<String, String> {
+/// Build merged environment: process env + global env (interpolated) + node env (interpolated).
+fn build_env(node_env: &HashMap<String, String>, ctx: &TemplateContext) -> HashMap<String, String> {
     let mut env = HashMap::new();
     // Inherit current process env
     for (k, v) in std::env::vars() {
         env.insert(k, v);
     }
-    // Override with node-specific env
-    for (k, v) in node_env {
-        env.insert(k.clone(), v.clone());
+    // Interpolate and merge node-specific env
+    let resolved = interpolate_map(node_env, ctx);
+    for (k, v) in resolved {
+        env.insert(k, v);
     }
     env
 }
 
-// Duplicated from mod.rs for executor.rs to use locally (avoid circular dep)
 fn node_id(node: &NodeDef) -> &str {
     match node {
         NodeDef::Shell(n) => &n.id,
         NodeDef::Agent(n) => &n.id,
         NodeDef::Reference(n) => &n.id,
-    }
-}
-
-fn node_type_name(node: &NodeDef) -> &str {
-    match node {
-        NodeDef::Shell(_) => "shell",
-        NodeDef::Agent(_) => "agent",
-        NodeDef::Reference(_) => "reference",
     }
 }

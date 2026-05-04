@@ -40,6 +40,12 @@ pub struct Workflow {
     /// 引用外部 workflow 时，通过 with 传递参数
     #[serde(default)]
     pub with: serde_yaml::Value,
+
+    /// Runtime-only: maps reference node ID prefix to the bound input values
+    /// for that reference's child nodes. Populated by the loader during
+    /// reference expansion. Not serialized in YAML.
+    #[serde(skip)]
+    pub reference_inputs: HashMap<String, HashMap<String, String>>,
 }
 
 // ─── Input Definition ─────────────────────────────────────────────
@@ -174,6 +180,10 @@ pub struct AgentNode {
 
     /// Prompt 来源：内联 | 文件 | 平台区分。
     pub prompt: PromptSource,
+
+    /// Agent 子命令名称（peri / claude / codex 等），默认 "peri"。
+    #[serde(default)]
+    pub agent: Option<String>,
 
     /// Agent 模型。
     #[serde(default)]

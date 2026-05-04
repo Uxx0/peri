@@ -23,6 +23,15 @@ pub struct WorkflowTemplate {
     pub description: Option<String>,
     pub node_count: usize,
     pub file_path: String,
+    pub nodes: Vec<TemplateNodeInfo>,
+}
+
+/// Lightweight node info for template preview rendering.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TemplateNodeInfo {
+    pub id: String,
+    pub node_type: String,
+    pub depends: Vec<String>,
 }
 
 pub struct AppState {
@@ -49,6 +58,28 @@ pub async fn submit_workflow(
         }
     };
 
+    // Validate and apply inputs
+    let inputs = match validate_inputs(&wf.inputs, &req.inputs) {
+        Ok(i) => i,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("invalid inputs: {e}")})),
+            );
+        }
+    };
+
+    // Load and expand references
+    let expanded_wf = match runner::load_workflow_from_content(&req.yaml, inputs).await {
+        Ok(w) => w,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("failed to load workflow: {e}")})),
+            );
+        }
+    };
+
     // Insert run record
     let run = WorkflowRun {
         id: run_id.clone(),
@@ -56,7 +87,7 @@ pub async fn submit_workflow(
         workflow_version: wf.version,
         yaml_content: req.yaml.clone(),
         status: "pending".to_string(),
-        node_count: wf.nodes.len() as i64,
+        node_count: expanded_wf.nodes.len() as i64,
         started_at: None,
         finished_at: None,
         created_at: chrono::Utc::now().to_rfc3339(),
@@ -70,8 +101,9 @@ pub async fn submit_workflow(
         );
     }
 
-    // Insert node_run records
-    for node in &wf.nodes {
+    // Insert node_run records from expanded workflow
+    for node in &expanded_wf.nodes {
+        let deps = runner::node_depends(node);
         let node_run = NodeRun {
             id: Uuid::now_v7().to_string(),
             run_id: run_id.clone(),
@@ -85,14 +117,27 @@ pub async fn submit_workflow(
             stdout: None,
             stderr: None,
             error_message: None,
+            outputs: None,
+            depends: if deps.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(deps).unwrap())
+            },
         };
         if let Err(e) = node_run.insert(&state.pool).await {
             tracing::error!(error = %e, "failed to insert node_run");
         }
     }
 
+    // Get root inputs from expanded workflow
+    let root_inputs = expanded_wf
+        .reference_inputs
+        .get("__root__")
+        .cloned()
+        .unwrap_or_default();
+
     // Start async execution
-    runner::run_workflow(state.pool.clone(), run_id.clone(), req.yaml).await;
+    runner::run_workflow(state.pool.clone(), run_id.clone(), expanded_wf, root_inputs).await;
 
     (
         StatusCode::CREATED,
@@ -135,6 +180,9 @@ pub async fn get_workflow(
             let nodes = NodeRun::find_by_run(&state.pool, &run_id)
                 .await
                 .unwrap_or_default();
+
+            // depends info is now stored directly in node_runs table
+            // (populated during workflow submission after reference expansion)
             let mut response = WorkflowRunResponse::from(run);
             response.nodes = nodes.into_iter().map(NodeRunResponse::from).collect();
             (StatusCode::OK, Json(serde_json::json!(response)))
@@ -234,6 +282,20 @@ pub async fn run_template(
         }
     };
 
+    // Templates use defaults (no user-provided inputs)
+    let inputs = validate_inputs(&wf.inputs, &None).unwrap_or_default();
+
+    // Load and expand references
+    let expanded_wf = match runner::load_workflow(&template.file_path, inputs).await {
+        Ok(w) => w,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("failed to load workflow: {e}")})),
+            );
+        }
+    };
+
     let run_id = Uuid::now_v7().to_string();
 
     let run = WorkflowRun {
@@ -242,7 +304,7 @@ pub async fn run_template(
         workflow_version: wf.version.clone(),
         yaml_content: yaml_content.clone(),
         status: "pending".to_string(),
-        node_count: wf.nodes.len() as i64,
+        node_count: expanded_wf.nodes.len() as i64,
         started_at: None,
         finished_at: None,
         created_at: chrono::Utc::now().to_rfc3339(),
@@ -256,7 +318,8 @@ pub async fn run_template(
         );
     }
 
-    for node in &wf.nodes {
+    for node in &expanded_wf.nodes {
+        let deps = runner::node_depends(node);
         let node_run = NodeRun {
             id: Uuid::now_v7().to_string(),
             run_id: run_id.clone(),
@@ -270,13 +333,25 @@ pub async fn run_template(
             stdout: None,
             stderr: None,
             error_message: None,
+            outputs: None,
+            depends: if deps.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(deps).unwrap())
+            },
         };
         if let Err(e) = node_run.insert(&state.pool).await {
             tracing::error!(error = %e, "failed to insert node_run");
         }
     }
 
-    runner::run_workflow(state.pool.clone(), run_id.clone(), yaml_content).await;
+    let root_inputs = expanded_wf
+        .reference_inputs
+        .get("__root__")
+        .cloned()
+        .unwrap_or_default();
+
+    runner::run_workflow(state.pool.clone(), run_id.clone(), expanded_wf, root_inputs).await;
 
     (
         StatusCode::CREATED,
@@ -286,4 +361,28 @@ pub async fn run_template(
             "template": name,
         })),
     )
+}
+
+// ─── Input Validation ─────────────────────────────────────────────
+
+/// Validate provided inputs against declared InputDefs.
+/// Returns a fully populated HashMap with defaults applied.
+fn validate_inputs(
+    declared: &std::collections::HashMap<String, crate::schema::InputDef>,
+    provided: &Option<std::collections::HashMap<String, String>>,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut result = std::collections::HashMap::new();
+    let provided = provided.as_ref();
+
+    for (key, def) in declared {
+        if let Some(val) = provided.and_then(|p| p.get(key)) {
+            result.insert(key.clone(), val.clone());
+        } else if let Some(default) = &def.default {
+            result.insert(key.clone(), default.clone());
+        } else if def.required {
+            anyhow::bail!("required input '{}' not provided", key);
+        }
+    }
+
+    Ok(result)
 }

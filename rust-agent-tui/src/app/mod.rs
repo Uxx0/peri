@@ -373,10 +373,7 @@ impl App {
                         .view_messages
                         .truncate(round_start);
                     {
-                        let remaining = self.sessions[self.active]
-                            .core
-                            .view_messages
-                            .clone();
+                        let remaining = self.sessions[self.active].core.view_messages.clone();
                         let _ = self.sessions[self.active]
                             .core
                             .render_tx
@@ -403,9 +400,8 @@ impl App {
                     self.sessions[self.active].core.textarea = ta;
                     self.sessions[self.active].core.pending_messages.clear();
                     self.sessions[self.active].core.last_human_message = None;
-                    let vm = MessageViewModel::system(
-                        "⚠ 已强制中断（输入已恢复到输入框）".to_string(),
-                    );
+                    let vm =
+                        MessageViewModel::system("⚠ 已强制中断（输入已恢复到输入框）".to_string());
                     self.sessions[self.active]
                         .core
                         .view_messages
@@ -428,9 +424,8 @@ impl App {
                         .send(RenderEvent::AddMessage(vm));
                 }
             } else {
-                let vm = MessageViewModel::system(
-                    "⚠ 已强制中断（后台任务可能仍在运行）".to_string(),
-                );
+                let vm =
+                    MessageViewModel::system("⚠ 已强制中断（后台任务可能仍在运行）".to_string());
                 self.sessions[self.active]
                     .core
                     .view_messages

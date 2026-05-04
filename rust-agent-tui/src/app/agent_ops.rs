@@ -532,18 +532,11 @@ impl App {
                     .agent
                     .session_token_tracker
                     .accumulate(&usage);
-                // 更新 spinner 的 token 显示
-                let total = self.sessions[self.active]
-                    .agent
-                    .session_token_tracker
-                    .total_input_tokens
-                    + self.sessions[self.active]
-                        .agent
-                        .session_token_tracker
-                        .total_output_tokens;
+                // 更新 spinner 的 token 显示（仅当次调用的 token，不累计）
+                let current_tokens = usage.input_tokens as usize + usage.output_tokens as usize;
                 self.sessions[self.active]
                     .spinner_state
-                    .set_token_count(total as usize);
+                    .set_token_count(current_tokens);
                 // compact 被完全禁用
                 if std::env::var("DISABLE_COMPACT").is_ok() {
                     return (true, false, false);
@@ -743,12 +736,11 @@ impl App {
                             .core
                             .view_messages
                             .truncate(round_start);
-                        let _ = self.sessions[self.active]
-                            .core
-                            .render_tx
-                            .send(RenderEvent::LoadHistory(
+                        let _ = self.sessions[self.active].core.render_tx.send(
+                            RenderEvent::LoadHistory(
                                 self.sessions[self.active].core.view_messages.clone(),
-                            ));
+                            ),
+                        );
                         // 截断 agent_state_messages（回滚 StateSnapshot 扩展的内容）
                         let pre_len = self.sessions[self.active].core.pre_submit_state_len;
                         self.sessions[self.active]
@@ -773,14 +765,11 @@ impl App {
                             .core
                             .pipeline
                             .restore_completed(restored);
-                        let vm = MessageViewModel::system(
-                            "⚠ 已中断（输入已恢复到输入框）".to_string(),
-                        );
+                        let vm =
+                            MessageViewModel::system("⚠ 已中断（输入已恢复到输入框）".to_string());
                         self.apply_pipeline_action(PipelineAction::AddMessage(vm));
                     } else {
-                        let vm = MessageViewModel::system(
-                            "⚠ 已中断".to_string(),
-                        );
+                        let vm = MessageViewModel::system("⚠ 已中断".to_string());
                         self.apply_pipeline_action(PipelineAction::AddMessage(vm));
                     }
                 } else {
@@ -794,7 +783,8 @@ impl App {
                         tail_vms,
                     });
                     let vm = MessageViewModel::system(
-                        "⚠ 已中断（工具调用已以 error 结尾，消息已保存，可继续发送恢复）".to_string(),
+                        "⚠ 已中断（工具调用已以 error 结尾，消息已保存，可继续发送恢复）"
+                            .to_string(),
                     );
                     self.apply_pipeline_action(PipelineAction::AddMessage(vm));
                 }

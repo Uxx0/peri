@@ -6,7 +6,7 @@ use std::time::Duration;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::api::WorkflowTemplate;
+use crate::api::{TemplateNodeInfo, WorkflowTemplate};
 use crate::db::{NodeRun, WorkflowRun};
 use crate::runner;
 use crate::schema::parse_workflow;
@@ -85,12 +85,23 @@ async fn run_scan(
                 let version = wf.version.clone();
 
                 // Always add to template list
+                let tpl_nodes: Vec<TemplateNodeInfo> = wf
+                    .nodes
+                    .iter()
+                    .map(|n| TemplateNodeInfo {
+                        id: runner::node_id(n).to_string(),
+                        node_type: runner::node_type_name(n).to_string(),
+                        depends: runner::node_depends(n).to_vec(),
+                    })
+                    .collect();
+
                 template_list.push(WorkflowTemplate {
                     name: name.clone(),
                     version,
                     description: wf.description.clone(),
                     node_count: wf.nodes.len(),
                     file_path: file_path.clone(),
+                    nodes: tpl_nodes,
                 });
 
                 if first {
@@ -104,7 +115,9 @@ async fn run_scan(
                     };
 
                     if should_submit {
-                        if let Err(e) = submit_workflow_from_file(pool, &content, &wf).await {
+                        if let Err(e) =
+                            submit_workflow_from_file(pool, &content, &file_path, &wf).await
+                        {
                             tracing::error!(name = %name, error = %e, "failed to submit workflow");
                             continue;
                         }
@@ -127,13 +140,17 @@ async fn run_scan(
         *lock = template_list;
     }
 
-    if scanned_files > 0 || new_runs > 0 {
+    if first {
         tracing::info!(
             dir = %dir_path,
             scanned = scanned_files,
+            "workflow directory initial scan complete"
+        );
+    } else if new_runs > 0 {
+        tracing::info!(
+            dir = %dir_path,
             new_runs = new_runs,
-            first_scan = first,
-            "workflow directory scan complete"
+            "workflow directory detected changes"
         );
     }
 }
@@ -161,11 +178,16 @@ fn scan_dir(dir: &Path, files: &mut Vec<String>) -> anyhow::Result<()> {
 }
 
 /// Submit a workflow parsed from a file.
+/// Expands references via the loader before persisting and executing.
 async fn submit_workflow_from_file(
     pool: &SqlitePool,
     yaml_content: &str,
+    file_path: &str,
     wf: &crate::schema::Workflow,
 ) -> anyhow::Result<()> {
+    // Expand references using the loader
+    let expanded_wf = runner::load_workflow(file_path, std::collections::HashMap::new()).await?;
+
     let run_id = Uuid::now_v7().to_string();
 
     let run = WorkflowRun {
@@ -174,7 +196,7 @@ async fn submit_workflow_from_file(
         workflow_version: wf.version.clone(),
         yaml_content: yaml_content.to_string(),
         status: "pending".to_string(),
-        node_count: wf.nodes.len() as i64,
+        node_count: expanded_wf.nodes.len() as i64,
         started_at: None,
         finished_at: None,
         created_at: chrono::Utc::now().to_rfc3339(),
@@ -183,7 +205,8 @@ async fn submit_workflow_from_file(
 
     run.insert(pool).await?;
 
-    for node in &wf.nodes {
+    for node in &expanded_wf.nodes {
+        let deps = runner::node_depends(node);
         let node_run = NodeRun {
             id: Uuid::now_v7().to_string(),
             run_id: run_id.clone(),
@@ -197,16 +220,29 @@ async fn submit_workflow_from_file(
             stdout: None,
             stderr: None,
             error_message: None,
+            outputs: None,
+            depends: if deps.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(deps).unwrap())
+            },
         };
         if let Err(e) = node_run.insert(pool).await {
             tracing::error!(error = %e, "failed to insert node_run");
         }
     }
 
+    let root_inputs = expanded_wf
+        .reference_inputs
+        .get("__root__")
+        .cloned()
+        .unwrap_or_default();
+
     runner::run_workflow(
         Arc::new(pool.clone()),
         run_id.clone(),
-        yaml_content.to_string(),
+        expanded_wf,
+        root_inputs,
     )
     .await;
 

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
+use std::collections::HashMap;
 
 // ─── Workflow Run ─────────────────────────────────────────────────
 
@@ -109,13 +110,16 @@ pub struct NodeRun {
     pub stdout: Option<String>,
     pub stderr: Option<String>,
     pub error_message: Option<String>,
+    pub outputs: Option<String>,
+    /// JSON array of depends node IDs, stored after reference expansion.
+    pub depends: Option<String>,
 }
 
 impl NodeRun {
     pub async fn insert(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO node_runs (id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO node_runs (id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message, outputs, depends)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&self.id)
         .bind(&self.run_id)
@@ -129,6 +133,8 @@ impl NodeRun {
         .bind(&self.stdout)
         .bind(&self.stderr)
         .bind(&self.error_message)
+        .bind(&self.outputs)
+        .bind(&self.depends)
         .execute(pool)
         .await?;
         Ok(())
@@ -159,6 +165,20 @@ impl NodeRun {
         Ok(())
     }
 
+    /// Update outputs for a completed node.
+    pub async fn update_outputs(
+        pool: &SqlitePool,
+        id: &str,
+        outputs_json: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query("UPDATE node_runs SET outputs = ? WHERE id = ?")
+            .bind(outputs_json)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn set_started(pool: &SqlitePool, id: &str) -> anyhow::Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         sqlx::query("UPDATE node_runs SET status = 'running', started_at = ? WHERE id = ?")
@@ -171,7 +191,7 @@ impl NodeRun {
 
     pub async fn find_by_run(pool: &SqlitePool, run_id: &str) -> anyhow::Result<Vec<NodeRun>> {
         let nodes = sqlx::query_as::<_, NodeRun>(
-            "SELECT id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message
+            "SELECT id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message, outputs, depends
              FROM node_runs WHERE run_id = ? ORDER BY node_id",
         )
         .bind(run_id)
@@ -182,10 +202,26 @@ impl NodeRun {
 
     pub async fn find_by_id(pool: &SqlitePool, id: &str) -> anyhow::Result<Option<NodeRun>> {
         let node = sqlx::query_as::<_, NodeRun>(
-            "SELECT id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message
+            "SELECT id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message, outputs, depends
              FROM node_runs WHERE id = ?",
         )
         .bind(id)
+        .fetch_optional(pool)
+        .await?;
+        Ok(node)
+    }
+
+    pub async fn find_by_run_and_node(
+        pool: &SqlitePool,
+        run_id: &str,
+        node_id: &str,
+    ) -> anyhow::Result<Option<NodeRun>> {
+        let node = sqlx::query_as::<_, NodeRun>(
+            "SELECT id, run_id, node_id, node_type, status, attempt, started_at, finished_at, exit_code, stdout, stderr, error_message, outputs, depends
+             FROM node_runs WHERE run_id = ? AND node_id = ?",
+        )
+        .bind(run_id)
+        .bind(node_id)
         .fetch_optional(pool)
         .await?;
         Ok(node)
@@ -198,6 +234,9 @@ impl NodeRun {
 pub struct SubmitWorkflowRequest {
     /// YAML content of the workflow.
     pub yaml: String,
+    /// Runtime input values for the workflow.
+    #[serde(default)]
+    pub inputs: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -233,6 +272,10 @@ pub struct NodeRunResponse {
     pub stdout: Option<String>,
     pub stderr: Option<String>,
     pub error_message: Option<String>,
+    #[serde(default)]
+    pub depends: Vec<String>,
+    #[serde(default)]
+    pub outputs: Option<serde_json::Value>,
 }
 
 impl From<WorkflowRun> for WorkflowRunResponse {
@@ -254,6 +297,15 @@ impl From<WorkflowRun> for WorkflowRunResponse {
 
 impl From<NodeRun> for NodeRunResponse {
     fn from(n: NodeRun) -> Self {
+        let outputs = n
+            .outputs
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let depends = n
+            .depends
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .unwrap_or_default();
         Self {
             id: n.id,
             node_id: n.node_id,
@@ -266,6 +318,8 @@ impl From<NodeRun> for NodeRunResponse {
             stdout: n.stdout,
             stderr: n.stderr,
             error_message: n.error_message,
+            depends,
+            outputs,
         }
     }
 }

@@ -222,7 +222,8 @@ fn render_session_column(
                 height: 1,
             };
             f.render_widget(
-                Paragraph::new(format!("… +{} more", pending_count - visible_count)).style(dim_style),
+                Paragraph::new(format!("… +{} more", pending_count - visible_count))
+                    .style(dim_style),
                 more_area,
             );
         }
@@ -247,9 +248,11 @@ fn render_session_column(
     } else {
         theme::TEXT
     };
-    let prompt_style = Style::default()
-        .fg(prompt_color)
-        .add_modifier(if loading { Modifier::empty() } else { Modifier::BOLD });
+    let prompt_style = Style::default().fg(prompt_color).add_modifier(if loading {
+        Modifier::empty()
+    } else {
+        Modifier::BOLD
+    });
     f.render_widget(Paragraph::new("❯").style(prompt_style), prompt_area);
 
     if is_active {
