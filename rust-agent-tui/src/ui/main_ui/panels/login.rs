@@ -278,8 +278,8 @@ mod tests {
     use crate::app::App;
     use crate::config::ProviderConfig;
 
-    fn render_headless_login_browse() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_login_browse() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.sessions[app.active].core.login_panel = Some(LoginPanel {
             providers: vec![ProviderConfig {
                 id: "test".to_string(),
@@ -320,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_login_browse_no_single_letter_hints() {
-        let (_, handle) = render_headless_login_browse();
+        let (_, handle) = render_headless_login_browse().await;
         let snap = handle.snapshot().join("\n");
         assert!(
             snap.contains("Ctrl+N"),
@@ -334,8 +334,8 @@ mod tests {
         );
     }
 
-    fn render_headless_login_edit() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_login_edit() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.sessions[app.active].core.login_panel = Some(LoginPanel {
             providers: vec![],
             mode: LoginPanelMode::New,
@@ -365,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_login_edit_has_paste_hint() {
-        let (_, handle) = render_headless_login_edit();
+        let (_, handle) = render_headless_login_edit().await;
         let snap = handle.snapshot().join("\n");
         assert!(
             snap.contains("Ctrl+V"),

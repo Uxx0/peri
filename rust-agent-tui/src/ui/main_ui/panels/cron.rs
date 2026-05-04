@@ -141,8 +141,8 @@ mod tests {
     use crate::app::App;
     use crate::app::CronPanel;
 
-    fn render_headless_cron_empty() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_cron_empty() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.cron.cron_panel = Some(CronPanel::new(vec![]));
         handle
             .terminal
@@ -153,7 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cron_empty_shows_guide() {
-        let (_, handle) = render_headless_cron_empty();
+        let (_, handle) = render_headless_cron_empty().await;
         let snap = handle.snapshot().join("\n");
         assert!(
             snap.contains("loop"),

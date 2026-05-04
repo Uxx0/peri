@@ -36,11 +36,14 @@ pub async fn run_acp_mode(
         }
     }
 
-    let thread_store: Arc<dyn ThreadStore> =
-        Arc::new(SqliteThreadStore::default_path().unwrap_or_else(|_| {
+    let thread_store: Arc<dyn ThreadStore> = match SqliteThreadStore::default_path().await {
+        Ok(store) => Arc::new(store),
+        Err(_) => Arc::new(
             SqliteThreadStore::new(std::env::temp_dir().join("peri-acp-threads.db"))
-                .expect("无法创建临时数据库")
-        }));
+                .await
+                .expect("无法创建临时数据库"),
+        ),
+    };
 
     let permission_mode = SharedPermissionMode::new(PermissionMode::AutoMode);
 

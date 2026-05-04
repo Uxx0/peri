@@ -122,14 +122,8 @@ pub struct App {
     pub memory_panel: Option<crate::app::memory_panel::MemoryPanel>,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl App {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let cwd = std::env::current_dir()
             .unwrap_or_default()
             .to_string_lossy()
@@ -157,11 +151,14 @@ impl App {
             };
 
         // 初始化 thread 存储（失败时 fallback 到临时目录）
-        let thread_store: Arc<dyn ThreadStore> =
-            Arc::new(SqliteThreadStore::default_path().unwrap_or_else(|_| {
+        let thread_store: Arc<dyn ThreadStore> = match SqliteThreadStore::default_path().await {
+            Ok(store) => Arc::new(store),
+            Err(_) => Arc::new(
                 SqliteThreadStore::new(std::env::temp_dir().join("zen-threads.db"))
-                    .expect("无法创建临时 SQLite 数据库")
-            }));
+                    .await
+                    .expect("无法创建临时 SQLite 数据库"),
+            ),
+        };
 
         // 预计算命令帮助列表
         let command_registry = crate::command::default_registry();

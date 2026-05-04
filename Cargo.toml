@@ -59,6 +59,7 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 parking_lot = "0.12"
 dirs-next = "2"
 url = "2"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 
 # --- Build ---
 tempfile = "3"

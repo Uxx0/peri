@@ -5,7 +5,7 @@
 //!
 //! 使用方式：
 //! ```rust,ignore
-//! let (mut app, mut handle) = App::new_headless(120, 30);
+//! let (mut app, mut handle) = App::new_headless(120, 30).await;
 //! app.push_agent_event(AgentEvent::AssistantChunk("Hello".into()));
 //! app.process_pending_events();
 //! handle.wait_for_render().await;
@@ -64,7 +64,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_snapshot_row_count() {
-        let (_app, handle) = App::new_headless(80, 24);
+        let (_app, handle) = App::new_headless(80, 24).await;
         assert_eq!(handle.snapshot().len(), 24, "snapshot 应返回 24 行");
     }
 
@@ -72,7 +72,7 @@ mod tests {
     async fn test_assistant_chunk_renders() {
         use rust_create_agent::messages::BaseMessage;
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         // Pipeline: AssistantChunk → AppendChunk (1 个 RenderEvent)
         // Pipeline: StateSnapshot → None (0 个 RenderEvent)
         // Pipeline: Done           → RebuildAll/LoadHistory (1 个 RenderEvent)
@@ -102,7 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_renders() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let notified = handle.render_notify.notified();
         app.push_agent_event(AgentEvent::ToolStart {
             tool_call_id: "t1".into(),
@@ -127,7 +127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_message_renders() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         // 先注册监听，再发送事件，避免时序问题
         let notified = handle.render_notify.notified();
         // 使用 ASCII 内容避免 CJK 宽字符在 buffer 中的空格填充问题
@@ -152,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_empties_render_cache() {
-        let (mut app, handle) = App::new_headless(120, 30);
+        let (mut app, handle) = App::new_headless(120, 30).await;
         let notify = Arc::clone(&handle.render_notify);
 
         // Pipeline: 每个 AssistantChunk → AppendChunk (1 个 RenderEvent)
@@ -489,7 +489,7 @@ mod tests {
     #[tokio::test]
     async fn test_subagent_group_basic() {
         // SubAgentStart → 2×ToolCall → SubAgentEnd → 渲染验证
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let notify = Arc::clone(&handle.render_notify);
 
         // 事件数：SubAgentStart(1) + ToolCall×2(2) + SubAgentEnd(1) = 4 个 RenderEvent
@@ -556,7 +556,7 @@ mod tests {
     #[tokio::test]
     async fn test_subagent_group_sliding_window() {
         // SubAgentStart → 6×ToolCall → SubAgentEnd → 只保留 4 条，总步数为 6
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         app.push_agent_event(AgentEvent::SubAgentStart {
             agent_id: "analyzer".into(),
@@ -601,7 +601,7 @@ mod tests {
     #[tokio::test]
     async fn test_subagent_group_assistant_chunk() {
         // SubAgentStart → AssistantChunk → SubAgentEnd → AssistantBubble 在 recent_messages 中
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         app.push_agent_event(AgentEvent::SubAgentStart {
             agent_id: "writer".into(),
@@ -636,7 +636,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_message_visible_when_toggled() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 使用 ToolStart 事件添加工具调用（会发送 RenderEvent::AddMessage）
         let notified1 = handle.render_notify.notified();
@@ -675,7 +675,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_assistant_chunk_no_bubble() {
         // 空 AssistantChunk 不应创建空白的 AssistantBubble
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         // 发送空 chunk，不应创建 AssistantBubble
         app.push_agent_event(AgentEvent::AssistantChunk("".into()));
@@ -704,7 +704,7 @@ mod tests {
         use rust_create_agent::messages::BaseMessage;
 
         // 空_chunk → 非空_chunk：非空 chunk 应正常创建气泡
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 先发送空 chunk
         app.push_agent_event(AgentEvent::AssistantChunk("".into()));
@@ -744,7 +744,7 @@ mod tests {
     #[tokio::test]
     async fn test_tool_call_without_assistant_chunk_no_bubble() {
         // 模拟 AI 只调用工具不输出文本的场景
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 直接发送 ToolStart 事件（无 AssistantChunk）
         let notified = handle.render_notify.notified();
@@ -778,7 +778,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_welcome_card_renders_when_empty() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         // 默认 view_messages 为空，应显示 Welcome Card
         handle
             .terminal
@@ -802,7 +802,7 @@ mod tests {
     async fn test_welcome_card_hidden_after_message() {
         use rust_create_agent::messages::BaseMessage;
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let notify = Arc::clone(&handle.render_notify);
         let n1 = notify.notified();
         let n2 = notify.notified();
@@ -835,7 +835,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_welcome_card_narrow_screen() {
-        let (mut app, mut handle) = App::new_headless(40, 24);
+        let (mut app, mut handle) = App::new_headless(40, 24).await;
         handle
             .terminal
             .draw(|f| main_ui::render(f, &mut app))
@@ -859,7 +859,7 @@ mod tests {
     #[tokio::test]
     async fn test_welcome_card_shows_login_guide_when_no_provider() {
         // 无 Provider 时 Welcome Card 应显示 /login 首次引导
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         // zen_config 默认为 None，无 provider
         handle
             .terminal
@@ -879,7 +879,7 @@ mod tests {
     #[tokio::test]
     async fn test_sticky_header_hidden_when_no_messages() {
         // 无消息时 sticky header 应完全隐藏
-        let (mut app, mut handle) = App::new_headless(80, 24);
+        let (mut app, mut handle) = App::new_headless(80, 24).await;
         assert!(
             app.sessions[app.active].core.last_human_message.is_none(),
             "默认应无 last_human_message"
@@ -901,7 +901,7 @@ mod tests {
     async fn test_sticky_header_shows_after_submit() {
         // 模拟 submit_message 后 sticky header 显示
         // 需要足够多的消息使内容超过可视区域（max_scroll > 0）
-        let (mut app, mut handle) = App::new_headless(80, 24);
+        let (mut app, mut handle) = App::new_headless(80, 24).await;
 
         // 填充足够多的消息使消息区产生滚动
         for i in 0..30 {
@@ -935,7 +935,7 @@ mod tests {
     #[tokio::test]
     async fn test_sticky_header_hidden_after_clear() {
         // /clear 后 sticky header 应消失
-        let (mut app, mut handle) = App::new_headless(80, 24);
+        let (mut app, mut handle) = App::new_headless(80, 24).await;
 
         // 模拟已有消息
         app.sessions[app.active].core.last_human_message = Some("some message".to_string());
@@ -970,7 +970,7 @@ mod tests {
     #[tokio::test]
     async fn test_sticky_header_shows_last_message_not_first() {
         // 连续发送多条消息，header 应显示最后一条
-        let (mut app, mut handle) = App::new_headless(80, 24);
+        let (mut app, mut handle) = App::new_headless(80, 24).await;
 
         // 填充足够多的消息使消息区产生滚动
         for i in 0..30 {
@@ -1011,7 +1011,7 @@ mod tests {
     #[tokio::test]
     async fn test_sticky_header_truncation_long_message() {
         // 超长消息应在达到行数上限后截断并加 …
-        let (mut app, mut handle) = App::new_headless(40, 24); // 窄屏 40 列
+        let (mut app, mut handle) = App::new_headless(40, 24).await; // 窄屏 40 列
 
         // 填充足够多的消息使消息区产生滚动
         for i in 0..30 {
@@ -1050,7 +1050,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cron_panel_render() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // Register a cron task
         app.cron
@@ -1095,7 +1095,7 @@ mod tests {
     #[tokio::test]
     async fn test_bordered_panel_integration() {
         // BorderedPanel 集成冒烟测试：渲染 agent panel 验证无 panic 且输出正确
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].core.agent_panel = Some(crate::app::AgentPanel::new(vec![], None));
 
@@ -1117,7 +1117,7 @@ mod tests {
             AskUserBatchRequest, AskUserOption, AskUserQuestionData,
         };
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         let (req, _rx) = AskUserBatchRequest::new(vec![
             AskUserQuestionData {
@@ -1201,7 +1201,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_needs_setup_triggers_for_empty_config() {
-            let (app, _handle) = App::new_headless(120, 30);
+            let (app, _handle) = App::new_headless(120, 30).await;
             assert!(
                 app.zen_config.is_none(),
                 "headless App default has no config"
@@ -1215,7 +1215,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_setup_wizard_full_flow_anthropic() {
-            let (mut app, mut handle) = App::new_headless(120, 30);
+            let (mut app, mut handle) = App::new_headless(120, 30).await;
             app.setup_wizard = Some(SetupWizardPanel::new());
 
             // Render Step 1
@@ -1287,7 +1287,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_setup_wizard_full_flow_openai() {
-            let (mut app, mut handle) = App::new_headless(120, 30);
+            let (mut app, mut handle) = App::new_headless(120, 30).await;
             let mut wizard = SetupWizardPanel::new();
 
             // Switch to OpenAI Compatible
@@ -1336,7 +1336,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_setup_wizard_skip_with_confirm() {
-            let (mut app, _handle) = App::new_headless(120, 30);
+            let (mut app, _handle) = App::new_headless(120, 30).await;
             app.setup_wizard = Some(SetupWizardPanel::new());
 
             // Esc → confirm skip
@@ -1497,7 +1497,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_setup_wizard_saves_and_clears() {
-            let (mut app, mut handle) = App::new_headless(120, 30);
+            let (mut app, mut handle) = App::new_headless(120, 30).await;
             app.setup_wizard = Some(SetupWizardPanel::new());
             assert!(app.setup_wizard.is_some());
 
@@ -1538,7 +1538,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_default_permission_mode_is_bypass() {
-        let (app, _handle) = App::new_headless(80, 24);
+        let (app, _handle) = App::new_headless(80, 24).await;
         use rust_agent_middlewares::prelude::PermissionMode;
         assert_eq!(
             app.permission_mode.load(),
@@ -1549,7 +1549,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_permission_mode_store_and_load() {
-        let (app, _handle) = App::new_headless(80, 24);
+        let (app, _handle) = App::new_headless(80, 24).await;
         use rust_agent_middlewares::prelude::PermissionMode;
         for mode in [
             PermissionMode::Default,
@@ -1570,7 +1570,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_permission_mode_cycle() {
-        let (app, _handle) = App::new_headless(80, 24);
+        let (app, _handle) = App::new_headless(80, 24).await;
         use rust_agent_middlewares::prelude::PermissionMode;
         // cycle 从 Bypass 开始 → Default
         let next = app.permission_mode.cycle();
@@ -1582,7 +1582,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_status_bar_shows_permission_mode() {
-        let (mut app, mut handle) = App::new_headless(120, 24);
+        let (mut app, mut handle) = App::new_headless(120, 24).await;
         // 默认 Bypass → 应显示 "Bypass"
         handle
             .terminal
@@ -1598,7 +1598,7 @@ mod tests {
     #[tokio::test]
     async fn test_status_bar_updates_after_mode_switch() {
         use rust_agent_middlewares::prelude::PermissionMode;
-        let (mut app, mut handle) = App::new_headless(120, 24);
+        let (mut app, mut handle) = App::new_headless(120, 24).await;
         // 切换到 Default - 不显示标签
         app.permission_mode.store(PermissionMode::Default);
         handle
@@ -1651,7 +1651,7 @@ mod tests {
     #[tokio::test]
     async fn test_shift_tab_cycles_permission_mode() {
         use rust_agent_middlewares::prelude::PermissionMode;
-        let (app, _handle) = App::new_headless(120, 24);
+        let (app, _handle) = App::new_headless(120, 24).await;
         // 初始 Bypass
         assert_eq!(app.permission_mode.load(), PermissionMode::Bypass);
         // 模拟 Shift+Tab 按键效果（直接调用 cycle）
@@ -1668,7 +1668,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mode_highlight_until_set_on_cycle() {
-        let (mut app, _handle) = App::new_headless(120, 24);
+        let (mut app, _handle) = App::new_headless(120, 24).await;
         // 初始无闪烁
         assert!(app.mode_highlight_until.is_none(), "初始不应有闪烁");
         // 模拟 Shift+Tab: cycle + 设置 highlight
@@ -1686,7 +1686,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spinner_shows_verb_in_status_bar() {
-        let (mut app, mut handle) = crate::app::App::new_headless(120, 30);
+        let (mut app, mut handle) = crate::app::App::new_headless(120, 30).await;
         // 添加一条消息，否则 render_messages 会走 welcome 分支提前 return
         app.sessions[app.active]
             .core
@@ -1709,7 +1709,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_widget_renders_completed() {
-        let (_app, mut handle) = crate::app::App::new_headless(120, 30);
+        let (_app, mut handle) = crate::app::App::new_headless(120, 30).await;
 
         let vm = crate::app::MessageViewModel::ToolBlock {
             tool_name: "Bash".to_string(),
@@ -1738,7 +1738,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_status_shows_in_status_bar() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 直接设置 retry_status 并渲染
         app.sessions[app.active].agent.retry_status = Some(crate::app::RetryStatus {
@@ -1780,7 +1780,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_compact_done_with_re_inject() {
-        let (mut app, handle) = App::new_headless(120, 30);
+        let (mut app, handle) = App::new_headless(120, 30).await;
         let notified = handle.render_notify.notified();
         app.push_agent_event(make_compact_done_event(
             "Test summary",
@@ -1812,7 +1812,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_compact_done_without_re_inject() {
-        let (mut app, handle) = App::new_headless(120, 30);
+        let (mut app, handle) = App::new_headless(120, 30).await;
         let notified = handle.render_notify.notified();
         app.push_agent_event(make_compact_done_event("Simple summary", &[]));
         app.process_pending_events();
@@ -1846,7 +1846,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_compact_config_default() {
-        let (app, _handle) = App::new_headless(120, 30);
+        let (app, _handle) = App::new_headless(120, 30).await;
         let config = app.get_compact_config();
         let default = rust_create_agent::agent::compact::CompactConfig::default();
         assert!(config.auto_compact_enabled == default.auto_compact_enabled);
@@ -1855,7 +1855,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_compact_config_from_settings() {
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
         let mut zen = crate::config::types::ZenConfig::default();
         zen.config.compact = Some(rust_create_agent::agent::compact::CompactConfig {
             auto_compact_threshold: 0.9,
@@ -1876,7 +1876,7 @@ mod tests {
     async fn test_user_message_survives_assistant_chunk() {
         use rust_create_agent::messages::BaseMessage;
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 模拟用户发送消息
         let user_vm = MessageViewModel::user("my question".into());
@@ -1928,7 +1928,7 @@ mod tests {
     async fn test_messages_accumulate_across_turns() {
         use rust_create_agent::messages::BaseMessage;
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 第一轮：用户 → AI
         // 模拟 submit_message：先记录 round_start_vm_idx，再 push Human VM
@@ -2003,7 +2003,7 @@ mod tests {
     async fn test_done_does_not_duplicate_ai_message() {
         use rust_create_agent::messages::BaseMessage;
 
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         // 模拟 StateSnapshot（增量）+ Done 序列
         app.push_agent_event(AgentEvent::AssistantChunk("unique text".into()));
@@ -2060,7 +2060,7 @@ mod tests {
     /// 回归：ToolStart 之后 AssistantChunk 不会丢失工具消息
     #[tokio::test]
     async fn test_tool_then_text_preserves_tool_block() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         let n1 = handle.render_notify.notified();
         let n2 = handle.render_notify.notified();
@@ -2101,7 +2101,7 @@ mod tests {
     #[tokio::test]
     async fn test_unified_hint_shows_commands_and_skills() {
         use rust_agent_middlewares::skills::loader::SkillMetadata;
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 设置输入框内容为 /
         app.sessions[app.active].core.textarea = crate::app::build_textarea(false);
@@ -2149,7 +2149,7 @@ mod tests {
     #[tokio::test]
     async fn test_unified_hint_filters_by_prefix() {
         use rust_agent_middlewares::skills::loader::SkillMetadata;
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].core.textarea = crate::app::build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/mo");
@@ -2184,7 +2184,7 @@ mod tests {
     #[tokio::test]
     async fn test_unified_hint_no_result_for_hash() {
         use rust_agent_middlewares::skills::loader::SkillMetadata;
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].core.textarea = crate::app::build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("#skill");
@@ -2215,7 +2215,7 @@ mod tests {
     #[tokio::test]
     async fn test_enter_skill_name_submits_message() {
         use rust_agent_middlewares::skills::loader::SkillMetadata;
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].core.textarea = crate::app::build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/review");
@@ -2253,7 +2253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enter_unknown_command_shows_error() {
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].core.textarea = crate::app::build_textarea(false);
         app.sessions[app.active]
@@ -2286,7 +2286,7 @@ mod tests {
     #[tokio::test]
     async fn test_enter_known_command_no_skill_fallback() {
         use rust_agent_middlewares::skills::loader::SkillMetadata;
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         // 注入名为 help 的 Skill
         app.sessions[app.active].core.skills.push(SkillMetadata {
@@ -2306,7 +2306,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_textarea_shows_placeholder_hint() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         handle
             .terminal
             .draw(|f| main_ui::render(f, &mut app))
@@ -2324,7 +2324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_welcome_card_shows_alt_enter_hint() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         handle
             .terminal
             .draw(|f| main_ui::render(f, &mut app))
@@ -2342,7 +2342,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ambiguous_command_shows_candidates() {
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
         // /c 前缀匹配 clear/compact/cron
         let registry = &app.sessions[app.active].core.command_registry;
         let matches = registry.match_prefix("c");
@@ -2380,7 +2380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compact_empty_shows_no_context_message() {
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
         // 空消息时调用 compact 应提示无上下文
         app.start_compact(String::new());
         let msgs = &app.sessions[app.active].core.view_messages;
@@ -2578,7 +2578,7 @@ mod tests {
         use chrono::Utc;
         use rust_agent_middlewares::cron::CronTask;
 
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
 
         // 手动构造一个 cron 任务
         let task = CronTask {
@@ -2634,7 +2634,7 @@ mod tests {
         use chrono::Utc;
         use rust_agent_middlewares::cron::CronTask;
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let task = CronTask {
             id: "job-1".to_string(),
             expression: "*/5 * * * *".to_string(),
@@ -2670,7 +2670,7 @@ mod tests {
         use crate::config::types::AppConfig;
         use crate::config::{ProviderConfig, ThinkingConfig, ZenConfig};
 
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
         let cfg = ZenConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
@@ -2724,7 +2724,7 @@ mod tests {
         use crate::config::types::AppConfig;
         use crate::config::{ProviderConfig, ZenConfig};
 
-        let (mut app, _handle) = App::new_headless(120, 30);
+        let (mut app, _handle) = App::new_headless(120, 30).await;
         let cfg = ZenConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
@@ -2779,7 +2779,7 @@ mod tests {
     /// Welcome Card 应显示当前 Provider/Model 信息
     #[tokio::test]
     async fn test_welcome_shows_model_info() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         // App 默认有 provider_name="test" 和 model_name="test-model"
         handle
             .terminal
@@ -2797,7 +2797,7 @@ mod tests {
     /// 验证后台任务完成通知事件处理
     #[tokio::test]
     async fn test_background_task_notification() {
-        let (mut app, handle) = App::new_headless(120, 30);
+        let (mut app, handle) = App::new_headless(120, 30).await;
 
         // 先设置后台任务计数
         app.sessions[app.active].background_task_count = 1;
@@ -2845,7 +2845,7 @@ mod tests {
     /// 验证状态栏显示后台任务计数 [BG: N]
     #[tokio::test]
     async fn test_background_task_status_bar() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         app.sessions[app.active].background_task_count = 2;
 
@@ -2874,7 +2874,7 @@ mod tests {
     async fn test_textarea_input_visible_during_loading() {
         use tui_textarea::{Input, Key};
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 模拟 agent 运行中（loading = true）
         app.set_loading(true);
@@ -2913,7 +2913,7 @@ mod tests {
     async fn test_subagent_group_preserved_after_done_reconcile() {
         use rust_create_agent::messages::{BaseMessage, MessageContent, ToolCallRequest};
 
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
 
         // 1. 模拟 AI 文本
         let n = handle.render_notify.notified();

@@ -271,15 +271,6 @@ impl NodeRun {
         .await?;
         Ok(result.rows_affected())
     }
-
-    /// Delete all node runs for a given workflow run.
-    pub async fn delete_by_run(pool: &SqlitePool, run_id: &str) -> anyhow::Result<u64> {
-        let result = sqlx::query("DELETE FROM node_runs WHERE run_id = ?")
-            .bind(run_id)
-            .execute(pool)
-            .await?;
-        Ok(result.rows_affected())
-    }
 }
 
 // ─── API Request Types ────────────────────────────────────────────

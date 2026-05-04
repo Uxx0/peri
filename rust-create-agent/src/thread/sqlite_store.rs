@@ -1,79 +1,87 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use parking_lot::Mutex;
-use rusqlite::{params, Connection};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::SqlitePool;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::str::FromStr;
 
 use crate::messages::BaseMessage;
 use crate::thread::{ThreadId, ThreadMeta, ThreadStore};
 
 /// 基于 SQLite 的 ThreadStore 实现
 ///
-/// 使用 WAL 模式提升并发读性能，parking_lot::Mutex 串行化写操作。
+/// 使用 WAL 模式提升并发读性能，sqlx SqlitePool 连接池管理并发。
 pub struct SqliteThreadStore {
-    conn: Arc<Mutex<Connection>>,
+    pool: SqlitePool,
 }
 
 impl SqliteThreadStore {
     /// 使用指定路径打开（或创建）数据库，并初始化 Schema
-    pub fn new(db_path: impl Into<PathBuf>) -> Result<Self> {
+    pub async fn new(db_path: impl Into<PathBuf>) -> Result<Self> {
         let db_path = db_path.into();
         // 确保父目录存在
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("创建目录失败: {}", parent.display()))?;
         }
-        let conn = Connection::open(&db_path)
-            .with_context(|| format!("打开 SQLite 失败: {}", db_path.display()))?;
-        // 性能优化
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
-        )?;
-        let store = Self {
-            conn: Arc::new(Mutex::new(conn)),
-        };
-        store.init_schema()?;
+        let options =
+            SqliteConnectOptions::from_str(&format!("sqlite://{}?mode=rwc", db_path.display()))?
+                .pragma("journal_mode", "WAL")
+                .pragma("synchronous", "NORMAL")
+                .pragma("foreign_keys", "ON");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
+        let store = Self { pool };
+        store.init_schema().await?;
         Ok(store)
     }
 
     /// 使用默认路径 `~/.zen-core/threads/threads.db` 创建
-    pub fn default_path() -> Result<Self> {
+    pub async fn default_path() -> Result<Self> {
         let db_path = dirs_next::home_dir()
             .context("无法获取 home 目录")?
             .join(".zen-core")
             .join("threads")
             .join("threads.db");
-        Self::new(db_path)
+        Self::new(db_path).await
     }
 
     /// 初始化 Schema（幂等，可重复调用）
-    fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock();
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS threads (
+    async fn init_schema(&self) -> Result<()> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS threads (
                 id          TEXT PRIMARY KEY,
                 title       TEXT,
                 cwd         TEXT NOT NULL DEFAULT '',
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
                 message_count INTEGER NOT NULL DEFAULT 0
-            );
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-            CREATE TABLE IF NOT EXISTS messages (
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS messages (
                 message_id  TEXT PRIMARY KEY,
                 thread_id   TEXT NOT NULL,
                 role        TEXT NOT NULL,
                 content     TEXT NOT NULL,
                 FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
-            );
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
 
-            CREATE INDEX IF NOT EXISTS idx_messages_thread_id
-                ON messages (thread_id ASC);
-            ",
-        )?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages (thread_id ASC)",
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 }
@@ -144,24 +152,18 @@ fn extract_title(msgs: &[BaseMessage]) -> Option<String> {
 impl ThreadStore for SqliteThreadStore {
     async fn create_thread(&self, meta: ThreadMeta) -> Result<ThreadId> {
         let id = meta.id.clone();
-        let conn = self.conn.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let conn = conn.lock();
-            conn.execute(
-                "INSERT INTO threads (id, title, cwd, created_at, updated_at, message_count)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    meta.id,
-                    meta.title,
-                    meta.cwd,
-                    meta.created_at.to_rfc3339(),
-                    meta.updated_at.to_rfc3339(),
-                    meta.message_count as i64,
-                ],
-            )?;
-            Ok(())
-        })
-        .await??;
+        sqlx::query(
+            "INSERT INTO threads (id, title, cwd, created_at, updated_at, message_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .bind(&meta.id)
+        .bind(&meta.title)
+        .bind(&meta.cwd)
+        .bind(meta.created_at.to_rfc3339())
+        .bind(meta.updated_at.to_rfc3339())
+        .bind(meta.message_count as i64)
+        .execute(&self.pool)
+        .await?;
         Ok(id)
     }
 
@@ -169,164 +171,104 @@ impl ThreadStore for SqliteThreadStore {
         if msgs.is_empty() {
             return Ok(());
         }
-        let id = id.clone();
-        let msgs = msgs.to_vec();
-        let conn = self.conn.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let mut conn = conn.lock();
-            let tx = conn.transaction()?;
-            for msg in &msgs {
-                let message_id = msg.id().as_uuid().to_string();
-                let role = role_of(msg);
-                let content = serde_json::to_string(msg)?;
-                tx.execute(
-                    "INSERT OR IGNORE INTO messages (message_id, thread_id, role, content)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![message_id, id, role, content],
-                )?;
-            }
-            // 更新 threads 表的 updated_at 和 message_count
-            let now = Utc::now().to_rfc3339();
-            tx.execute(
-                "UPDATE threads SET updated_at = ?1,
-                    message_count = (SELECT COUNT(*) FROM messages WHERE thread_id = ?2)
-                 WHERE id = ?2",
-                params![now, id],
-            )?;
-            // 尝试更新标题（如果还没有标题）
-            if let Some(title) = extract_title(&msgs) {
-                tx.execute(
-                    "UPDATE threads SET title = ?1 WHERE id = ?2 AND title IS NULL",
-                    params![title, id],
-                )?;
-            }
-            tx.commit()?;
-            Ok(())
-        })
-        .await??;
+        let mut tx = self.pool.begin().await?;
+        for msg in msgs {
+            let message_id = msg.id().as_uuid().to_string();
+            let role = role_of(msg);
+            let content = serde_json::to_string(msg)?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO messages (message_id, thread_id, role, content)
+                 VALUES (?1, ?2, ?3, ?4)",
+            )
+            .bind(&message_id)
+            .bind(id.as_str())
+            .bind(role)
+            .bind(&content)
+            .execute(&mut *tx)
+            .await?;
+        }
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE threads SET updated_at = ?1,
+                message_count = (SELECT COUNT(*) FROM messages WHERE thread_id = ?2)
+             WHERE id = ?2",
+        )
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&mut *tx)
+        .await?;
+
+        if let Some(title) = extract_title(msgs) {
+            sqlx::query("UPDATE threads SET title = ?1 WHERE id = ?2 AND title IS NULL")
+                .bind(&title)
+                .bind(id.as_str())
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
     async fn load_messages(&self, id: &ThreadId) -> Result<Vec<BaseMessage>> {
-        let id = id.clone();
-        let conn = self.conn.clone();
-        let msgs = tokio::task::spawn_blocking(move || -> Result<Vec<BaseMessage>> {
-            let conn = conn.lock();
-            let mut stmt =
-                conn.prepare("SELECT content FROM messages WHERE thread_id = ?1 ORDER BY rowid")?;
-            let msgs: Result<Vec<BaseMessage>> = stmt
-                .query_map(params![id], |row| row.get::<_, String>(0))?
-                .map(|r| {
-                    let content = r?;
-                    let msg: BaseMessage = serde_json::from_str(&content)
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-                    Ok(msg)
-                })
-                .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| anyhow::anyhow!(e));
-            msgs
-        })
-        .await??;
-        Ok(msgs)
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT content FROM messages WHERE thread_id = ?1 ORDER BY rowid")
+                .bind(id.as_str())
+                .fetch_all(&self.pool)
+                .await?;
+
+        rows.into_iter()
+            .map(|(content,)| serde_json::from_str(&content).map_err(Into::into))
+            .collect()
     }
 
     async fn load_meta(&self, id: &ThreadId) -> Result<ThreadMeta> {
-        let id = id.clone();
-        let conn = self.conn.clone();
-        let meta = tokio::task::spawn_blocking(move || -> Result<ThreadMeta> {
-            let conn = conn.lock();
-            conn.query_row(
-                "SELECT t.id, t.title, t.cwd, t.created_at, t.updated_at, t.message_count,
-                        (SELECT COALESCE(SUM(LENGTH(m.content)), 0) FROM messages m WHERE m.thread_id = t.id) as content_size
-                 FROM threads t WHERE t.id = ?1",
-                params![id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, i64>(5)?,
-                        row.get::<_, i64>(6)?,
-                    ))
-                },
-            )
-            .map_err(|e| anyhow::anyhow!(e))
-            .and_then(|(id, title, cwd, created_at, updated_at, mc, cs)| {
-                meta_from_row(id, title, cwd, created_at, updated_at, mc, cs)
-            })
-        })
-        .await??;
-        Ok(meta)
+        let row: (String, Option<String>, String, String, String, i64, i64) = sqlx::query_as(
+            "SELECT t.id, t.title, t.cwd, t.created_at, t.updated_at, t.message_count,
+                    (SELECT COALESCE(SUM(LENGTH(m.content)), 0) FROM messages m WHERE m.thread_id = t.id) as content_size
+             FROM threads t WHERE t.id = ?1"
+        )
+        .bind(id.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+
+        meta_from_row(row.0, row.1, row.2, row.3, row.4, row.5, row.6)
     }
 
     async fn update_meta(&self, id: &ThreadId, meta: ThreadMeta) -> Result<()> {
-        let id = id.clone();
-        let conn = self.conn.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let conn = conn.lock();
-            conn.execute(
-                "UPDATE threads SET title = ?1, cwd = ?2, updated_at = ?3, message_count = ?4 WHERE id = ?5",
-                params![
-                    meta.title,
-                    meta.cwd,
-                    meta.updated_at.to_rfc3339(),
-                    meta.message_count as i64,
-                    id,
-                ],
-            )?;
-            Ok(())
-        })
-        .await??;
+        sqlx::query(
+            "UPDATE threads SET title = ?1, cwd = ?2, updated_at = ?3, message_count = ?4 WHERE id = ?5"
+        )
+        .bind(&meta.title)
+        .bind(&meta.cwd)
+        .bind(meta.updated_at.to_rfc3339())
+        .bind(meta.message_count as i64)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn list_threads(&self) -> Result<Vec<ThreadMeta>> {
-        let conn = self.conn.clone();
-        let metas = tokio::task::spawn_blocking(move || -> Result<Vec<ThreadMeta>> {
-            let conn = conn.lock();
-            let mut stmt = conn.prepare(
-                "SELECT t.id, t.title, t.cwd, t.created_at, t.updated_at, t.message_count,
-                        (SELECT COALESCE(SUM(LENGTH(m.content)), 0) FROM messages m WHERE m.thread_id = t.id) as content_size
-                 FROM threads t ORDER BY t.updated_at DESC",
-            )?;
-            let metas: Result<Vec<ThreadMeta>> = stmt
-                .query_map(params![], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, i64>(5)?,
-                        row.get::<_, i64>(6)?,
-                    ))
-                })?
-                .map(|r| {
-                    let (id, title, cwd, created_at, updated_at, mc, cs) =
-                        r.map_err(|e| anyhow::anyhow!(e))?;
-                    meta_from_row(id, title, cwd, created_at, updated_at, mc, cs)
-                })
-                .collect();
-            metas
-        })
-        .await??;
-        Ok(metas)
+        let rows: Vec<(String, Option<String>, String, String, String, i64, i64)> = sqlx::query_as(
+            "SELECT t.id, t.title, t.cwd, t.created_at, t.updated_at, t.message_count,
+                    (SELECT COALESCE(SUM(LENGTH(m.content)), 0) FROM messages m WHERE m.thread_id = t.id) as content_size
+             FROM threads t ORDER BY t.updated_at DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| meta_from_row(row.0, row.1, row.2, row.3, row.4, row.5, row.6))
+            .collect()
     }
 
     async fn delete_thread(&self, id: &ThreadId) -> Result<()> {
-        let id = id.clone();
-        let conn = self.conn.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let mut conn = conn.lock();
-            let tx = conn.transaction()?;
-            // messages 由 FOREIGN KEY CASCADE 自动删除
-            tx.execute("DELETE FROM threads WHERE id = ?1", params![id])?;
-            tx.commit()?;
-            Ok(())
-        })
-        .await??;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM threads WHERE id = ?1")
+            .bind(id.as_str())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -338,14 +280,16 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn make_store() -> SqliteThreadStore {
+    async fn make_store() -> SqliteThreadStore {
         let dir = tempdir().unwrap();
-        SqliteThreadStore::new(dir.path().join("test.db")).unwrap()
+        SqliteThreadStore::new(dir.path().join("test.db"))
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
     async fn test_create_append_load() {
-        let store = make_store();
+        let store = make_store().await;
         let meta = ThreadMeta::new("/tmp");
         let id = store.create_thread(meta).await.unwrap();
 
@@ -360,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_threads_order() {
-        let store = make_store();
+        let store = make_store().await;
 
         let m1 = ThreadMeta::new("/a");
         let id1 = store.create_thread(m1).await.unwrap();
@@ -384,7 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_thread_cascade() {
-        let store = make_store();
+        let store = make_store().await;
         let meta = ThreadMeta::new("/tmp");
         let id = store.create_thread(meta).await.unwrap();
         store
@@ -406,7 +350,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_order_after_multiple_appends() {
-        let store = make_store();
+        let store = make_store().await;
         let meta = ThreadMeta::new("/tmp");
         let id = store.create_thread(meta).await.unwrap();
 
@@ -432,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_title_auto_set() {
-        let store = make_store();
+        let store = make_store().await;
         let meta = ThreadMeta::new("/tmp");
         let id = store.create_thread(meta).await.unwrap();
 

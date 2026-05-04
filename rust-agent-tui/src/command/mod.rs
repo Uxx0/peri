@@ -196,8 +196,8 @@ mod tests {
         )
     }
 
-    fn headless_app() -> App {
-        App::new_headless(80, 24).0
+    async fn headless_app() -> App {
+        App::new_headless(80, 24).await.0
     }
 
     // ── dispatch 精确匹配 ──
@@ -207,7 +207,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, called, _) = make_stub("model");
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             r.dispatch(&mut app, "/model"),
             "exact match should return true"
@@ -220,7 +220,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, _, _) = make_stub("model");
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             !r.dispatch(&mut app, "/unknown"),
             "unknown command should return false"
@@ -234,7 +234,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, called, _) = make_stub("model");
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             r.dispatch(&mut app, "/mo"),
             "unique prefix should return true"
@@ -252,7 +252,7 @@ mod tests {
         let (stub2, called2, _) = make_stub("mock");
         r.register(Box::new(stub1));
         r.register(Box::new(stub2));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             !r.dispatch(&mut app, "/m"),
             "ambiguous prefix should return false"
@@ -268,7 +268,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, _, last_args) = make_stub("model");
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         r.dispatch(&mut app, "/model opus");
         assert_eq!(*last_args.lock(), "opus", "args should be passed correctly");
     }
@@ -307,7 +307,7 @@ mod tests {
         let (s2, _, _) = make_stub("clear");
         r.register(Box::new(s1));
         r.register(Box::new(s2));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         // "/" → empty name, all commands match → ambiguous → false
         assert!(
             !r.dispatch(&mut app, "/"),
@@ -322,7 +322,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, called, _) = make_stub_with_aliases("clear", vec!["reset", "new"]);
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             r.dispatch(&mut app, "/reset"),
             "alias exact match should return true"
@@ -335,7 +335,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, _, _) = make_stub("model");
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             !r.dispatch(&mut app, "/reset"),
             "no alias should return false"
@@ -349,7 +349,7 @@ mod tests {
         let (s2, called2, _) = make_stub_with_aliases("clear", vec!["reset"]);
         r.register(Box::new(s1));
         r.register(Box::new(s2));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(r.dispatch(&mut app, "/reset"));
         assert!(called1.load(Ordering::Relaxed), "name exact should win");
         assert!(!called2.load(Ordering::Relaxed));
@@ -360,7 +360,7 @@ mod tests {
         let mut r = CommandRegistry::new();
         let (stub, called, _) = make_stub_with_aliases("clear", vec!["reset"]);
         r.register(Box::new(stub));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             r.dispatch(&mut app, "/res"),
             "alias prefix unique match should return true"
@@ -375,7 +375,7 @@ mod tests {
         let (s2, called2, _) = make_stub("real");
         r.register(Box::new(s1));
         r.register(Box::new(s2));
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         assert!(
             !r.dispatch(&mut app, "/re"),
             "ambiguous alias prefix should return false"

@@ -33,13 +33,13 @@ pub fn validate_workflow(wf: &Workflow) -> anyhow::Result<()> {
             anyhow::bail!("node id must not be empty");
         }
         // Node IDs must be safe for use in CSS selectors, file paths, and shell commands.
-        // Allow: alphanumeric, hyphen, underscore, forward slash (for reference-expanded IDs)
+        // Allow: alphanumeric, hyphen, underscore, dot, forward slash (for reference-expanded IDs)
         if !id
             .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/')
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/')
         {
             anyhow::bail!(
-                "node id '{}' contains invalid characters (allowed: alphanumeric, '-', '_', '/')",
+                "node id '{}' contains invalid characters (allowed: alphanumeric, '-', '_', '.', '/')",
                 id
             );
         }
@@ -55,7 +55,7 @@ pub fn validate_workflow(wf: &Workflow) -> anyhow::Result<()> {
         for dep in depends.iter() {
             if !dep
                 .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/')
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/')
             {
                 anyhow::bail!(
                     "dependency '{}' in node '{}' contains invalid characters",
@@ -785,7 +785,7 @@ nodes:
 name: test
 version: "1.0"
 nodes:
-  - id: "build.node"
+  - id: "build@node"
     type: shell
     run: echo hello
 "#;
@@ -809,7 +809,7 @@ nodes:
 
     #[test]
     fn test_parse_workflow_node_id_valid_chars() {
-        // Hyphen, underscore, and forward slash are allowed
+        // Hyphen, underscore, dot, and forward slash are allowed
         let yaml = r#"
 name: test
 version: "1.0"
@@ -817,13 +817,16 @@ nodes:
   - id: build-step_1
     type: shell
     run: echo hello
+  - id: build.step
+    type: shell
+    run: echo hello
   - id: deploy/prod
     type: shell
-    depends: [build-step_1]
+    depends: [build-step_1, build.step]
     run: echo deploy
 "#;
         let wf = parse_workflow(yaml).unwrap();
-        assert_eq!(wf.nodes.len(), 2);
+        assert_eq!(wf.nodes.len(), 3);
     }
 
     #[test]
@@ -837,7 +840,7 @@ nodes:
     run: echo hello
   - id: deploy
     type: shell
-    depends: ["build.node"]
+    depends: ["build@node"]
     run: echo deploy
 "#;
         let err = parse_workflow(yaml).unwrap_err();

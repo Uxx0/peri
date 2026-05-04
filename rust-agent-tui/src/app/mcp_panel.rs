@@ -531,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_move_cursor() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         let servers = vec![
             make_server_info("a", ClientStatus::Connected),
             make_server_info("b", ClientStatus::Connected),
@@ -552,7 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_close() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.mcp_panel = Some(McpPanel::new(vec![]));
         assert!(app.mcp_panel.is_some());
         app.mcp_panel_close();
@@ -561,7 +561,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_request_cancel_delete() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.mcp_panel = Some(McpPanel::new(vec![make_server_info(
             "test-srv",
             ClientStatus::Connected,
@@ -579,7 +579,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_enter_builds_actions() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         let mut srv = make_server_info("http-srv", ClientStatus::Connected);
         srv.transport_type = "http".to_string();
         app.mcp_panel = Some(McpPanel::new(vec![srv]));
@@ -598,7 +598,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_back_restores_cursor() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.mcp_panel = Some(McpPanel::new(vec![
             make_server_info("a", ClientStatus::Connected),
             make_server_info("b", ClientStatus::Connected),

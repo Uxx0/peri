@@ -463,8 +463,8 @@ mod tests {
         }
     }
 
-    fn render_mcp_panel(servers: Vec<ServerInfo>) -> crate::ui::headless::HeadlessHandle {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_mcp_panel(servers: Vec<ServerInfo>) -> crate::ui::headless::HeadlessHandle {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.mcp_panel = Some(McpPanel::new(servers));
         handle
             .terminal
@@ -475,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_empty_server_list() {
-        let handle = render_mcp_panel(vec![]);
+        let handle = render_mcp_panel(vec![]).await;
         let snap = handle.snapshot().join("\n");
         assert!(snap.contains("No MCP servers"), "空 MCP 面板应显示引导文字");
     }
@@ -485,7 +485,8 @@ mod tests {
         let handle = render_mcp_panel(vec![
             make_server("test-connected", ClientStatus::Connected),
             make_server("test-failed", ClientStatus::Failed("timeout".into())),
-        ]);
+        ])
+        .await;
         let snap = handle.snapshot().join("\n");
         assert!(snap.contains("test-connected"), "MCP 面板应显示服务器名称");
         assert!(snap.contains("connected"), "MCP 面板应显示 connected 状态");
@@ -493,7 +494,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_panel_detail_action_menu() {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let mut srv = make_server("test-srv", ClientStatus::Connected);
         srv.transport_type = "http".to_string();
         srv.url = Some("https://example.com/mcp".to_string());
@@ -531,7 +532,7 @@ mod tests {
             "/home/.zen-code/settings.json",
         )));
 
-        let handle = render_mcp_panel(vec![project_srv, global_srv]);
+        let handle = render_mcp_panel(vec![project_srv, global_srv]).await;
         let snap = handle.snapshot().join("\n");
         assert!(snap.contains("project-srv"), "应显示项目级服务器");
         assert!(snap.contains("global-srv"), "应显示全局服务器");

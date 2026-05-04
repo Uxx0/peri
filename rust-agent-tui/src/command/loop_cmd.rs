@@ -47,13 +47,13 @@ impl Command for LoopCommand {
 mod tests {
     use super::*;
 
-    fn headless_app() -> App {
-        App::new_headless(80, 24).0
+    async fn headless_app() -> App {
+        App::new_headless(80, 24).await.0
     }
 
     #[tokio::test]
     async fn test_loop_cmd_empty_args_shows_usage() {
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         let cmd = LoopCommand;
         cmd.execute(&mut app, "");
         assert_eq!(app.sessions[app.active].core.view_messages.len(), 1);
@@ -67,7 +67,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_loop_cmd_empty_whitespace_shows_usage() {
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         let cmd = LoopCommand;
         cmd.execute(&mut app, "   ");
         assert_eq!(app.sessions[app.active].core.view_messages.len(), 1);
@@ -77,7 +77,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_loop_cmd_valid_args_submits_message() {
-        let mut app = headless_app();
+        let mut app = headless_app().await;
         let initial_len = app.sessions[app.active].core.view_messages.len();
         let cmd = LoopCommand;
         cmd.execute(&mut app, "每隔5分钟提醒我喝水");

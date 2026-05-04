@@ -449,15 +449,24 @@ mod tests {
         assert!(!node_continue_on_error(&node2));
     }
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_max_concurrent_nodes_default() {
-        std::env::remove_var("ACPX_MAX_CONCURRENT");
+        let _guard = ENV_LOCK.lock().unwrap();
+        let key = "ACPX_MAX_CONCURRENT";
+        let prev = std::env::var(key).ok();
+        std::env::remove_var(key);
         assert_eq!(max_concurrent_nodes(), 16);
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
     }
 
     #[test]
     fn test_max_concurrent_nodes_custom() {
-        // Use a unique key to avoid race with other tests
+        let _guard = ENV_LOCK.lock().unwrap();
         let key = "ACPX_MAX_CONCURRENT";
         let prev = std::env::var(key).ok();
         std::env::set_var(key, "32");
@@ -470,6 +479,7 @@ mod tests {
 
     #[test]
     fn test_max_concurrent_nodes_minimum() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let key = "ACPX_MAX_CONCURRENT";
         let prev = std::env::var(key).ok();
         std::env::set_var(key, "0");
@@ -575,12 +585,20 @@ mod tests {
 
     #[test]
     fn test_max_concurrent_runs_default() {
-        std::env::remove_var("ACPX_MAX_CONCURRENT_RUNS");
+        let _guard = ENV_LOCK.lock().unwrap();
+        let key = "ACPX_MAX_CONCURRENT_RUNS";
+        let prev = std::env::var(key).ok();
+        std::env::remove_var(key);
         assert_eq!(max_concurrent_runs(), 8);
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
     }
 
     #[test]
     fn test_max_concurrent_runs_custom() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let key = "ACPX_MAX_CONCURRENT_RUNS";
         let prev = std::env::var(key).ok();
         std::env::set_var(key, "4");
@@ -593,6 +611,7 @@ mod tests {
 
     #[test]
     fn test_max_concurrent_runs_minimum() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let key = "ACPX_MAX_CONCURRENT_RUNS";
         let prev = std::env::var(key).ok();
         std::env::set_var(key, "0");
@@ -605,6 +624,7 @@ mod tests {
 
     #[test]
     fn test_max_concurrent_runs_invalid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let key = "ACPX_MAX_CONCURRENT_RUNS";
         let prev = std::env::var(key).ok();
         std::env::set_var(key, "not_a_number");

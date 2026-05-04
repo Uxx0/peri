@@ -137,8 +137,8 @@ mod tests {
     use crate::app::model_panel::{AliasTab, ModelPanel, ROW_OPUS};
     use crate::app::App;
 
-    fn render_headless_model_no_provider() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_model_no_provider() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.sessions[app.active].core.model_panel = Some(ModelPanel {
             provider_name: String::new(),
             cursor: ROW_OPUS,
@@ -154,7 +154,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_panel_renders_select_model_title() {
-        let (_, handle) = render_headless_model_no_provider();
+        let (_, handle) = render_headless_model_no_provider().await;
         let snap = handle.snapshot().join("\n");
         assert!(
             snap.contains("Select model"),
@@ -165,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_panel_shows_effort() {
-        let (_, handle) = render_headless_model_no_provider();
+        let (_, handle) = render_headless_model_no_provider().await;
         let snap = handle.snapshot().join("\n");
         assert!(
             snap.contains("effort"),

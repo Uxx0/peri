@@ -360,8 +360,10 @@ mod tests {
         assert_eq!(mask_api_key("sk-ant-test-key-12345"), "sk-a••••2345");
     }
 
-    fn render_headless(wizard: SetupWizardPanel) -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless(
+        wizard: SetupWizardPanel,
+    ) -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.setup_wizard = Some(wizard);
         handle
             .terminal
@@ -373,7 +375,7 @@ mod tests {
     #[tokio::test]
     async fn test_render_step1_default() {
         let wizard = SetupWizardPanel::new();
-        let (_, handle) = render_headless(wizard);
+        let (_, handle) = render_headless(wizard).await;
         assert!(handle.contains("Perihelion Setup"), "should contain title");
         assert!(handle.contains("Step 1/2"), "should contain step");
         assert!(handle.contains("Anthropic"), "should contain provider");
@@ -384,7 +386,7 @@ mod tests {
     async fn test_render_step1_masked_api_key() {
         let mut wizard = SetupWizardPanel::new();
         wizard.api_key = "sk-abc123xyz789".to_string();
-        let (_, handle) = render_headless(wizard);
+        let (_, handle) = render_headless(wizard).await;
         // API key should be masked with bullets, not visible in plain text
         let snapshot = handle.snapshot().join("\n");
         assert!(
@@ -397,7 +399,7 @@ mod tests {
     async fn test_render_step2_aliases() {
         let mut wizard = SetupWizardPanel::new();
         wizard.step = SetupStep::ModelAlias;
-        let (_, handle) = render_headless(wizard);
+        let (_, handle) = render_headless(wizard).await;
         assert!(handle.contains("Step 2/2"), "should contain step");
     }
 
@@ -406,7 +408,7 @@ mod tests {
         let mut wizard = SetupWizardPanel::new();
         wizard.step = SetupStep::Done;
         wizard.api_key = "sk-ant-test1234xyz".to_string();
-        let (_, handle) = render_headless(wizard);
+        let (_, handle) = render_headless(wizard).await;
         assert!(handle.contains("Complete"), "should contain complete");
     }
 
@@ -414,7 +416,7 @@ mod tests {
     async fn test_render_step1_confirm_skip() {
         let mut wizard = SetupWizardPanel::new();
         wizard.confirm_skip = true;
-        let (_, handle) = render_headless(wizard);
+        let (_, handle) = render_headless(wizard).await;
         assert!(
             handle.contains("Enter") || handle.contains("setup"),
             "should show skip confirmation"

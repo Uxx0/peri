@@ -431,7 +431,10 @@ impl App {
     }
 
     /// 构造 Headless 测试用 App，使用 ratatui TestBackend 替代真实终端
-    pub fn new_headless(width: u16, height: u16) -> (App, crate::ui::headless::HeadlessHandle) {
+    pub async fn new_headless(
+        width: u16,
+        height: u16,
+    ) -> (App, crate::ui::headless::HeadlessHandle) {
         use crate::thread::SqliteThreadStore;
         use ratatui::{backend::TestBackend, Terminal};
 
@@ -446,6 +449,7 @@ impl App {
         let db_name = format!("zen-threads-test-{}.db", uuid::Uuid::now_v7());
         let thread_store: Arc<dyn ThreadStore> = Arc::new(
             SqliteThreadStore::new(std::env::temp_dir().join(db_name))
+                .await
                 .expect("无法创建测试用 SQLite 数据库"),
         );
 

@@ -175,8 +175,8 @@ mod tests {
     use crate::app::agent_panel::AgentPanel;
     use crate::app::App;
 
-    fn render_headless_agent_empty() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_agent_empty() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         app.sessions[app.active].core.agent_panel = Some(AgentPanel::new(vec![], None));
         handle
             .terminal
@@ -187,7 +187,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_empty_shows_guide() {
-        let (_, handle) = render_headless_agent_empty();
+        let (_, handle) = render_headless_agent_empty().await;
         let snap = handle.snapshot().join("\n");
         // 空列表应显示引导提示（用 ASCII 子串避免 CJK 宽字符问题）
         assert!(
@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_panel_has_nav_hint() {
-        let (_, handle) = render_headless_agent_empty();
+        let (_, handle) = render_headless_agent_empty().await;
         let snap = handle.snapshot().join("\n");
         // 面板内或状态栏应包含导航相关提示
         let has_nav = snap.contains("导航") || snap.contains("选择") || snap.contains("Enter");

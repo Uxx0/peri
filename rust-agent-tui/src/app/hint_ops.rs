@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_candidates_count_slash_prefix_returns_cmd_plus_skills() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/");
         app.sessions[app.active]
@@ -115,7 +115,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_candidates_count_slash_prefix_filters_both() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/mo");
         app.sessions[app.active]
@@ -136,7 +136,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_candidates_count_hash_prefix_returns_zero() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("#skill");
         app.sessions[app.active]
@@ -150,7 +150,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_candidates_count_no_prefix_returns_zero() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("hello");
 
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hint_complete_command_at_cursor_0() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/m");
         app.sessions[app.active].core.hint_cursor = Some(0);
@@ -185,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hint_complete_clears_hint_cursor() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/m");
         app.sessions[app.active].core.hint_cursor = Some(0);
@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hint_complete_skill_item() {
-        let (mut app, _handle) = crate::app::App::new_headless(80, 24);
+        let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.sessions[app.active].core.textarea = build_textarea(false);
         app.sessions[app.active].core.textarea.insert_str("/aaa");
         app.sessions[app.active]

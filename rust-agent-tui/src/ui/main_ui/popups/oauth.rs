@@ -82,7 +82,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_render_oauth_popup_shows_url() {
-        let (mut app, mut handle) = crate::app::App::new_headless(80, 30);
+        let (mut app, mut handle) = crate::app::App::new_headless(80, 30).await;
         let (tx, _rx) = tokio::sync::oneshot::channel();
         app.oauth_prompt = Some(crate::app::OAuthPrompt::new(
             "test-server".into(),
@@ -102,7 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_render_oauth_popup_shows_error() {
-        let (mut app, mut handle) = crate::app::App::new_headless(80, 30);
+        let (mut app, mut handle) = crate::app::App::new_headless(80, 30).await;
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let mut prompt =
             crate::app::OAuthPrompt::new("srv".into(), "http://auth.example.com".into(), tx);

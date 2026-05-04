@@ -164,7 +164,7 @@ fn run_tui(approve: bool) -> Result<()> {
 }
 
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    let mut app = App::new();
+    let mut app = App::new().await;
 
     // 根据环境变量/CLI 参数设置初始权限模式
     {

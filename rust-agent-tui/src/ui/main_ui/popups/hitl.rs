@@ -137,8 +137,8 @@ mod tests {
     use crate::app::{HitlBatchPrompt, InteractionPrompt};
     use rust_agent_middlewares::hitl::BatchItem;
 
-    fn render_headless_hitl_single() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_hitl_single() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let items = vec![BatchItem {
             tool_name: "Bash".to_string(),
@@ -154,8 +154,8 @@ mod tests {
         (app, handle)
     }
 
-    fn render_headless_hitl_multi() -> (App, crate::ui::headless::HeadlessHandle) {
-        let (mut app, mut handle) = App::new_headless(120, 30);
+    async fn render_headless_hitl_multi() -> (App, crate::ui::headless::HeadlessHandle) {
+        let (mut app, mut handle) = App::new_headless(120, 30).await;
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let items = vec![
             BatchItem {
@@ -180,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hitl_single_no_single_letter_hints() {
-        let (_, handle) = render_headless_hitl_single();
+        let (_, handle) = render_headless_hitl_single().await;
         let snap = handle.snapshot().join("\n");
         // 不应出现单字母快捷键 y 或 n（作为独立快捷键提示）
         assert!(
@@ -198,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hitl_multi_shows_enter_hint() {
-        let (_, handle) = render_headless_hitl_multi();
+        let (_, handle) = render_headless_hitl_multi().await;
         let snap = handle.snapshot().join("\n");
         // 多项应显示 Enter 确认
         assert!(
