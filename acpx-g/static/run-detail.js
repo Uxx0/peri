@@ -76,6 +76,33 @@ function initRunDetail(runId) {
   document.getElementById('btnBackToRuns')?.addEventListener('click', () => { location.hash = '#runs'; });
   document.getElementById('btnCloseNodeLog')?.addEventListener('click', closeNodeLog);
 
+  // Event delegation for context panel
+  document.getElementById('contextNodeList')?.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-node-id]');
+    if (item?.dataset.nodeId) showNodeLogDetail(item.dataset.nodeId);
+  });
+
+  document.getElementById('contextActions')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const runId = btn.dataset.runId;
+    if (action === 'cancel') cancelRun(runId);
+    else if (action === 'rerun') rerunRun(runId);
+    else if (action === 'delete') deleteRun(runId);
+  });
+
+  document.getElementById('contextInfo')?.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action="copy-id"]');
+    if (el?.dataset.id) copyToClipboard(el.dataset.id);
+  });
+
+  // Event delegation for topology SVG nodes
+  document.getElementById('topologyContainer')?.addEventListener('click', (e) => {
+    const g = e.target.closest('.topo-node-group');
+    if (g?.dataset.nodeId) showNodeLogDetail(g.dataset.nodeId);
+  });
+
   // Escape key navigates back to runs list
   const escHandler = (e) => {
     if (e.key === 'Escape' && AppState.currentPage === 'run-detail') {
@@ -341,7 +368,7 @@ function renderTopology(run) {
     const maxTextLen = 16;
     const displayId = id.length > maxTextLen ? id.substring(0, maxTextLen - 1) + '…' : id;
 
-    svg += `<g class="topo-node-group" style="cursor:pointer;" onclick="showNodeLogDetail('${escapeHtml(id)}')">`;
+    svg += `<g class="topo-node-group" style="cursor:pointer;" data-node-id="${escapeHtml(id)}">`;
     svg += `<title>${escapeHtml(id)} — ${statusText(node.status)}</title>`;
     svg += pulseCircle;
     svg += `<rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="10" fill="#FFFFFF" stroke="${color}" stroke-width="${isRunning ? 2 : 1.5}" filter="url(#topoShadow)" ${animStyle}/>`;
@@ -365,7 +392,7 @@ function renderContextPanel(run) {
       <div class="context-info-row"><span class="context-info-label">工作流</span><span class="context-info-value">${escapeHtml(run.workflow_name)}</span></div>
       <div class="context-info-row"><span class="context-info-label">版本</span><span class="context-info-value">v${escapeHtml(run.workflow_version || '1.0')}</span></div>
       <div class="context-info-row"><span class="context-info-label">状态</span><span class="context-info-value" style="color:${run.status === 'success' ? 'var(--status-active)' : run.status === 'failed' ? 'var(--status-error)' : 'var(--text-bright)'}">${statusText(run.status)}</span></div>
-      <div class="context-info-row"><span class="context-info-label">ID</span><span class="context-info-value" style="font-size:10px;cursor:pointer;" title="点击复制完整 ID" onclick="copyToClipboard('${escapeHtml(run.id)}')">${escapeHtml(run.id?.substring(0, 12))}...</span></div>
+      <div class="context-info-row"><span class="context-info-label">ID</span><span class="context-info-value" style="font-size:10px;cursor:pointer;" title="点击复制完整 ID" data-action="copy-id" data-id="${escapeHtml(run.id)}">${escapeHtml(run.id?.substring(0, 12))}...</span></div>
     `;
   }
 
@@ -400,7 +427,7 @@ function renderContextPanel(run) {
   const listEl = document.getElementById('contextNodeList');
   if (listEl) {
     listEl.innerHTML = nodes.slice().reverse().map(n => `
-      <div class="context-node-item ${runDetailState.selectedNodeId === n.node_id ? 'selected' : ''}" data-node-id="${escapeHtml(n.node_id)}" onclick="showNodeLogDetail('${escapeHtml(n.node_id)}')" style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border-subtle);">
+      <div class="context-node-item ${runDetailState.selectedNodeId === n.node_id ? 'selected' : ''}" data-node-id="${escapeHtml(n.node_id)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;border-bottom:1px solid var(--border-subtle);">
         <span class="status-dot ${statusClass(n.status)}" style="width:6px;height:6px;"></span>
         <span style="flex:1;font-size:12px;color:var(--text-primary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(n.node_id)}</span>
         <span style="font-size:10px;color:var(--text-dim);">${nodeTypeLabel(n.node_type)}</span>
@@ -415,10 +442,10 @@ function renderContextActions(run) {
 
   let html = '';
   if (run.status === 'running' || run.status === 'pending') {
-    html += `<button class="btn btn-sm btn-danger" style="width:100%;" onclick="cancelRun('${escapeHtml(run.id)}')"><i data-lucide="square" style="width:14px;height:14px"></i> 取消运行</button>`;
+    html += `<button class="btn btn-sm btn-danger" style="width:100%;" data-action="cancel" data-run-id="${escapeHtml(run.id)}"><i data-lucide="square" style="width:14px;height:14px"></i> 取消运行</button>`;
   } else {
-    html += `<button class="btn btn-sm btn-secondary" style="width:100%;" onclick="rerunRun('${escapeHtml(run.id)}')"><i data-lucide="rotate-cw" style="width:14px;height:14px"></i> 重新运行</button>`;
-    html += `<button class="btn btn-sm btn-danger-ghost" style="width:100%;margin-top:6px;" onclick="deleteRun('${escapeHtml(run.id)}')"><i data-lucide="trash-2" style="width:14px;height:14px"></i> 删除</button>`;
+    html += `<button class="btn btn-sm btn-secondary" style="width:100%;" data-action="rerun" data-run-id="${escapeHtml(run.id)}"><i data-lucide="rotate-cw" style="width:14px;height:14px"></i> 重新运行</button>`;
+    html += `<button class="btn btn-sm btn-danger-ghost" style="width:100%;margin-top:6px;" data-action="delete" data-run-id="${escapeHtml(run.id)}"><i data-lucide="trash-2" style="width:14px;height:14px"></i> 删除</button>`;
   }
 
   el.innerHTML = html;

@@ -96,3 +96,7 @@
 ## R31 — Design Review Round 9 (用户思维)
 
 运行详情返回按钮和关闭日志按钮去除内联 onclick 改用 addEventListener、修复 loadRunDetail 刷新时旧轮询定时器未清除导致叠加泄漏。
+
+## R32 — Design Review Round 10 (用户思维)
+
+运行详情 context 面板（节点列表/操作按钮/ID 复制/拓扑 SVG）全部改用事件委托替代内联 onclick、导入成功后清空 textarea 防止误操作。

@@ -876,11 +876,15 @@ function openImportModal() { document.getElementById('importModal')?.classList.a
 function closeImportModal() { document.getElementById('importModal')?.classList.remove('open'); }
 
 function doImportYaml() {
-  const yaml = document.getElementById('import-yaml-input')?.value;
+  const input = document.getElementById('import-yaml-input');
+  const yaml = input?.value;
   if (!yaml?.trim()) { showToast('请粘贴 YAML 内容', 'error'); return; }
   closeImportModal();
   const ok = importFromYaml(yaml);
-  if (ok) showToast('工作流导入成功', 'success');
+  if (ok) {
+    showToast('工作流导入成功', 'success');
+    if (input) input.value = '';
+  }
 }
 
 async function editorSave() {
