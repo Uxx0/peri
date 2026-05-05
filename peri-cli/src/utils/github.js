@@ -1,5 +1,7 @@
-import { CONFIG } from './config.js';
+import { CONFIG, extractToolName } from './config.js';
 import fetch from 'node-fetch';
+
+export { extractToolName };
 
 // 获取 GitHub 发布列表
 export async function getReleases(options = { perPage: 5 }) {
@@ -19,22 +21,19 @@ export async function getReleases(options = { perPage: 5 }) {
   return response.json();
 }
 
-// 获取最新版本
+// 获取最新 agent 版本（仅 agent- 前缀的 tag）
 export async function getLatestRelease() {
-  const url = `${CONFIG.apiUrl}/repos/${CONFIG.owner}/${CONFIG.repo}/releases/latest`;
+  return getLatestReleaseByPrefix('agent-');
+}
 
-  const response = await fetch(url, {
-    headers: {
-      'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'perihelion-cli'
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch latest release: ${response.statusText}`);
+// 获取指定包名的最新版本
+export async function getLatestReleaseByPrefix(prefix) {
+  const releases = await getReleases({ perPage: 20 });
+  const found = releases.find(r => r.tag_name.startsWith(prefix));
+  if (!found) {
+    throw new Error(`No release found with prefix '${prefix}'`);
   }
-
-  return response.json();
+  return found;
 }
 
 // 获取指定版本
@@ -58,21 +57,20 @@ export async function getReleaseByVersion(tag) {
 // 查找匹配平台的二进制文件
 export function findAssetForPlatform(release, platformInfo) {
   const target = platformInfo.target;
+  const toolName = extractToolName(release.tag_name);
 
-  // 使用 config.js 中生成的 platformStr（格式：aarch64-macos / x86_64-linux 等）
-  // 但资源命名是 macos-aarch64 格式，需要转换
   const parts = platformInfo.platformStr.split('-');
   const assetPlatformStr = `${parts[1]}-${parts[0]}`; // aarch64-macos -> macos-aarch64
 
   return release.assets.find(asset => {
     const name = asset.name.toLowerCase();
 
-    // 查找 agent-tui 的二进制文件（资源命名：agent-tui-macos-aarch64）
-    if (name.includes('agent-tui') && name.includes(assetPlatformStr)) {
+    // 根据工具名匹配（agent → 匹配 agent-tui-*，acpx-g → 匹配 acpx-g-*）
+    if (name.includes(toolName) && name.includes(assetPlatformStr)) {
       return true;
     }
 
-    // 兼容旧的命名方式（如果存在）
+    // 兼容旧的命名方式
     if (name.includes('rust-agent-tui') && name.includes(target)) {
       return true;
     }

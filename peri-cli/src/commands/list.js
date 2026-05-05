@@ -1,4 +1,4 @@
-import { getReleases, formatReleaseInfo } from "../utils/github.js";
+import { getReleases, formatReleaseInfo, findAssetForPlatform } from "../utils/github.js";
 import { getCurrentVersion, getPlatformInfo } from "../utils/config.js";
 
 export async function listVersions() {
@@ -31,11 +31,10 @@ export async function listVersions() {
             console.log(`     URL: ${release.url}`);
 
             // 显示匹配当前平台的二进制文件
-            const platformStr = `${platformInfo.isMac ? "macos" : platformInfo.isLinux ? "linux" : "windows"}-${platformInfo.arch === "x64" ? "x86_64" : "x64"}`;
-            const platformBinary = release.assets.find((asset) => {
-                const name = asset.name.toLowerCase();
-                return name.includes("agent-tui") && name.includes(platformStr);
-            });
+            const platformBinary = findAssetForPlatform(
+                { tag_name: release.tag, assets: release.assets },
+                platformInfo,
+            );
 
             if (platformBinary) {
                 console.log(

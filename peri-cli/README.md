@@ -14,13 +14,16 @@ npx peri-cli add-env
 
 ## Commands
 
-### `npx peri-cli install`
+### `npx peri-cli install [package]`
 
-Install or update Perihelion to the latest version.
+Install a package. Supports package name, full version tag, or no argument (defaults to latest agent).
 
 ```bash
-npx peri-cli                    # Install latest
-npx peri-cli -v agent-v1.5      # Install specific version
+npx peri-cli install              # Install latest agent
+npx peri-cli install agent        # Install latest agent
+npx peri-cli install acpx-g       # Install latest acpx-g
+npx peri-cli install agent-v1.17  # Install specific agent version
+npx peri-cli install acpx-g-v-0.1 # Install specific acpx-g version
 ```
 
 ### `npx peri-cli add-env`
@@ -47,12 +50,14 @@ npx peri-cli list
 npx peri-cli ls
 ```
 
-### `npx peri-cli update`
+### `npx peri-cli update [package]`
 
-Update to the latest version.
+Update a package to the latest version.
 
 ```bash
-npx peri-cli update
+npx peri-cli update              # Update agent to latest
+npx peri-cli update agent        # Same as above
+npx peri-cli update acpx-g       # Update acpx-g to latest
 ```
 
 ### `npx peri-cli uninstall`
@@ -63,14 +68,37 @@ Uninstall peri and clean up PATH.
 npx peri-cli uninstall
 ```
 
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_PROXY` | GitHub download proxy URL, replaces `https://github.com` prefix in download URLs |
+| `PERI_GITHUB_PROXY` | Same as above, takes precedence over `GITHUB_PROXY` |
+
+### GitHub Proxy
+
+If you have trouble downloading from GitHub (e.g. connection timeout), set `GITHUB_PROXY` to a GitHub mirror/proxy service. The value replaces the `https://github.com` prefix in download URLs.
+
+```bash
+GITHUB_PROXY=<your-proxy-url>/https://github.com npx peri-cli install acpx-g
+```
+
+You can also set it persistently in your shell profile:
+
+```bash
+export GITHUB_PROXY=<your-proxy-url>/https://github.com
+```
+
 ## Installation Directory
 
 ```
 ~/.perihelion/
 ├── current-version.txt   # Current version marker
 ├── peri                  # Executable symlink
-└── agent-v1.5/           # Version directory
-    └── agent-tui         # Binary
+├── agent-v1.17/          # Agent version directory
+│   └── agent             # Binary
+└── acpx-g-v-0.1/         # ACPX-G version directory
+    └── acpx-g            # Binary
 ```
 
 ## Supported Platforms

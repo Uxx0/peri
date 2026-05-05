@@ -6,6 +6,7 @@ import { listVersions } from "../src/commands/list.js";
 import { update } from "../src/commands/update.js";
 import { addEnv } from "../src/commands/add-env.js";
 import { uninstall } from "../src/commands/uninstall.js";
+import { clean } from "../src/commands/clean.js";
 
 const program = new Command();
 
@@ -15,9 +16,8 @@ program
     .version("0.1.0");
 
 program
-    .command("install")
-    .description("Install or update Perihelion to the latest version")
-    .option("-v, --version <version>", "Install specific version")
+    .command("install [package]")
+    .description("Install a package (e.g. 'agent', 'acpx-g', or full tag 'agent-v1.17')")
     .action(install);
 
 program
@@ -27,8 +27,8 @@ program
     .action(listVersions);
 
 program
-    .command("update", { isDefault: true })
-    .description("Update Perihelion to the latest version")
+    .command("update [package]", { isDefault: true })
+    .description("Update a package to the latest version (e.g. 'agent', 'acpx-g')")
     .action(update);
 
 program
@@ -40,5 +40,10 @@ program
     .command("uninstall")
     .description("Uninstall peri and clean up")
     .action(uninstall);
+
+program
+    .command("clean")
+    .description("Remove old versions, keep latest 2 per package")
+    .action(clean);
 
 program.parse();

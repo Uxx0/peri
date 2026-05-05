@@ -6,28 +6,47 @@ import {
     getInstallDir,
     getExecutablePath,
     setCurrentVersion,
+    getDownloadUrl,
 } from "../utils/config.js";
 import {
     getLatestRelease,
+    getLatestReleaseByPrefix,
     getReleaseByVersion,
     findAssetForPlatform,
+    extractToolName,
 } from "../utils/github.js";
+import { clean } from "./clean.js";
 
-export async function install(options) {
+/**
+ * 判断输入是完整 tag 还是包名前缀
+ * 完整 tag 格式：xxx-vN.N（含版本号）
+ * 包名前缀：agent、acpx-g（不含版本号）
+ */
+function isFullTag(input) {
+    return /-v\d/.test(input);
+}
+
+export async function install(pkg) {
     const platformInfo = getPlatformInfo();
     const installDir = getInstallDir();
 
     console.log(`🔍 Detecting platform: ${platformInfo.target}`);
 
     try {
-        // 获取要安装的版本
         let release;
-        if (options.version) {
-            console.log(`📦 Installing version: ${options.version}`);
-            release = await getReleaseByVersion(options.version);
-        } else {
-            console.log("📦 Fetching latest release...");
+
+        if (!pkg) {
+            // 无参数 → 安装最新 agent
+            console.log("📦 Fetching latest agent release...");
             release = await getLatestRelease();
+        } else if (isFullTag(pkg)) {
+            // 完整 tag（如 agent-v1.17、acpx-g-v-0.1）→ 安装指定版本
+            console.log(`📦 Installing version: ${pkg}`);
+            release = await getReleaseByVersion(pkg);
+        } else {
+            // 包名前缀（如 agent、acpx-g）→ 安装该包的最新版本
+            console.log(`📦 Fetching latest ${pkg} release...`);
+            release = await getLatestReleaseByPrefix(`${pkg}-`);
         }
 
         console.log(`✅ Found version: ${release.tag_name}`);
@@ -50,13 +69,18 @@ export async function install(options) {
         await fs.ensureDir(versionDir);
 
         // 下载二进制文件
+        const toolName = extractToolName(release.tag_name);
         const targetPath = path.join(
             versionDir,
-            platformInfo.isWindows ? "agent-tui.exe" : "agent-tui",
+            platformInfo.isWindows ? `${toolName}.exe` : toolName,
         );
+        const downloadUrl = getDownloadUrl(asset.browser_download_url);
         console.log(`⬇️  Downloading to: ${targetPath}`);
+        if (downloadUrl !== asset.browser_download_url) {
+            console.log(`   Via proxy: ${downloadUrl}`);
+        }
 
-        const response = await fetch(asset.browser_download_url);
+        const response = await fetch(downloadUrl);
         if (!response.ok) {
             throw new Error(`Download failed: ${response.statusText}`);
         }
@@ -79,8 +103,11 @@ export async function install(options) {
         // 设置当前版本
         await setCurrentVersion(release.tag_name);
 
+        console.log("✅ Download complete!");
+
+        // 自动清理旧版本
         console.log("");
-        console.log("🎉 Installation complete!");
+        await clean();
         console.log("");
         console.log(`Version: ${release.tag_name}`);
         console.log(`Binary: ${targetPath}`);
