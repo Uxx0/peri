@@ -87,17 +87,19 @@ function confirmDialog(title, message, detail, onConfirm) {
   openModal(`
     <div class="modal-header">
       <span class="modal-title">${escapeHtml(title)}</span>
-      <button class="modal-close" onclick="closeModal()"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+      <button class="modal-close" id="confirmCloseBtn"><i data-lucide="x" style="width:16px;height:16px"></i></button>
     </div>
     <div class="modal-body">
       <div class="confirm-body">${escapeHtml(message)}</div>
       ${detailHtml}
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn btn-secondary" id="confirmCancelBtn">取消</button>
       <button class="btn btn-danger" id="confirmBtn">确认</button>
     </div>
   `);
+  document.getElementById('confirmCloseBtn').onclick = closeModal;
+  document.getElementById('confirmCancelBtn').onclick = closeModal;
   document.getElementById('confirmBtn').onclick = () => {
     closeModal();
     onConfirm();

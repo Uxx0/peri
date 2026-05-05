@@ -64,3 +64,7 @@
 ## R23 — Design Review (用户思维)
 
 修复拓扑实时指示器双重 display 属性 bug、卡片视图补充删除/重跑按钮、节点列表高亮改用 data-node-id 替代 onclick.toString()、Toast 关闭按钮去除内联 onclick、节点日志复制按钮改用 data-log-id、运行详情页 Escape 键返回列表、修复失败统计图标重复 style 属性。
+
+## R24 — Design Review Round 2 (用户思维)
+
+修复搜索/过滤后分页总数不更新、run-detail 轮询定时器未纳入全局清理导致页面切换泄漏、confirmDialog 关闭/取消按钮去除内联 onclick、加载失败时隐藏骨架屏和布局区、编辑器加载模板增加未保存确认。

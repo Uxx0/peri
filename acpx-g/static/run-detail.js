@@ -102,6 +102,7 @@ async function loadRunDetail(runId) {
     // Poll if running
     if (run.status === 'running' || run.status === 'pending') {
       runDetailState.pollTimer = setInterval(() => pollRunDetail(runId), 3000);
+      AppState.pollTimers.push(runDetailState.pollTimer);
     }
 
     updateSidebarStatus();
@@ -113,6 +114,11 @@ async function loadRunDetail(runId) {
         <div class="empty-state-desc">${escapeHtml(e.message)}</div>
       </div>`;
     lucide.createIcons({ nodes: [header] });
+    // Hide loading skeletons on error
+    const stats = document.getElementById('runDetailStats');
+    if (stats) stats.style.display = 'none';
+    const layout = document.getElementById('runDetailLayout');
+    if (layout) layout.style.display = 'none';
   }
 }
 

@@ -122,6 +122,16 @@ function getFilteredRuns() {
 
 function filterAndRenderRuns() {
   renderRunsContent();
+  // Update pagination to reflect filtered count
+  const filteredTotal = getFilteredRuns().length;
+  const el = document.getElementById('runsPagination');
+  if (el) {
+    if (runsState.statusFilter !== 'all' || runsState.searchQuery) {
+      el.innerHTML = `<span class="pagination-info">筛选结果: ${filteredTotal} 条</span>`;
+    } else {
+      renderRunsPagination();
+    }
+  }
 }
 
 function renderRunsContent() {

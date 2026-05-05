@@ -1085,12 +1085,19 @@ function renderEditorTemplateList(tpls) {
 
   el.querySelectorAll('.tpl-card').forEach(card => {
     card.addEventListener('click', () => {
-      const path = card.dataset.path;
-      if (path) {
-        const idx = path.lastIndexOf('/');
-        wfBaseDir = idx >= 0 ? path.substring(0, idx) : '.';
+      const doLoad = () => {
+        const path = card.dataset.path;
+        if (path) {
+          const idx = path.lastIndexOf('/');
+          wfBaseDir = idx >= 0 ? path.substring(0, idx) : '.';
+        }
+        loadTemplateToEditor(card.dataset.name);
+      };
+      if (nodeStore.size > 0) {
+        confirmDialog('加载模板', '加载模板将覆盖当前工作流，确定继续吗？', null, doLoad);
+      } else {
+        doLoad();
       }
-      loadTemplateToEditor(card.dataset.name);
     });
   });
 }
