@@ -224,7 +224,7 @@ function initEditor() {
 
   // Toolbar buttons
   document.getElementById('btnValidate')?.addEventListener('click', editorValidate);
-  document.getElementById('btnAutoLayout')?.addEventListener('click', editorAutoLayout);
+  document.getElementById('btnAutoLayout')?.addEventListener('click', () => { editorAutoLayout(); showToast('布局已更新', 'success', 1500); });
   document.getElementById('btnSettings')?.addEventListener('click', showWorkflowSettings);
   document.getElementById('btnSave')?.addEventListener('click', editorSave);
   document.getElementById('btnRun')?.addEventListener('click', editorRun);

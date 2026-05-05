@@ -151,7 +151,7 @@ function renderRunDetailHeader(run) {
   document.title = `${run.workflow_name || '运行详情'} — ACPX-G`;
 
   header.innerHTML = `
-    <div class="session-header">
+    <div class="session-header" style="display:flex;align-items:flex-start;justify-content:space-between;">
       <div>
         <div class="session-title">${escapeHtml(run.workflow_name)}</div>
         <div class="session-meta">
@@ -165,7 +165,10 @@ function renderRunDetailHeader(run) {
           <span>${relativeTime(run.created_at)}</span>
         </div>
       </div>
+      <button class="btn btn-sm btn-ghost" id="btnRefreshRunDetail" title="刷新"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i></button>
     </div>`;
+
+  document.getElementById('btnRefreshRunDetail')?.addEventListener('click', () => loadRunDetail(run.id));
 
   if (run.error_message) {
     header.innerHTML += `

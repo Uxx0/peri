@@ -282,7 +282,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Global Escape key to close modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (apiDocsOverlay.classList.contains('open')) {
+      const importModal = document.getElementById('importModal');
+      if (importModal?.classList.contains('open')) {
+        importModal.classList.remove('open');
+      } else if (apiDocsOverlay.classList.contains('open')) {
         apiDocsOverlay.classList.remove('open');
       } else if (document.getElementById('modalOverlay')?.classList.contains('open')) {
         closeModal();

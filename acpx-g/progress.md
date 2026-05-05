@@ -88,3 +88,7 @@
 ## R29 — Design Review Round 7 (用户思维)
 
 运行记录页有运行中工作流时自动每 10 秒刷新、节点日志切换时重置滚动位置、错误/警告 toast 延长显示时间（5s/4s）、拓扑图节点添加 hover tooltip 显示完整 ID。
+
+## R30 — Design Review Round 8 (用户思维)
+
+导入模态框支持 Escape 关闭、编辑器自动布局按钮添加成功 toast 反馈、运行详情页标题栏添加手动刷新按钮。
