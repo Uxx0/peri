@@ -10,7 +10,7 @@ function renderRunDetailPage(runId) {
   return `
   <div class="run-detail-page stagger">
     <div style="margin-bottom:16px;">
-      <button class="back-btn" onclick="location.hash='#runs'">
+      <button class="back-btn" id="btnBackToRuns">
         <i data-lucide="arrow-left" style="width:14px;height:14px"></i>
         返回运行记录
       </button>
@@ -42,7 +42,7 @@ function renderRunDetailPage(runId) {
         <div class="card" id="nodeLogCard" style="display:none;margin-top:16px;">
           <div class="card-header">
             <span class="card-title" id="nodeLogTitle">节点日志</span>
-            <button class="btn-icon btn-sm" onclick="closeNodeLog()"><i data-lucide="x" style="width:14px;height:14px"></i></button>
+            <button class="btn-icon btn-sm" id="btnCloseNodeLog"><i data-lucide="x" style="width:14px;height:14px"></i></button>
           </div>
           <div class="card-body" id="nodeLogBody" style="padding:0;"></div>
         </div>
@@ -73,6 +73,9 @@ function renderRunDetailPage(runId) {
 function initRunDetail(runId) {
   loadRunDetail(runId);
 
+  document.getElementById('btnBackToRuns')?.addEventListener('click', () => { location.hash = '#runs'; });
+  document.getElementById('btnCloseNodeLog')?.addEventListener('click', closeNodeLog);
+
   // Escape key navigates back to runs list
   const escHandler = (e) => {
     if (e.key === 'Escape' && AppState.currentPage === 'run-detail') {
@@ -99,7 +102,12 @@ async function loadRunDetail(runId) {
     renderContextPanel(run);
     renderContextActions(run);
 
-    // Poll if running
+    // Poll if running — clear existing timer first to prevent leak on refresh
+    if (runDetailState.pollTimer) {
+      clearInterval(runDetailState.pollTimer);
+      AppState.pollTimers = AppState.pollTimers.filter(t => t !== runDetailState.pollTimer);
+      runDetailState.pollTimer = null;
+    }
     if (run.status === 'running' || run.status === 'pending') {
       runDetailState.pollTimer = setInterval(() => pollRunDetail(runId), 3000);
       AppState.pollTimers.push(runDetailState.pollTimer);

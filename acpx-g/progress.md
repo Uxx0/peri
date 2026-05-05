@@ -92,3 +92,7 @@
 ## R30 — Design Review Round 8 (用户思维)
 
 导入模态框支持 Escape 关闭、编辑器自动布局按钮添加成功 toast 反馈、运行详情页标题栏添加手动刷新按钮。
+
+## R31 — Design Review Round 9 (用户思维)
+
+运行详情返回按钮和关闭日志按钮去除内联 onclick 改用 addEventListener、修复 loadRunDetail 刷新时旧轮询定时器未清除导致叠加泄漏。
