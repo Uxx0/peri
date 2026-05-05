@@ -45,6 +45,8 @@ pub fn default_requires_approval(tool_name: &str) -> bool {
         || tool_name == "Edit"
         || tool_name.starts_with("delete_")
         || tool_name.starts_with("rm_")
+        || tool_name == "WebFetch"
+        || tool_name == "WebSearch"
         || tool_name.starts_with("mcp__")
 }
 
@@ -464,6 +466,10 @@ mod tests {
         assert!(default_requires_approval("mcp__github__create_issue"));
         assert!(default_requires_approval("mcp__database__query"));
         assert!(default_requires_approval("mcp__web__fetch"));
+
+        // Web 工具需审批
+        assert!(default_requires_approval("WebFetch"));
+        assert!(default_requires_approval("WebSearch"));
 
         assert!(!default_requires_approval("Read"));
         assert!(!default_requires_approval("Glob"));

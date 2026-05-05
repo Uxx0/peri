@@ -253,6 +253,7 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         .add_middleware(Box::new(SkillPreloadMiddleware::new(preload_skills, &cwd)))
         .add_middleware(Box::new(FilesystemMiddleware::new()))
         .add_middleware(Box::new(TerminalMiddleware::new()))
+        .add_middleware(Box::new(WebMiddleware::new()))
         .add_middleware(Box::new(TodoMiddleware::new(todo_tx)))
         .add_middleware(Box::new(rust_agent_middlewares::cron::CronMiddleware::new(
             cron_scheduler.unwrap_or_else(|| {

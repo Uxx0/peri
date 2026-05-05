@@ -52,6 +52,8 @@ pub fn format_tool_args(
             let path = input["folder_path"].as_str().unwrap_or("?");
             Some(format!("{} {}", op, strip_cwd(path, cwd)))
         }
+        "WebSearch" => input["query"].as_str().map(|s| truncate(s, 60)),
+        "WebFetch" => input["url"].as_str().map(|s| truncate(s, 60)),
         _ => None,
     }
 }

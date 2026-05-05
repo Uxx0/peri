@@ -1,340 +1,62 @@
 # acpx-g Design Review Progress
 
-## 2026-05-04 Round 1
-
-### 发现并修复的用户体验问题
-
-**1. Template Run 不支持 inputs 参数（阻断级）**
-后端 `run_template` API 不接受 inputs，有必填参数的模板从 UI 运行会静默失败。修复：添加 `RunTemplateRequest` 结构体，API 接受可选 JSON body 的 inputs 参数，前端在 template preview 中渲染 inputs 表单，Run 时收集并提交。
-
-**2. Web UI 无错误反馈（高优先级）**
-`runTemplate()` 的 catch 为空，用户无法得知运行失败原因。添加了 toast 通知系统，在操作成功/失败时显示提示消息。
-
-**3. 输入类型校验缺失（中等优先级）**
-`validate_inputs` 声明了 string/number/boolean 类型但不做检查。增加了 number（parse f64）和 boolean（true/false/yes/no/1/0）的类型校验，附带 8 个测试用例覆盖各种场景。
-
-**4. CLI 无 --help（中等优先级）**
-用户无法发现可用参数。添加了 `--help`/`-h` 标志，显示用法、选项和环境变量说明。
-
-**5. Run 不显示执行耗时（中等优先级）**
-UI 只显示时间戳不显示耗时。添加了 `fmtDuration()` 函数，在 run 列表和日志面板头部显示持续时间。
-
-**6. Examples 注释中的 API 参数名错误（低优先级）**
-`ci-pipeline.yaml` 注释写了 `yaml_file` 但实际 API 参数是 `yaml`，已修正。
-
-### 测试覆盖
-- 原有 16 个测试全部通过
-- 新增 8 个 `validate_inputs` 类型校验测试
-- 总计 24 个测试全部通过
-
-## 2026-05-04 Round 2
-
-### 发现并修复的用户体验问题
-
-**1. selectRun 双重请求 + timer 泄漏（高优先级）**
-`selectRun()` 先 fetch 渲染 UI，再 fetch 判断是否 poll，造成冗余请求和潜在 timer 泄漏。合并为单次 fetch：渲染后直接从响应判断是否需要轮询，同时先 clearInterval 再 fetch。
-
-**2. 失败节点下游永远 pending（高优先级）**
-节点失败后，未执行的下游节点停在 pending 状态，用户误以为还在等待。添加 `mark_run_pending_as_skipped` 方法，在 DAG 失败时将剩余 pending 节点标记为 skipped。前端同步添加 skipped 状态的颜色样式。
-
-**3. 节点日志不显示执行耗时（中等优先级）**
-日志面板每个节点 header 有 started_at 但不显示 duration。改为用 `fmtDuration()` 显示节点执行时间。
-
-**4. 内嵌 Run 按钮绕过 inputs 表单（高优先级）**
-Template 卡片上的 Run 按钮直接调用 `runTemplate()`，没经过 inputs 表单。添加 `runTemplateFromCard()`：先选中 template 展示 inputs 表单，无 inputs 则直接运行，有 inputs 让用户填写后手动点 Run。
-
-**5. Run 列表 API 返回 yaml_content（中等优先级）**
-列表查询返回完整 yaml_content 大字段但列表页用不到。修改 SQL 用空字符串替代，减少网络传输和内存占用。
-
-**6. 三处重复 workflow 提交代码（低优先级）**
-`submit_workflow`、`run_template`、`submit_workflow_from_file` 有完全相同的 run 创建+node 插入+执行启动逻辑。抽取 `create_and_start_run()` 共享函数，消除约 60 行重复代码。
-
-## 2026-05-04 Round 3
-
-### 发现并修复的问题
-
-**1. PlatformFiles::resolve panic 导致服务崩溃（高优先级）**
-`PlatformFiles::resolve()` 在平台不匹配时 `panic!`，直接崩溃整个进程。改为返回 `anyhow::Result<String>`，让错误沿 executor 传播为节点失败，而非服务终止。同步更新 `ScriptSource::resolve` 和 `PromptSource::resolve` 的签名。
-
-**2. 模板卡片内联 JS 单引号注入（高优先级）**
-模板名含单引号时 `onclick="showTemplatePreview('name')"` 断开 JS 字符串，导致功能崩溃甚至 XSS。改用 `data-name` 属性 + `addEventListener` 事件委托，彻底消除字符串拼接注入风险。
-
-**3. DAG 图每次渲染重置缩放（中等优先级）**
-`renderGraph` 每次都设 `dagZoom=1/dagPanX=0/dagPanY=0`，运行中的 run 刷新时用户缩放被重置。改为只在节点数变化时重置（切换 run/template），刷新更新保留缩放状态。
-
-**4. 模板区域无标题（低优先级）**
-Templates 区域没有标题 header，Runs 区域有。新用户不知道上面是什么区域。添加了 Templates 标题 header。
-
-### 测试覆盖
-- 新增 5 个 schema 测试（PlatformFiles 匹配/默认/错误、ScriptSource inline/file）
-- 总计 29 个测试全部通过
-
-## 2026-05-04 Round 4
-
-### 发现并修复的问题
-
-**1. 重试时 stdout/stderr 被覆盖（高优先级）**
-`run_shell`/`run_agent` 每次重试直接覆盖 stdout/stderr，用户无法看到之前尝试的输出。改为累积模式：非首次尝试时添加 `--- Attempt N ---` 分隔符，保留所有尝试的完整输出。
-
-**2. 超时时 stdout/stderr 丢失（高优先级）**
-Shell/Agent 超时时 `tokio_timeout` 直接返回 Err，进程被 kill 但输出未被捕获。改为显式匹配 TimeoutElapsed，提供更清晰的错误信息（包含超时时长），而非模糊的 "timed out"。
-
-**3. continue_on_error 下游节点被误跳过（中等优先级）**
-`deps_ready` 只检查 `completed` HashSet，不包含 `failed`。当 `continue_on_error=true` 的节点失败后，其下游因依赖不在 completed 中被错误跳过。修改为 `completed.contains(di) || failed.contains(di)`。
-
-**4. Node ID 含 / 时 jumpToLog 失效（中等优先级）**
-`jumpToLog` 用 `querySelector` + `data-node` 属性选择器，node ID 如 `do-build/checkout` 中的 `/` 导致 CSS 选择器解析失败。添加 `cssEsc()` 转义函数。
-
-### 测试覆盖
-- 新增 5 个 DAG 执行引擎测试（topological sort simple/parallel/cycle/unknown_dep + continue_on_error）
-- 总计 34 个测试全部通过
-
-## 2026-05-04 Round 5
-
-### 发现并修复的问题
-
-**1. cssEsc 正则语法错误导致 JS 崩溃（阻断级）**
-`/([\\"]/g` 缺少字符类和捕获组闭合，浏览器报 SyntaxError，所有页面 JS 停止执行。修正为 `/([\\"])/g`。
-
-**2. get_node_logs API 用 DB id 查找（高优先级）**
-API 路径含 `node_id` 但实际用 DB 主键查找，前端需暴露内部 ID。改为用 `run_id + node_id`（业务 ID）查找，前端 `fetchLogs` 改用 `encodeURIComponent(nodeId)`，DAG 图 `jumpToLog` 和 `renderLogs` 统一用 `node_id`。引入 `domId()` 函数安全转换含 `/` 的 node_id 为 DOM id。
-
-**3. 无 workflow-dir 时 UI 无引导（中等优先级）**
-无模板时 templates 区提示改为具体命令 `acpx-g --workflow-dir ./examples`，主面板同步显示 "Add a workflow directory to get started"。
-
-**4. input 表单无前端校验（中等优先级）**
-required input 未填时直接提交导致后端 400。添加前端校验：空 required 字段高亮红框 + toast 提示，阻止请求。
-
-### 测试覆盖
-- 新增 9 个测试（loader: find_exit_nodes/parallel, prefix_id, rewire_depends/no_match, with_value_to_map_number_and_bool; api: empty_declared, extra_provided_ignored, negative_number; template: 移除未使用 ctx）
-- 总计 43 个测试全部通过
-
-## 2026-05-04 Round 6
-
-### 发现并修复的问题
-
-**1. 消除所有内联 onclick 处理器（高优先级）**
-run 列表项、DAG 图节点、log header 三处使用 `onclick="fn('...')"` 内联 JS，存在潜在注入风险且不利于 CSP 策略。全部改为 `data-*` 属性 + `addEventListener` 事件委托模式，与模板卡片统一风格。
-
-**2. API 文档 curl Copy 机制不可靠（中等优先级）**
-`copyCurl` 用 `textContent.replace('Copy','')` 移除按钮文本，若 curl 内容含 "Copy" 会被误删。改为 `data-curl` 属性存储原始命令，按钮直接读取属性值复制。
-
-**3. 新增 API 文档模态框（功能增强）**
-sidebar Templates header 添加 API 按钮，点击弹出模态框显示 6 个端点文档，每个含方法标签、参数表、可复制的 curl 示例和响应示例。
-
-### 测试覆盖
-- 43 个测试全部通过（本轮无新增后端代码变更，前端优化为主）
-
-## 2026-05-04 Round 7 — Business Logic Review + Architecture Improvements
-
-### 核心架构改进
-
-**1. 数据库事务保护（P0 修复）**
-`create_and_start_run` 改用 SQLite 事务包裹 workflow_run + node_runs 批量插入，中间任何节点插入失败时自动 rollback，消除 orphaned 记录风险。
-
-**2. 数据库索引（P0 性能）**
-新增 `idx_workflow_runs_created_at` 和 `idx_node_runs_run_id` 索引，优化列表排序和 run 关联查询。
-
-**3. 重试逻辑泛化（P1 重构）**
-抽取 `execute_with_retry()` 通用函数，统一 shell/agent 两个执行器的重试循环（状态持久化、累积输出、指数退避），消除 ~120 行重复代码。
-
-**4. API 分页（P1 功能）**
-`GET /api/v1/workflows` 新增 `page`/`per_page` 查询参数，返回 `total`/`page`/`per_page` 元数据，前端实现翻页 UI。
-
-**5. 并发限制可配置（P2）**
-`MAX_CONCURRENT_NODES` 改为通过 `ACPX_MAX_CONCURRENT` 环境变量读取，默认 16，最小 1。
-
-### 测试覆盖
-- 56 个测试全部通过（新增 13 个：executor 10 + runner 3）
-
-## 2026-05-04 15:30 Round 8 — DAG Correctness + Watcher Reliability
-
-### 业务逻辑修复
-
-**1. DAG 依赖状态检查缺陷（关键修复）**
-原逻辑将 failed 节点视为"依赖已就绪"，导致依赖失败节点的下游被错误执行。修正为：只有依赖全部成功的节点才会执行，失败依赖的下游直接跳过。
-
-**2. continue_on_error 节点输出传播（逻辑修正）**
-continue_on_error=true 的失败节点现在也加入 completed 集合，下游可通过 needs 引用其输出。
-
-**3. 重复 node ID 检测（数据完整性）**
-topological_sort 新增重复 ID 检测，防止两个同名节点静默覆盖导致 DAG 行为不可预测。
-
-**4. Watcher 内容变更检测（功能增强）**
-VersionTracker 改为跟踪 (version, content_hash) 对，文件内容变化（不改版本号）也会触发重新执行。使用 FNV-1a 哈希，零依赖。
-
-**5. 模板插值空表达式处理（防御性）**
-`{{ }}` 空表达式不再静默替换为空字符串，而是保留原样，帮助用户发现配置错误。
-
-### 测试覆盖
-- 67 个测试全部通过（新增 11 个：topo 3 + template 2 + watcher 6）
-
-## 2026-05-04 16:00 Round 9 — Schema Validation + Input Defense + Remote Safety
-
-### 业务逻辑修复
-
-**1. Workflow Schema 验证（数据完整性）**
-`parse_workflow` 新增 `validate_workflow` 校验层：拒绝空 name/version、空节点列表、纯空白 name、引用节点指向不存在的 reference。防止脏数据进入 DB 和 DAG 执行。
-
-**2. 远程 Workflow HTTP 状态码检查（安全性）**
-`fetch_remote` 增加 HTTP 状态码检查，404/5xx 不再静默作为 YAML 内容解析，而是返回清晰错误信息。
-
-**3. 输入默认值类型校验（数据完整性）**
-`validate_inputs` 现在校验声明为 Number/Boolean 类型的输入的 default 值是否符合类型约束。防止 `default: "abc"` 声明在 Number 类型上导致运行时静默错误。
-
-### 测试覆盖
-- 84 个测试全部通过（新增 17 个：schema 8 + input validation 7 + prompt/script resolve 2）
-
-## 2026-05-04 16:30 Round 10 — DAG Failure Semantics + Frontend Security + Robustness
-
-### 业务逻辑修复
-
-**1. DAG 失败传播语义修正（关键修复）**
-原逻辑在每个 level 遍历 failed 集合，遇到第一个非 continue_on_error 的节点就立即终止整个 workflow。修正为：每个 level 只在有硬失败（非 continue_on_error）时终止，continue_on_error 的失败不影响 workflow 状态。
-
-**2. 重试退避溢出保护（健壮性）**
-`execute_with_retry` 的指数退避 `1 << attempt` 在高重试次数时可能溢出。改为 `checked_shl` + min(60s) 上限，防止 panic。
-
-**3. API 文档更新（文档准确性）**
-`GET /api/v1/workflows` 文档从 "List recent 50" 更新为包含分页参数说明。
-
-**4. 前端 CSS 转义增强（安全性）**
-`cssEsc` 从简单的正则替换改为按 CSS 规范转义控制字符和 `]`，防止属性选择器注入。
-
-**5. 环境变量测试竞态修复（测试稳定性）**
-`test_max_concurrent_nodes_*` 测试保存/恢复原有环境变量值，避免并行测试间竞态。
-
-### 测试覆盖
-- 88 个测试全部通过（新增 4 个：build_template_context 2 + get_node_env 1 + node_type_name 1）
-
-## 2026-05-04 17:00 Round 11 — NodeDefaults Application + Graceful Shutdown + Self-Dep Detection
-
-### 业务逻辑修复
-
-**1. NodeDefaults 实际应用到执行器（功能修复）**
-`Workflow.defaults` 中的 `timeout`/`retry` 之前只解析不使用。现在 `execute_dag` 将 defaults 传递给 `execute_node`，节点未指定 timeout/retry 时自动使用 defaults 中的值（默认 300s/0 次）。
-
-**2. 优雅关机（生产可靠性）**
-Ctrl+C 时不再直接终止。新增 graceful shutdown：停止接受新连接，查找所有 status='running' 的 workflow 并标记为 failed（error_message='server shutdown'），防止数据库中遗留永远 running 的僵尸记录。
-
-**3. 节点自依赖检测（数据完整性）**
-schema 验证新增自依赖检测：节点 depends 列表包含自身 ID 时立即拒绝，防止无意义的循环。
-
-**4. 空提交拒绝（API 防御）**
-`submit_workflow` 在解析前检查 yaml 是否为空字符串/纯空白，给出清晰的 400 错误。
-
-**5. update_status 回填 started_at（数据一致性）**
-workflow 直接从 pending 跳到 failed 时（如事务错误），update_status 现在会用 COALESCE 回填 started_at，确保 finished_at 和 started_at 都有值。
-
-### 测试覆盖
-- 94 个测试全部通过（新增 6 个：self-dep、empty node ID、multi-node deps、inputs、env、defaults）
-
-## 2026-05-04 18:00 Round 12 — Production API: Health Check, DELETE Run, Output Truncation, YAML Size Guard
-
-### 新增功能
-
-**1. Health Check 端点（生产运维）**
-`GET /health` 验证数据库连接可用性，返回 `{"status":"ok"}` 或 503。可用于负载均衡器和编排器健康检查。
-
-**2. DELETE Run API（运维清理）**
-`DELETE /api/v1/workflows/{run_id}` 删除已完成的工作流运行及其所有节点记录。禁止删除 running/pending 状态的运行（返回 409）。先删 node_runs（外键），再删 workflow_run。
-
-**3. 输出截断（存储保护）**
-执行器持久化 stdout/stderr 前自动截断超过 256KB 的输出，附加 `[truncated, N bytes total]` 标记。字符边界安全（CJK 字符不会截断到中间字节）。
-
-**4. YAML 大小限制（OOM 防护）**
-`POST /api/v1/workflows` 拒绝超过 1MB 的 YAML 内容，返回 413 Payload Too Large。
-
-### 测试覆盖
-- 98 个测试全部通过（新增 4 个：truncate short/exact/over/multibyte）
-
-## 2026-05-04 19:30 Round 13 — Concurrency Control, Graceful Shutdown, Transactional Delete, Shell Override, Configurable CORS
-
-### 核心改进
-
-**1. 并发工作流运行限制（OOM 防护）**
-新增全局 `ACPX_MAX_CONCURRENT_RUNS` 信号量（默认 8），限制同时执行的工作流数量。超出限制的提交请求排队等待，而非无限 spawn tokio 任务导致 OOM。
-
-**2. Watcher 优雅关机**
-Watcher 通过 `CancellationToken` 与主进程关机关联。Ctrl+C 时先取消 watcher 循环，再标记运行中的工作流为 failed，最后等待 watcher 任务退出。
-
-**3. DELETE 级联事务化**
-`delete_workflow_run` 改用数据库事务：在单个事务内删除 node_runs + workflow_run，避免中间状态（node_runs 已删但 workflow_run 仍在）。响应新增 `nodes_removed` 计数。
-
-**4. Shell 覆盖支持**
-`ExecConfig.shell` 字段终于被实际使用——节点可通过 `shell: "zsh -c"` 或 `shell: "sh -c"` 指定执行器，不再被忽略。
-
-**5. CORS 可配置**
-通过 `ACPX_CORS_ORIGIN` 环境变量配置 CORS 策略：`any`（默认）或逗号分隔的域名列表（如 `http://localhost:3000,https://app.example.com`）。
-
-**6. SQLite 外键启用**
-初始化时执行 `PRAGMA foreign_keys = ON`，确保外键约束生效。
-
-### 测试覆盖
-- 114 个测试全部通过（新增 16 个：concurrent_runs 配置 4 个、shell 执行 4 个、CLI 解析 3 个、分页查询 3 个、常量验证 2 个）
-
-## 2026-05-04 21:00 Round 14 — Node ID Validation, Shutdown Race Fix, Remote Cycle Detection, Pagination Guard, Cascade Delete
-
-### 安全加固
-
-**1. Node ID 字符白名单（防注入）**
-节点 ID 和 depends 引用仅允许 `[a-zA-Z0-9_\-/]`，阻止特殊字符（空格、点、引号等）破坏 CSS 选择器、文件路径和 shell 命令。schema.rs:validate_workflow 中新增校验，覆盖所有节点类型。
-
-**2. 关机竞态修复**
-优雅关机改用单条 `UPDATE ... WHERE status IN ('running','pending')` 原子标记，消除 SELECT→UPDATE 之间的状态转换竞态。同步更新 node_runs 表。
-
-**3. 远程 URL 循环引用检测**
-load_workflow_inner 的循环检测从仅跟踪本地文件路径扩展到同时跟踪远程 URL，防止通过 HTTP(S) URL 的循环引用导致无限递归。
-
-**4. 分页溢出保护**
-`list_workflows` 的 page 参数增加上限 `clamp(1, 100_000)`，offset 使用 `saturating_mul` 防止整数溢出。
-
-### 数据完整性
-
-**5. WorkflowRun::delete 级联事务化**
-公开的 `WorkflowRun::delete()` 方法改为事务内先删 node_runs 再删 workflow_run，防止孤立记录。
-
-**6. ALTER TABLE 错误处理改进**
-idempotent ALTER TABLE 从 `let _ =` 改为显式匹配：忽略 "duplicate column" 错误，记录其他错误。
-
-**7. 新增数据库索引**
-workflow_runs.status 和 node_runs.status 索引，加速关机查询和状态过滤。
-
-### 测试覆盖
-- 119 个测试全部通过（新增 5 个：node ID 特殊字符、空格、合法字符、depends 字符校验、长名称）
-
-## 2026-05-04 Round 15 — Workflow Cancellation Feature
-
-### 新增功能：工作流取消
-
-**POST /api/v1/workflows/{run_id}/cancel** — 取消正在运行或等待中的工作流。运行中的节点通过 CancellationToken 终止子进程（kill_on_drop），待执行的节点标记为 skipped。端点幂等（已取消返回 200）。共享注册表（CancelRegistry）映射 run_id → CancellationToken，工作流完成时自动清理。修改 6 个文件（db/models、runner/executor、runner/mod、api/workflows、watcher、main），新增 3 个测试（执行前取消、执行中取消、DAG 取消），128 个测试全部通过。
-
-## 2026-05-04 Round 16 — Workflow Re-run with Input Persistence
-
-### 新增功能：工作流重新运行
-
-**POST /api/v1/workflows/{run_id}/rerun** — 基于已完成的工作流创建新运行。持久化原始 inputs 到 workflow_runs.inputs 列（幂等 ALTER TABLE 迁移），rerun 时合并原始 inputs 与可选覆盖。未声明的 inputs 自动过滤，null inputs 使用原始值。Verify agent 端到端验证：原始 input 保留、覆盖合并、并发 rerun、向后兼容、幂等迁移、畸形输入拒绝。128 个测试全部通过。
-
-## 2026-05-04 Round 17 — Workflow-Level Timeout
-
-### 新增功能：工作流级超时
-
-YAML schema 新增可选 `timeout` 字段（秒），run_workflow 中用 tokio::time::timeout 包装 execute_dag。超时时触发 CancellationToken 取消运行中节点、跳过待执行节点、标记工作流 failed。None 默认无限制（向后兼容）。Template API 暴露 timeout。E2E 验证：timeout:2+sleep10 超时、多节点取消/跳过、timeout:0 立即失败、无 timeout 正常完成。131 个测试全部通过。
-
-## 2026-05-04 Round 18 — Conditional Node Execution (`if` field)
-
-### 新增功能：节点条件执行
-
-ExecConfig 新增可选 `if` 字段（YAML key: `if`），值为模板表达式。execute_dag 在依赖满足后、spawn 任务前求值：支持 truthiness（空/false/0/no → 跳过）、`==` 和 `!=` 比较运算符。条件为 false 时节点标记 skipped，下游依赖节点因 completed 集合不含该节点也被跳过。NodeRun 新增 `mark_node_skipped()` 单节点跳过方法。template.rs 新增 `evaluate_condition()`/`evaluate_truthiness()` 函数。146 个测试全部通过（新增 15 个：schema 解析 3、条件求值 9、DAG 集成 3）。
-
-## 2026-05-04 Round 19 — UX Design Review: Web UI Improvements
-
-### 用户视角设计审查发现并修复的问题
-
-Design review 排查出 23 个 UX 问题，本轮修复 5 个最高优先级的用户不友好操作。**Web UI 新增运行管理按钮**：运行中/等待中的工作流显示 Cancel 按钮（调用已有 cancel API）；已完成/失败的工作流显示 Re-run 和 Delete 按钮；Delete 前弹出确认对话框防止误删。**进度指示器**：log 面板顶部显示进度条（completed/total nodes），直观展示工作流执行进度。**日志加载状态**：fetchLogs 展开时显示 spinner 而非空白区域，消除用户对"没有输出"还是"正在加载"的困惑。修改 3 个文件（index.html/app.js/style.css）。
-
-## 2026-05-04 Round 20 — Submission-Time Validation + Re-run Confirmation
-
-### 提交时校验增强 + 重新运行确认
-
-`validate_workflow` 新增两项提交时校验：重复 node ID 检测（`duplicate node id 'build'`）和 depends 引用不存在的 node 时列出可用节点（`node 'deploy' depends on 'test', which does not exist. Available nodes: build, deploy`）。布尔类型校验错误提示从 `(true/false)` 扩展为 `(accepted: true, false, yes, no, 1, 0)`。Web UI Re-run 按钮新增确认对话框防止误触创建重复运行。新增 `examples/error-handling.yaml` 展示 retry/timeout/continue_on_error/if 四大特性。148 个测试全部通过（新增 2 个 schema 校验测试）。
+> 2026-05-04 ~ 05-05，22 轮迭代，测试 16 → 155
+
+## 按主题归类
+
+### 核心架构（R7/8/10/11/13）
+- SQLite 事务保护 + 外键启用 + 索引优化（created_at/run_id/status）
+- `execute_with_retry()` 泛化，统一 shell/agent 重试循环，消除 ~120 行重复
+- API 分页（page/per_page）、并发限制（`ACPX_MAX_CONCURRENT`）、CORS 可配置（`ACPX_CORS_ORIGIN`）
+- NodeDefaults 实际应用到执行器（timeout/retry 回退）、优雅关机（CancellationToken）、自依赖检测
+- 并发工作流信号量（`ACPX_MAX_CONCURRENT_RUNS`，默认 8）、Watcher 优雅关机
+
+### DAG 执行正确性（R4/8/10/14）
+- `continue_on_error` 下游逻辑多次迭代修正：失败节点 → completed 集合 → 下游可引用输出
+- 失败传播语义：硬失败终止 workflow，软失败（continue_on_error）不终止
+- 重复/自依赖 node ID 检测、Node ID 字符白名单 `[a-zA-Z0-9_\-/]`
+- 重试输出累积（`--- Attempt N ---`）、超时输出捕获、退避溢出保护（checked_shl + 60s 上限）
+- 关机竞态修复（原子 UPDATE）、远程 URL 循环引用检测、分页溢出保护
+
+### Schema/数据校验（R3/5/9/14/20）
+- `validate_workflow`：空名称、空节点列表、不存在的引用、重复 ID、自依赖
+- 输入类型校验（number/boolean/default 值）、前端 required 字段校验
+- YAML 大小限制（1MB → 413）、空提交拒绝（400）
+- 提交时 depends 引用校验，错误信息列出可用节点
+
+### 新功能（R15-18）
+- **Cancel**：POST cancel，CancellationToken 终止子进程，幂等
+- **Rerun**：持久化 inputs（幂等迁移），支持覆盖合并
+- **Workflow timeout**：YAML 可选字段，超时触发取消
+- **条件执行**：`if` 字段，truthiness + `==`/`!=` 比较运算符
+
+### 生产可靠性（R12/13）
+- Health Check（GET /health）、DELETE Run（级联事务化）
+- 输出截断（256KB，字符边界安全）、并发限制信号量
+- Shell 覆盖支持（`shell: "zsh -c"`）
+
+### 前端 UX（R1/2/5/6/19/21/22）
+- Toast 通知、inputs 表单 + 前端校验、执行耗时、进度条、日志 spinner
+- 消除所有内联 onclick → data-* + addEventListener（XSS 防护）
+- CSS 选择器注入修复（cssEsc → domId）、API 文档模态框
+- Cancel/Re-run/Delete 按钮 + 确认对话框
+- 敏感输入遮蔽（`***`）、描述性 404、confirmDelete 函数声明修复
+
+## 测试增长
+
+| 轮次 | 测试数 | 关键新增 |
+|------|--------|----------|
+| R1   | 24     | validate_inputs 类型校验 |
+| R3   | 29     | schema resolve |
+| R4   | 34     | DAG 拓扑 + continue_on_error |
+| R5   | 43     | loader/prefix_id/template |
+| R7   | 56     | executor 泛化 |
+| R8   | 67     | topo + template + watcher |
+| R9   | 84     | schema + input validation |
+| R11  | 94     | self-dep/defaults |
+| R13  | 114    | concurrent/shell/CLI/分页 |
+| R14  | 119    | node ID 校验 |
+| R15  | 128    | cancel |
+| R17  | 131    | timeout |
+| R18  | 146    | 条件执行 |
+| R21  | 155    | 敏感输入遮蔽 |

@@ -32,8 +32,13 @@ rmcp = { version = "1.6", features = [
     "transport-streamable-http-client-reqwest",
     "auth",
 ] }
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["gzip", "brotli", "deflate"] }
 url.workspace = true
+html2text = "0.14"
+regex = "1"
+base64 = "0.22"
+urlencoding = "2"
+
 
 [dev-dependencies]
 tokio-test.workspace = true

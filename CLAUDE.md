@@ -65,7 +65,7 @@ acpx-g (DAG workflow engine，独立)
 
 ## HITL 审批
 
-默认需审批工具：`Bash`、`folder_operations`、`Agent`、`Write`、`Edit`、`delete_*`、`rm_*`、`mcp__*`。
+默认需审批工具：`Bash`、`folder_operations`、`Agent`、`Write`、`Edit`、`delete_*`、`rm_*`、`mcp__*`、`WebFetch`、`WebSearch`。
 
 ## Skills
 
@@ -90,11 +90,12 @@ acpx-g (DAG workflow engine，独立)
 4. SkillPreloadMiddleware     ← #skill-name 全文注入（fake tool 序列）
 5. FilesystemMiddleware       ← 6 个文件系统工具（Read/Write/Edit/Glob/Grep/folder_operations）
 6. TerminalMiddleware         ← Bash 工具
-7. TodoMiddleware             ← after_tool 解析 TodoWrite
-8. CronMiddleware             ← Cron 调度工具
-9. HumanInTheLoopMiddleware   ← before_tool 拦截敏感工具
-10. SubAgentMiddleware        ← Agent 工具
-11. McpMiddleware             ← MCP 工具和资源注入（仅 pool 初始化成功时注册）
+7. WebMiddleware             ← WebFetch/WebSearch 工具
+8. TodoMiddleware             ← after_tool 解析 TodoWrite
+9. CronMiddleware             ← Cron 调度工具
+10. HumanInTheLoopMiddleware   ← before_tool 拦截敏感工具
+11. SubAgentMiddleware        ← Agent 工具
+12. McpMiddleware             ← MCP 工具和资源注入（仅 pool 初始化成功时注册）
 [ReActAgent.with_system_prompt()] ← system prompt prepend
 ```
 

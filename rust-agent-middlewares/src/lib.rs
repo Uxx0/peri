@@ -71,7 +71,9 @@ pub mod prelude {
     };
     #[allow(deprecated)]
     pub use crate::middleware::PrependSystemMiddleware;
-    pub use crate::middleware::{FilesystemMiddleware, TerminalMiddleware, TodoMiddleware};
+    pub use crate::middleware::{
+        FilesystemMiddleware, TerminalMiddleware, TodoMiddleware, WebMiddleware,
+    };
     pub use crate::skills::{SkillMetadata, SkillsMiddleware};
     pub use crate::subagent::{SkillPreloadMiddleware, SubAgentMiddleware, SubAgentTool};
     pub use crate::tools::{
