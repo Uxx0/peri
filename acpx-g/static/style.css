@@ -36,6 +36,7 @@
     --status-pending: #94a3b8;
     --status-skipped: #cbd5e1;
     --status-cancelled: #f97316;
+    --node-agent: #8250df;
 
     /* Danger / Success */
     --danger: #ef4444;
@@ -504,8 +505,8 @@ body {
     border-color: var(--danger);
 }
 .btn-danger:hover {
-    background: #dc2626;
-    border-color: #dc2626;
+    background: color-mix(in srgb, var(--danger) 85%, black);
+    border-color: color-mix(in srgb, var(--danger) 85%, black);
 }
 
 .btn-danger-ghost {
@@ -917,7 +918,7 @@ body {
    CODE BLOCK
    ============================================================ */
 .code-block {
-    background: #f8fafc;
+    background: var(--surface-void);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     padding: 12px;

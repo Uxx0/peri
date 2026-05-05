@@ -132,3 +132,7 @@ YAML 编辑器 textarea 新增 `:focus` 可见焦点状态（`box-shadow: inset 
 ## R40 — Design Review Round 18 (用户思维)
 
 `editorValidate` 服务端验证响应的 `.map(e => e.message)` 增加 `|| String(e)` 防御，避免 API 返回非标准错误格式时显示 `undefined`；`loadDraft` 损坏草稿不再静默忽略，改为清除 localStorage 并显示 warning toast 通知用户。
+
+## R41 — Design Review Round 19 (用户思维)
+
+CSS 硬编码颜色统一为变量：`#E2E8F0`（run-detail 进度条轨道）→ `var(--border-default)`、`#f8fafc`（code-block 背景）→ `var(--surface-void)`、`#dc2626`（danger 按钮悬停）→ `color-mix(in srgb, var(--danger) 85%, black)`、`#8250df`（代理节点紫色）→ 新增 `--node-agent` CSS 变量并替换 editor.css 中两处引用。

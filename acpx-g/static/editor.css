@@ -231,7 +231,7 @@
 }
 .agent-icon {
     background: rgba(130, 80, 223, 0.1);
-    color: #8250df;
+    color: var(--node-agent);
 }
 .ref-icon {
     background: rgba(16, 185, 129, 0.1);
@@ -519,7 +519,7 @@
 }
 .agent-node .enode-icon {
     background: rgba(130, 80, 223, 0.1);
-    color: #8250df;
+    color: var(--node-agent);
 }
 .reference-node .enode-icon {
     background: rgba(16, 185, 129, 0.1);

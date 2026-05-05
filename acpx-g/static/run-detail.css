@@ -176,7 +176,7 @@
 .tool-bar-track {
   flex: 1;
   height: 6px;
-  background: #E2E8F0;
+  background: var(--border-default);
   border-radius: 3px;
   overflow: hidden;
 }
