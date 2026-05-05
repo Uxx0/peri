@@ -163,6 +163,7 @@ function destroyEditor() {
   }
   document.removeEventListener('keydown', editorKeyHandler);
   selectedNodeId = null;
+  wfBaseDir = null;
   dfIdToBizId.clear();
   bizIdToDfId.clear();
   nodeStore.clear();
@@ -1209,6 +1210,7 @@ function saveDraft() {
         canvas: dfEditor?.export(),
         idMap: { toBiz: Object.fromEntries(dfIdToBizId), toDf: Object.fromEntries(bizIdToDfId) },
         counter: nodeIdCounter,
+        baseDir: wfBaseDir,
         ts: Date.now(),
       }));
     } catch (e) { /* ignore */ }
@@ -1238,6 +1240,7 @@ function loadDraft() {
       Object.entries(draft.idMap.toDf || {}).forEach(([k, v]) => bizIdToDfId.set(k, v));
     }
     nodeIdCounter = draft.counter ?? nodeStore.size;
+    wfBaseDir = draft.baseDir || null;
     updateYamlFromCanvas(); displayValidation([]); pushHistory();
   } catch (e) {
     localStorage.removeItem('acpx-editor-draft');
