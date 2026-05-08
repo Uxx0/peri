@@ -7,8 +7,8 @@ impl App {
     pub fn open_model_panel(&mut self) {
         let cfg = self
             .services
-            .zen_config
-            .get_or_insert_with(ZenConfig::default);
+            .peri_config
+            .get_or_insert_with(PeriConfig::default);
         let panel = ModelPanel::from_config(cfg);
         self.open_panel(PanelState::Model(panel));
     }
@@ -33,7 +33,7 @@ impl App {
             };
             alias_label = panel.active_tab.label().to_string();
             effort = panel.buf_thinking_effort.clone();
-            let Some(cfg) = self.services.zen_config.as_mut() else {
+            let Some(cfg) = self.services.peri_config.as_mut() else {
                 return;
             };
             panel.apply_to_config(cfg);
@@ -51,7 +51,7 @@ impl App {
                 alias_label, effort_display
             )));
         {
-            let cfg = self.services.zen_config.as_ref().unwrap();
+            let cfg = self.services.peri_config.as_ref().unwrap();
             if let Err(e) = Self::save_config(cfg, self.services.config_path_override.as_deref()) {
                 self.session_mgr.sessions[self.session_mgr.active]
                     .messages
@@ -74,8 +74,8 @@ impl App {
     pub fn open_login_panel(&mut self) {
         let cfg = self
             .services
-            .zen_config
-            .get_or_insert_with(ZenConfig::default);
+            .peri_config
+            .get_or_insert_with(PeriConfig::default);
         let panel = login_panel::LoginPanel::from_config(cfg);
         self.open_panel(PanelState::Login(panel));
     }
@@ -100,7 +100,7 @@ impl App {
             .get(panel.cursor)
             .map(|p| p.display_name().to_string())
             .unwrap_or_default();
-        let Some(cfg) = self.services.zen_config.as_mut() else {
+        let Some(cfg) = self.services.peri_config.as_mut() else {
             return;
         };
         panel.select_provider(cfg);
@@ -126,7 +126,7 @@ impl App {
         self.close_login_panel();
     }
 
-    /// 保存 Login 面板的编辑/新建内容到 ZenConfig，自动激活并关闭面板
+    /// 保存 Login 面板的编辑/新建内容到 PeriConfig，自动激活并关闭面板
     pub fn login_panel_apply_edit(&mut self) {
         let Some(panel) = self.session_mgr.sessions[self.session_mgr.active]
             .session_panels
@@ -136,7 +136,7 @@ impl App {
         };
         let edit_name = panel.buf_name.clone();
         let is_new = matches!(panel.mode, login_panel::LoginPanelMode::New);
-        let Some(cfg) = self.services.zen_config.as_mut() else {
+        let Some(cfg) = self.services.peri_config.as_mut() else {
             return;
         };
         if !panel.apply_edit(cfg) {
@@ -184,7 +184,7 @@ impl App {
         else {
             return;
         };
-        let Some(cfg) = self.services.zen_config.as_mut() else {
+        let Some(cfg) = self.services.peri_config.as_mut() else {
             return;
         };
         let deleted_name = panel
@@ -220,8 +220,8 @@ impl App {
     pub fn open_config_panel(&mut self) {
         let cfg = self
             .services
-            .zen_config
-            .get_or_insert_with(ZenConfig::default);
+            .peri_config
+            .get_or_insert_with(PeriConfig::default);
         let panel = config_panel::ConfigPanel::from_config(cfg);
         self.open_panel(PanelState::Config(panel));
     }
@@ -241,7 +241,7 @@ impl App {
         else {
             return;
         };
-        let Some(cfg) = self.services.zen_config.as_mut() else {
+        let Some(cfg) = self.services.peri_config.as_mut() else {
             return;
         };
         panel.apply_edit(cfg);
@@ -1058,7 +1058,7 @@ impl App {
                 .expect("无法创建测试用 SQLite 数据库"),
         );
 
-        // 将配置路径重定向到临时目录，防止测试污染全局 ~/.zen-code/settings.json
+        // 将配置路径重定向到临时目录，防止测试污染全局 ~/.peri/settings.json
         let test_config_path = std::env::temp_dir().join(format!(
             "zen-config-test-{}/settings.json",
             uuid::Uuid::now_v7()
@@ -1092,7 +1092,7 @@ impl App {
         let app = App {
             session_mgr: super::SessionManager::new(session),
             services: super::ServiceRegistry {
-                zen_config: None,
+                peri_config: None,
                 cwd: "/tmp".to_string(),
                 provider_name: "test".to_string(),
                 model_name: "test-model".to_string(),

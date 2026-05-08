@@ -43,6 +43,7 @@ if app.memory_panel.is_some() { ... return; }
 ```
 
 新增面板必须插入正确位置，且需同步更新：
+
 1. `event.rs` 的 Key 分发链
 2. `event.rs` 的 Paste 分发链
 3. `event.rs` 的 Mouse 分发链
@@ -291,7 +292,7 @@ pub struct PanelContext<'a> {
     pub sessions: &'a mut Vec<ChatSession>,
     pub active: usize,
     pub cwd: String,                          // Clone，避免借用
-    pub zen_config: &'a mut Option<ZenConfig>,
+    pub peri_config: &'a mut Option<PeriConfig>,
     pub config_path_override: Option<PathBuf>, // Clone
     pub provider_name: &'a mut String,
     pub model_name: &'a mut String,
@@ -636,8 +637,9 @@ impl PanelState {
 ### 3.1 问题本质
 
 当前架构中，面板是 `App` 的字段，事件处理器需要 `&mut App` 来：
+
 1. 修改面板状态（`app.xxx_panel.as_mut().unwrap()`)
-2. 修改 app 级状态（`app.zen_config`、`app.provider_name` 等）
+2. 修改 app 级状态（`app.peri_config`、`app.provider_name` 等）
 3. 发送消息（`app.sessions[app.active].core.view_messages.push(...)`）
 
 将面板集中到 `PanelManager` 后，需要在一次调用中同时拥有 `&mut PanelManager`（处理面板事件）和 `&mut App其余字段`（修改配置等）。
@@ -653,7 +655,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
         session_panels,       // &mut PanelManager（每个 session 一个）
         global_panels,        // &mut PanelManager（全局）
         sessions,             // &mut Vec<ChatSession>
-        zen_config,           // &mut Option<ZenConfig>
+        peri_config,           // &mut Option<PeriConfig>
         provider_name,        // &mut String
         model_name,           // &mut String
         mcp_pool,             // &mut Option<Arc<McpClientPool>>
@@ -671,7 +673,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
         sessions,
         active: app.active, // Copy
         cwd: app.cwd.clone(),
-        zen_config,
+        peri_config,
         config_path_override: config_path_override.clone(),
         provider_name,
         model_name,
@@ -691,6 +693,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
 ```
 
 **关键点：**
+
 - `session_panels` / `global_panels` 是 `PanelManager` 实例，直接从 `App` 解构出来
 - `PanelContext` 借用 App 的其他所有字段
 - 借用检查器验证两处借用不重叠（它们确实不重叠，因为是不同字段）
@@ -835,7 +838,7 @@ pub trait PanelComponent: Any { ... }
 ```rust
 // Before:
 pub fn open_model_panel(&mut self) {
-    let cfg = self.zen_config.get_or_insert_with(ZenConfig::default);
+    let cfg = self.peri_config.get_or_insert_with(PeriConfig::default);
     self.sessions[self.active].core.model_panel = Some(ModelPanel::from_config(cfg));
     self.sessions[self.active].core.login_panel = None;
     self.sessions[self.active].core.config_panel = None;
@@ -845,7 +848,7 @@ pub fn open_model_panel(&mut self) {
 
 // After（Phase 2 过渡期）:
 pub fn open_model_panel(&mut self) {
-    let cfg = self.zen_config.get_or_insert_with(ZenConfig::default);
+    let cfg = self.peri_config.get_or_insert_with(PeriConfig::default);
     let panel = ModelPanel::from_config(cfg);
 
     // 新路径：通过 PanelManager
@@ -864,6 +867,7 @@ pub fn open_model_panel(&mut self) {
 **注意**：双写期间，`PanelManager` 是 source of truth，`Option<XxxPanel>` 字段是镜像。渲染和事件处理仍读旧字段。
 
 **验证**：
+
 - 所有现有 headless 测试通过
 - 手动测试所有面板打开/关闭/互斥
 
@@ -979,7 +983,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
         let App {
             ref mut sessions,
             ref mut global_panels,
-            ref mut zen_config,
+            ref mut peri_config,
             ref mut provider_name,
             ref mut model_name,
             ref mut mcp_pool,
@@ -996,7 +1000,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
             sessions,
             active: app.active,
             cwd: cwd.clone(),
-            zen_config,
+            peri_config,
             config_path_override: config_path_override.clone(),
             provider_name,
             model_name,
@@ -1046,6 +1050,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
 面板滚轮通过 `PanelManager::dispatch_scroll()`。面板区域判断逻辑保留在 `next_event` 中（基于 `panel_area` 坐标）。
 
 **验证**：
+
 - 所有面板打开/关闭/互斥正常
 - 每个面板的所有按键功能正常
 - 所有 headless 测试通过
@@ -1058,6 +1063,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
 ### Phase 4: 渲染分发迁移 + 状态栏解耦
 
 **目标**：
+
 1. `main_ui.rs` 的渲染逻辑改为从 `PanelManager` 查询
 2. `status_bar.rs` 的快捷键显示从 `PanelManager::status_bar_hints()` 获取
 3. `main_ui.rs` 的 `active_panel_height` 改为调用 `PanelComponent::desired_height()`
@@ -1155,6 +1161,7 @@ fn render_second_row(f: &mut Frame, app: &App, area: Rect) {
 返回 `Vec<(&'static str, &'static str)>`，每个元组是 `(key, desc)`。状态栏统一格式化。面板内部状态（如 `LoginPanelMode::Browse` vs `Edit`）由面板自己决定返回什么提示。
 
 **验证**：
+
 - 所有面板渲染正常
 - 状态栏快捷键显示正确（包括面板内部状态变化时的切换）
 - 多 session 分屏渲染正常
@@ -1166,6 +1173,7 @@ fn render_second_row(f: &mut Frame, app: &App, area: Rect) {
 ### Phase 5: 清理 + 文档
 
 **目标**：
+
 1. 删除旧的 `Option<XxxPanel>` 字段（全部由 PanelManager 管理）
 2. 删除 `panel_ops.rs`（已被 PanelManager 吸收）
 3. 更新 `CLAUDE.md` 架构说明
@@ -1218,6 +1226,7 @@ async fn test_panel_mutex_cross_scope() {
 ```
 
 **验证**：
+
 - `cargo test -p rust-agent-tui` 全部通过
 - `cargo clippy -p rust-agent-tui` 无警告
 - `lefthook run pre-commit` 通过
@@ -1233,6 +1242,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：`PanelContext` 借用 App 的多个字段，某些 handler 可能需要同时访问面板和 PanelContext 中已被借用的字段。
 
 **缓解**：
+
 - Phase 3 中每个面板独立迁移，编译错误即时发现
 - 使用 `let (a, b, ..) = &mut *app;` 解构而非 `PanelContext` 包含所有字段
 - 必要时使用 `std::mem::take` + put back 模式（如现有的 `command_registry` 处理方式）
@@ -1242,6 +1252,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：部分 `render_xxx_panel(f, app, area)` 需要 `&mut App`（写回 `panel_area`、`panel_plain_lines` 等）。迁移到 `PanelComponent::render(&self, f, &App, area)` 后无法写回。
 
 **缓解**：
+
 - 方案 A：面板自身持有 `panel_area: Option<Rect>` 和 `panel_plain_lines: Vec<String>`（当前这些字段在 `AppCore` 中，所有面板共享）
 - 方案 B：render 仍接收 `&mut App`，但通过 `panel_manager` 字段访问面板状态
 - 推荐方案 B，减少字段迁移
@@ -1251,6 +1262,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：Plugin 面板是最复杂的面板（486 行 handler、多种内部视图/状态、异步安装/卸载）。迁移出错概率高。
 
 **缓解**：
+
 - Plugin 面板在 Phase 3 中最后迁移
 - 保留 `handle_plugin_panel` 函数体完整迁移到 `impl PanelComponent for PluginPanel`
 - 异步操作（install/uninstall spawn）保持通过 `bg_event_tx` 发送事件
@@ -1260,6 +1272,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：`ThreadBrowser` 有搜索框（使用 `tui_textarea::TextArea`）和外部操作（`app.open_thread_with_feedback`）。
 
 **缓解**：
+
 - `ThreadBrowser` 保持对 `TextArea` 的内部持有
 - `open_thread_with_feedback` 等操作通过 `PanelContext` 间接调用
 
@@ -1268,6 +1281,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：`CronPanel` 位于 `app.cron.cron_panel`，而非 `app.cron_panel`。
 
 **缓解**：
+
 - Phase 2 迁移时，`CronPanel` 从 `CronState` 中取出放入 `PanelManager`
 - `CronState` 保留 `scheduler` 和 `trigger_rx`，`cron_panel` 字段迁移到 `global_panels`
 
@@ -1276,6 +1290,7 @@ async fn test_panel_mutex_cross_scope() {
 **风险**：每个 session 有自己的 `session_panels: PanelManager`。切换 session 时，旧 session 的面板保持其状态。
 
 **缓解**：
+
 - 这正是当前行为：面板状态在 `AppCore` 中，每个 session 独立
 - `PanelManager` 作为 `AppCore` 字段自然继承了这一语义
 
@@ -1327,6 +1342,7 @@ async fn test_panel_mutex_cross_scope() {
 | Memory | Config, Login, Model, Status |
 
 观察：
+
 - Agent、Hooks、ThreadBrowser、Cron 四个面板不主动关闭其他面板，但会被其他面板关闭
 - 实际运行时，由于事件分发链只允许一个面板激活（`if-else return` 链），隐含了全互斥
 - **结论**：简化为所有面板同一互斥组

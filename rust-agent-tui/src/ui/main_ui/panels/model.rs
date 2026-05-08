@@ -24,14 +24,14 @@ pub(crate) fn render_model_panel(f: &mut Frame, panel: &ModelPanel, app: &App, a
 
     let active_alias = app
         .services
-        .zen_config
+        .peri_config
         .as_ref()
         .map(|c| c.config.active_alias.as_str())
         .unwrap_or("opus");
 
     let models = app
         .services
-        .zen_config
+        .peri_config
         .as_ref()
         .and_then(|c| {
             c.config

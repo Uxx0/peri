@@ -900,7 +900,7 @@ mod tests {
     async fn test_welcome_card_shows_login_guide_when_no_provider() {
         // 无 Provider 时 Welcome Card 应显示 /login 首次引导
         let (mut app, mut handle) = App::new_headless(120, 30).await;
-        // zen_config 默认为 None，无 provider
+        // peri_config 默认为 None，无 provider
         handle
             .terminal
             .draw(|f| main_ui::render(f, &mut app))
@@ -1308,8 +1308,8 @@ mod tests {
         #[tokio::test]
         async fn test_needs_setup_triggers_for_empty_config() {
             let (app, _handle) = App::new_headless(120, 30).await;
-            assert!(app.services.zen_config.is_none());
-            let empty_cfg = crate::config::types::ZenConfig::default();
+            assert!(app.services.peri_config.is_none());
+            let empty_cfg = crate::config::types::PeriConfig::default();
             assert!(needs_setup(&empty_cfg.config));
         }
 
@@ -1463,7 +1463,7 @@ mod tests {
             let config_path = temp_dir.join("settings.json");
             let cfg = save_setup_to(&wizard, &config_path).expect("save should succeed");
             assert!(!needs_setup(&cfg.config));
-            app.services.zen_config = Some(cfg);
+            app.services.peri_config = Some(cfg);
             assert!(app.services.setup_wizard.is_none());
             let _ = std::fs::remove_dir_all(&temp_dir);
         }
@@ -1801,12 +1801,12 @@ mod tests {
     #[tokio::test]
     async fn test_get_compact_config_from_settings() {
         let (mut app, _handle) = App::new_headless(120, 30).await;
-        let mut zen = crate::config::types::ZenConfig::default();
+        let mut zen = crate::config::types::PeriConfig::default();
         zen.config.compact = Some(rust_create_agent::agent::compact::CompactConfig {
             auto_compact_threshold: 0.9,
             ..Default::default()
         });
-        app.services.zen_config = Some(zen);
+        app.services.peri_config = Some(zen);
         let config = app.get_compact_config();
         assert!(
             (config.auto_compact_threshold - 0.9).abs() < 0.001,
@@ -2573,9 +2573,9 @@ mod tests {
     async fn test_model_panel_space_selects_model() {
         use crate::app::model_panel::{AliasTab, ModelPanel, ROW_SONNET};
         use crate::config::types::AppConfig;
-        use crate::config::{ProviderConfig, ThinkingConfig, ZenConfig};
+        use crate::config::{PeriConfig, ProviderConfig, ThinkingConfig};
 
-        let cfg = ZenConfig {
+        let cfg = PeriConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
                 active_provider_id: "test".to_string(),
@@ -2714,10 +2714,10 @@ mod tests {
     async fn test_model_panel_confirm_shows_feedback() {
         use crate::app::model_panel::{AliasTab, ModelPanel};
         use crate::config::types::AppConfig;
-        use crate::config::{ProviderConfig, ThinkingConfig, ZenConfig};
+        use crate::config::{PeriConfig, ProviderConfig, ThinkingConfig};
 
         let (mut app, _handle) = App::new_headless(120, 30).await;
-        let cfg = ZenConfig {
+        let cfg = PeriConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
                 active_provider_id: "test".to_string(),
@@ -2734,11 +2734,11 @@ mod tests {
                 ..Default::default()
             },
         };
-        app.services.zen_config = Some(cfg);
+        app.services.peri_config = Some(cfg);
         app.session_mgr.sessions[app.session_mgr.active]
             .session_panels
             .open(crate::app::panel_manager::PanelState::Model(
-                ModelPanel::from_config(app.services.zen_config.as_ref().unwrap()),
+                ModelPanel::from_config(app.services.peri_config.as_ref().unwrap()),
             ));
         app.session_mgr.sessions[app.session_mgr.active]
             .session_panels
@@ -2775,10 +2775,10 @@ mod tests {
     async fn test_login_select_provider_shows_feedback() {
         use crate::app::login_panel::LoginPanel;
         use crate::config::types::AppConfig;
-        use crate::config::{ProviderConfig, ZenConfig};
+        use crate::config::{PeriConfig, ProviderConfig};
 
         let (mut app, _handle) = App::new_headless(120, 30).await;
-        let cfg = ZenConfig {
+        let cfg = PeriConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
                 active_provider_id: "test1".to_string(),
@@ -2797,11 +2797,11 @@ mod tests {
                 ..Default::default()
             },
         };
-        app.services.zen_config = Some(cfg);
+        app.services.peri_config = Some(cfg);
         app.session_mgr.sessions[app.session_mgr.active]
             .session_panels
             .open(crate::app::panel_manager::PanelState::Login(
-                LoginPanel::from_config(app.services.zen_config.as_ref().unwrap()),
+                LoginPanel::from_config(app.services.peri_config.as_ref().unwrap()),
             ));
         // 光标移到第二个 Provider
         app.session_mgr.sessions[app.session_mgr.active]
@@ -3132,9 +3132,9 @@ mod tests {
                 "session 1 不应有面板"
             );
 
-            // 在 session 1 打开 Login 面板（需要 zen_config）
+            // 在 session 1 打开 Login 面板（需要 peri_config）
             app.session_mgr.active = 1;
-            app.services.zen_config = Some(crate::config::ZenConfig::default());
+            app.services.peri_config = Some(crate::config::PeriConfig::default());
             app.open_login_panel();
             assert!(
                 app.session_mgr.sessions[1]

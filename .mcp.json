@@ -1,7 +1,6 @@
 {
   "mcpServers": {
     "sentry": {
-      "disabled": true,
       "type": "http",
       "url": "https://mcp.sentry.dev/mcp"
     }

@@ -39,7 +39,7 @@ pub(crate) fn render_login_panel(f: &mut Frame, panel: &LoginPanel, app: &App, a
 
     let active_provider_id = app
         .services
-        .zen_config
+        .peri_config
         .as_ref()
         .map(|c| c.config.active_provider_id.as_str())
         .unwrap_or("");

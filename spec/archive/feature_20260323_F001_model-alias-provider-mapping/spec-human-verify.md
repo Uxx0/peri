@@ -9,10 +9,11 @@
 ## 验收前准备
 
 ### 环境要求
+
 - [ ] [AUTO] 检查 Rust 工具链可用: `cargo --version`
 - [ ] [AUTO] 编译 rust-agent-tui: `cargo build -p rust-agent-tui 2>&1 | grep -c "^error"`
   → 期望: 输出 `0`（零编译错误）
-- [ ] [AUTO] 备份当前 settings.json（如存在）: `test -f ~/.zen-code/settings.json && cp ~/.zen-code/settings.json ~/.zen-code/settings.json.bak || echo "no existing config"`
+- [ ] [AUTO] 备份当前 settings.json（如存在）: `test -f ~/.peri/settings.json && cp ~/.peri/settings.json ~/.peri/settings.json.bak || echo "no existing config"`
 - [ ] [MANUAL] 确认 `rust-agent-tui/.env` 中至少配置了一个有效 API Key（ANTHROPIC_API_KEY 或 OPENAI_API_KEY），供 TUI 启动时测试 Provider 解析
 
 ---
@@ -22,6 +23,7 @@
 ### 场景 1：数据结构与序列化
 
 #### - [x] 1.1 新结构编译无错误且无新增 warning
+
 - **来源:** Task 1 检查步骤
 - **操作步骤:**
   1. [A] `cargo build -p rust-agent-tui 2>&1 | grep "^error"` → 期望: 无输出（零编译错误）
@@ -30,6 +32,7 @@
   - 若有编译错误: `cargo build -p rust-agent-tui 2>&1 | head -40` 查看完整错误信息
 
 #### - [x] 1.2 settings.json 新格式序列化正确
+
 - **来源:** Task 1 检查步骤 / spec-design.md
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- config 2>&1 | tail -5` → 期望: `test result: ok` 且无 FAILED
@@ -43,6 +46,7 @@
 ### 场景 2：向后兼容迁移
 
 #### - [x] 2.1 旧格式 JSON 自动迁移为新格式
+
 - **来源:** Task 2 检查步骤 / spec-design.md
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- migration 2>&1 | tail -5` → 期望: `3 passed; 0 failed`
@@ -52,6 +56,7 @@
   - 若迁移测试失败: 检查 `rust-agent-tui/src/config/store.rs` 中 `migrate_if_needed` 函数的条件判断
 
 #### - [x] 2.2 迁移后数据完整性（旧 provider_id/model_id 填入 opus 别名）
+
 - **来源:** spec-design.md 向后兼容迁移章节
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- test_migration_from_old_format -- --nocapture 2>&1 | tail -20` → 期望: 测试通过，无 assertion 失败
@@ -64,6 +69,7 @@
 ### 场景 3：LlmProvider 别名解析
 
 #### - [x] 3.1 从 active_alias 正确解析为 LlmProvider
+
 - **来源:** Task 3 检查步骤 / spec-design.md LlmProvider 解析变更章节
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- provider 2>&1 | tail -10` → 期望: 全部 `ok`，0 FAILED
@@ -73,6 +79,7 @@
   - 若解析失败: 检查 `provider.rs` 中 `from_config` 函数的 alias match 分支
 
 #### - [x] 3.2 空 model_id 回退到 Provider 默认值，不 panic
+
 - **来源:** Task 3 检查步骤 / spec-design.md 实现要点5
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- provider_default 2>&1 | tail -5` → 期望: `2 passed; 0 failed`
@@ -81,6 +88,7 @@
   - 若 panic: 检查 `provider.rs` 中空 model_id 时的 match 分支
 
 #### - [x] 3.3 未知 alias 名称 fallback 到 opus
+
 - **来源:** Task 3 执行步骤（未知别名 fallback）
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- test_from_config_unknown_alias_fallback_to_opus 2>&1 | grep -E "ok|FAILED"` → 期望: `ok`
@@ -95,6 +103,7 @@
 > 启动后按 `/model` 回车进入模型面板。
 
 #### - [x] 4.1 /model 面板显示三个 Tab（Opus / Sonnet / Haiku）
+
 - **来源:** Task 5 检查步骤 / spec-design.md TUI 面板交互设计
 - **操作步骤:**
   1. [A] `cargo build -p rust-agent-tui 2>&1 | grep "^error"` → 期望: 无输出（可正常构建）
@@ -105,6 +114,7 @@
   - 若高亮不正确: 检查 `render_model_panel` 中 `is_current` 判断
 
 #### - [x] 4.2 状态栏显示 ★Alias → provider/model 格式
+
 - **来源:** Task 5 / spec-design.md TUI 状态栏章节
 - **操作步骤:**
   1. [A] 搜索源码确认状态栏格式代码存在: `grep -n "★" rust-agent-tui/src/ui/main_ui.rs | head -5` → 期望: 有包含 `★` 的代码行
@@ -113,6 +123,7 @@
   - 若状态栏未显示: 检查 `render_status_bar` 函数中 `alias_display` 变量的赋值逻辑
 
 #### - [x] 4.3 Provider 管理子面板可通过 p 键进入
+
 - **来源:** Task 5 键盘事件适配 / spec-design.md Provider 管理入口保留
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui -- model_panel 2>&1 | tail -5` → 期望: `test result: ok`（所有 model_panel 单元测试通过）

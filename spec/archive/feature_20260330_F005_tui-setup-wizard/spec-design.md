@@ -2,19 +2,19 @@
 
 ## 需求背景
 
-用户首次安装 Perihelion 后，需要手动编辑 `~/.zen-code/settings.json` 或设置环境变量来配置 Provider、API Key 和模型别名，门槛较高。缺少引导流程导致新用户启动 TUI 后无法立即使用。
+用户首次安装 Perihelion 后，需要手动编辑 `~/.peri/settings.json` 或设置环境变量来配置 Provider、API Key 和模型别名，门槛较高。缺少引导流程导致新用户启动 TUI 后无法立即使用。
 
 ## 目标
 
 - 首次启动 TUI 时自动检测配置完整性，未配置则弹出全屏向导引导用户完成 Provider / API Key / 模型别名配置
-- 配置完成后写入 `~/.zen-code/settings.json`，提示确认后进入正常对话界面
+- 配置完成后写入 `~/.peri/settings.json`，提示确认后进入正常对话界面
 - 与现有面板模式一致（独立 SetupWizardPanel），不侵入日常使用的 `/model` 面板
 
 ## 方案设计
 
 ### 触发机制
 
-App 初始化时（`App::new()` 或 `main.rs` terminal setup 之后），检查 `~/.zen-code/settings.json` 的配置完整性：
+App 初始化时（`App::new()` 或 `main.rs` terminal setup 之后），检查 `~/.peri/settings.json` 的配置完整性：
 
 ```rust
 fn needs_setup(config: &AppConfig) -> bool {
@@ -59,6 +59,7 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 ![Step 1 线框图](./images/02-wireframe-step1.png)
 
 **UI 元素**：
+
 - 标题：`── Perihelion Setup ── Step 1/3: Provider`
 - Provider 类型下拉：`Anthropic` / `OpenAI Compatible`（↑↓ 选择，默认 Anthropic）
 - Provider ID 输入框（默认 `anthropic` / `openai`，可自定义）
@@ -68,6 +69,7 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 - 底部提示：`Enter 下一步 · Esc 跳过 setup · Tab 切换字段`
 
 **按键处理**：
+
 - Tab：在 Provider 类型 / Provider ID / Base URL 字段间切换
 - ↑↓：Provider 类型下拉选择
 - Enter：校验非空后进入 Step 2
@@ -78,12 +80,14 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 ![Step 2 线框图](./images/03-wireframe-step2.png)
 
 **UI 元素**：
+
 - 标题：`── Step 2/3: API Key`
 - 显示当前 Provider 名称
 - API Key 输入框（密码模式，输入显示 `••••••••`）
 - 底部提示：`Enter 下一步 · Esc 返回上一步`
 
 **按键处理**：
+
 - Enter：校验非空后进入 Step 3
 - Esc：返回 Step 1（保留已填内容）
 
@@ -92,6 +96,7 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 ![Step 3 线框图](./images/04-wireframe-step3.png)
 
 **UI 元素**：
+
 - 标题：`── Step 3/3: Model Aliases`
 - 三行配置，每行含两个输入框：
   - `Opus  > Provider: [下拉]  Model: [输入框]`
@@ -104,6 +109,7 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 - 底部提示：`Enter 完成配置 · Esc 返回上一步 · Tab 切换字段`
 
 **按键处理**：
+
 - Tab：在 6 个字段（3×provider + 3×model_id）间按行切换
 - ↑↓：Provider 下拉选择
 - Enter：校验三个 model_id 非空 → 执行保存
@@ -111,6 +117,7 @@ Step 3: 模型别名配置（opus / sonnet / haiku）
 #### 完成页
 
 **UI 元素**：
+
 - 标题：`── Setup Complete ✓`
 - 摘要：列出已配置的 Provider 和三个模型别名
 - 底部提示：`按 Enter 开始使用`
@@ -159,7 +166,7 @@ struct SetupWizardPanel {
 
 ### 持久化
 
-Setup 完成后，统一写入 `~/.zen-code/settings.json`：
+Setup 完成后，统一写入 `~/.peri/settings.json`：
 
 ```rust
 fn save_setup(config: &SetupWizardPanel) -> anyhow::Result<()> {
@@ -237,7 +244,7 @@ fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<Action> {
 ## 约束一致性
 
 - **面板模式一致**：SetupWizardPanel 与 ModelPanel / RelayPanel 模式一致，独立状态 + 渲染函数，不侵入现有逻辑
-- **配置持久化**：统一写入 `~/.zen-code/settings.json`（通过 `AppConfig`），与现有配置管理一致
+- **配置持久化**：统一写入 `~/.peri/settings.json`（通过 `AppConfig`），与现有配置管理一致
 - **事件驱动**：按键处理在主循环事件分发中优先拦截，与 HITL/AskUser 弹窗的拦截模式一致
 - **不引入新依赖**：复用已有的 ratatui-textarea、AppConfig、ProviderConfig 等现有组件
 - **全屏覆盖**：setup 期间完全替换主界面渲染，与弹窗面板的模式一致但覆盖全屏

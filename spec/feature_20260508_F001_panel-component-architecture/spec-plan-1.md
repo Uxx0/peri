@@ -29,6 +29,7 @@
 [上下游影响] 本 Task 输出的 `PanelKind`、`PanelState`、`PanelComponent` trait 被 Task 2-7 中所有面板的 `impl PanelComponent` 直接使用。本 Task 无前置依赖。
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/panel_manager.rs`
 - 新建: `rust-agent-tui/src/app/panel_component.rs`
 - 修改: `rust-agent-tui/src/app/mod.rs`（添加 module 声明 + re-export）
@@ -56,6 +57,7 @@
     - `dispatch_scroll(&mut self, lines: i16, ctx: &mut PanelContext<'_>) -> EventResult` — 返回 `EventResult::NotConsumed`
     - `status_bar_hints(&self) -> Vec<(&'static str, &'static str)>` — 返回空 `Vec`
   - 关键依赖项（use 语句）：
+
     ```rust
     use std::any::Any;
     use std::path::PathBuf;
@@ -74,13 +76,14 @@
     use super::model_panel::ModelPanel;
     use super::plugin_panel::PluginPanel;
     use super::status_panel::StatusPanel;
-    use crate::config::ZenConfig;
+    use crate::config::PeriConfig;
     use crate::events::AgentEvent;
     use crate::thread::ThreadBrowser;
     use rust_agent_middlewares::mcp::McpClientPool;
     use rust_agent_middlewares::plugin::PluginLoadResult;
     use rust_agent_middlewares::thread_store::ThreadStore;
     ```
+
   - 原因: 这些类型是整个面板组件化架构的类型基础，Task 2-7 将逐步为 PanelManager 填充真实行为
 
 - [x] 为 `PanelState` 实现 `Any` downcast 方法
@@ -93,6 +96,7 @@
   - 位置: 新文件，完整内容如下
   - 在文件顶部标注 `#![allow(dead_code)]`
   - 定义 `PanelComponent` trait，supertrait 为 `Any`，包含以下方法：
+
     ```rust
     pub trait PanelComponent: Any {
         fn kind(&self) -> PanelKind;
@@ -109,7 +113,9 @@
         fn as_any_mut(&mut self) -> &mut dyn Any;
     }
     ```
+
   - 关键依赖项：
+
     ```rust
     use std::any::Any;
     use ratatui::layout::Rect;
@@ -119,21 +125,26 @@
     use super::panel_manager::{EventResult, PanelContext, PanelKind};
     use super::App;
     ```
+
   - 原因: `PanelComponent` 是所有面板的统一行为接口，Task 3-5 中每个面板文件将添加 `impl PanelComponent for XxxPanel`
 
 - [x] 修改 `rust-agent-tui/src/app/mod.rs`，添加模块声明和 re-export
   - 位置: `mod.rs` L33（`mod panel_ops;` 之后），添加两行：
+
     ```rust
     pub mod panel_component;
     pub mod panel_manager;
     ```
+
   - 在 re-export 区域（L83 `pub use mcp_panel::{DetailAction, McpPanel, McpPanelView};` 之后），添加：
+
     ```rust
     pub use panel_component::PanelComponent;
     pub use panel_manager::{
         EventResult, MutexGroup, PanelContext, PanelKind, PanelManager, PanelScope, PanelState,
     };
     ```
+
   - 原因: `panel_component` 和 `panel_manager` 需要被 event.rs、各面板文件、main_ui.rs、status_bar.rs 引用，必须 pub 声明
 
 - [x] 验证编译通过
@@ -154,6 +165,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证新文件存在且模块声明正确
   - `grep -n "pub mod panel_component\|pub mod panel_manager" rust-agent-tui/src/app/mod.rs`
   - 预期: 输出两行匹配，分别对应 L34 和 L35 附近
@@ -183,6 +195,7 @@
 [上下游影响] 本 Task 输出被 Task 3-5（事件分发迁移）依赖：`App::open_panel()` 和 `PanelManager` 实例是后续事件分发替换的基础。本 Task 依赖 Task 1（`PanelKind`/`PanelState`/`PanelManager` 类型已定义）。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/core.rs`（添加 `session_panels` 字段 + 初始化）
 - 修改: `rust-agent-tui/src/app/mod.rs`（添加 `global_panels` 字段 + 初始化 + `open_panel()`/`close_all_panels()` 方法）
 - 修改: `rust-agent-tui/src/app/panel_ops.rs`（9 个 `open_*`/`close_*` 方法双写 + 新增 `open_mcp_panel`/`open_cron_panel` 方法 + `new_headless` 更新）
@@ -211,6 +224,7 @@
 - [x] 在 `mod.rs` 中添加 `App::open_panel()` 方法
   - 位置: `rust-agent-tui/src/app/mod.rs`，在 `get_current_task_duration()` 方法（L501）之后
   - 实现逻辑:
+
     ```rust
     /// 打开面板（统一处理跨作用域互斥）：关闭所有 manager 中的面板后，放入正确的 manager
     pub fn open_panel(&mut self, state: super::panel_manager::PanelState) {
@@ -228,11 +242,13 @@
         }
     }
     ```
+
   - 原因: `PanelManager::open()` 自动关闭同一 manager 中的前一面板；`open_panel()` 额外关闭另一个 manager 中的面板，实现跨作用域互斥
 
 - [x] 在 `mod.rs` 中添加 `App::close_all_panels()` 方法
   - 位置: 紧接 `open_panel()` 方法之后
   - 实现逻辑:
+
     ```rust
     /// 关闭所有面板（session + global）
     pub fn close_all_panels(&mut self) {
@@ -242,6 +258,7 @@
         }
     }
     ```
+
   - 原因: Ctrl+C 中断和 session 切换时需要一次性关闭所有面板
 
 - [x] 从 `CronState` 中移除 `cron_panel` 字段
@@ -266,6 +283,7 @@
 - [x] 新增 `open_mcp_panel()` 方法到 `panel_ops.rs`
   - 位置: `rust-agent-tui/src/app/panel_ops.rs`，在 `close_memory_panel()` 方法（L269）之后
   - 实现逻辑:
+
     ```rust
     /// 打开 MCP 面板（替代 command/mcp.rs 中的直接赋值）
     pub fn open_mcp_panel(&mut self) {
@@ -288,11 +306,13 @@
         self.mcp_panel = Some(panel);
     }
     ```
+
   - 原因: MCP 面板原来在 `command/mcp.rs` 中直接赋值无互斥处理，统一到 PanelManager
 
 - [x] 新增 `open_cron_panel()` 方法到 `panel_ops.rs`
   - 位置: 紧接 `open_mcp_panel()` 之后
   - 实现逻辑:
+
     ```rust
     /// 打开 Cron 面板（替代 command/cron.rs 中的直接赋值）
     pub fn open_cron_panel(&mut self) {
@@ -310,6 +330,7 @@
         self.open_panel(super::panel_manager::PanelState::Cron(panel));
     }
     ```
+
   - 原因: Cron 面板原来在 `command/cron.rs` 中直接赋值 `app.cron.cron_panel`，现该字段已从 CronState 移除
 
 - [x] 修改 `command/mcp.rs` 改用 `open_mcp_panel()`
@@ -326,6 +347,7 @@
 - [x] 修改 `thread_ops.rs` 的 ThreadBrowser 打开逻辑
   - 位置: `rust-agent-tui/src/app/thread_ops.rs` L349-353
   - 将 `self.sessions[self.active].core.thread_browser = Some(ThreadBrowser::new(...))` 改为:
+
     ```rust
     let browser = ThreadBrowser::new(filtered, self.thread_store.clone(), branch);
     // 新路径：通过 PanelManager
@@ -333,6 +355,7 @@
     // 旧路径：双写镜像
     self.sessions[self.active].core.thread_browser = Some(browser);
     ```
+
   - 原因: ThreadBrowser 原来直接赋值无互斥处理，需统一到 PanelManager
 
 - [x] 修改 `panel_ops.rs` 中 9 个已有 `open_*` 方法，添加 PanelManager 双写
@@ -350,9 +373,10 @@
     | `open_hooks_panel` L875 | `PanelState::Hooks` | login, config, status, memory |
 
   - 每个方法的修改模式（以 `open_model_panel` 为例）:
+
     ```rust
     pub fn open_model_panel(&mut self) {
-        let cfg = self.zen_config.get_or_insert_with(ZenConfig::default);
+        let cfg = self.peri_config.get_or_insert_with(PeriConfig::default);
         let panel = ModelPanel::from_config(cfg);
         // 新路径：通过 PanelManager（source of truth）
         self.open_panel(super::panel_manager::PanelState::Model(panel.clone()));
@@ -365,6 +389,7 @@
         self.memory_panel = None;
     }
     ```
+
   - 注意: `PluginPanel` 需要实现 `Clone`（若未实现则在 `plugin_panel.rs` 中添加 `#[derive(Clone)]` 或手动实现）
   - 注意: `AgentPanel` 的 `new()` 接受 `(Vec<AgentItem>, Option<String>)`，clone 时需先构造再 clone
   - 原因: 双写期间 PanelManager 是 source of truth，旧 Option 字段是镜像供渲染和事件处理读取
@@ -396,11 +421,13 @@
 - [x] 更新 `headless.rs` 中直接赋值 `app.cron.cron_panel` 的测试代码
   - 位置: `rust-agent-tui/src/ui/headless.rs` L1069, L2447, L2501
   - 将 `app.cron.cron_panel = Some(CronPanel::new(tasks))` 改为:
+
     ```rust
     app.global_panels.open(crate::app::panel_manager::PanelState::Cron(
         crate::app::CronPanel::new(tasks),
     ));
     ```
+
   - 将断言 `app.cron.cron_panel.as_ref().unwrap()` 改为 `app.global_panels.get::<crate::app::CronPanel>().unwrap()`
   - 将断言 `app.cron.cron_panel.as_mut().unwrap()` 改为 `app.global_panels.get_mut::<crate::app::CronPanel>().unwrap()`
   - 原因: CronPanel 已从 CronState 移除到 global_panels
@@ -408,9 +435,11 @@
 - [x] 更新 `ui/main_ui/panels/cron.rs` 中 headless 测试的 CronPanel 赋值
   - 位置: `rust-agent-tui/src/ui/main_ui/panels/cron.rs` L146
   - 将 `app.cron.cron_panel = Some(CronPanel::new(vec![]))` 改为:
+
     ```rust
     app.global_panels.open(crate::app::panel_manager::PanelState::Cron(CronPanel::new(vec![])));
     ```
+
   - 原因: 与 CronPanel 迁移保持一致
 
 - [x] 为 `open_panel()`/`close_all_panels()`/跨作用域互斥编写单元测试
@@ -424,6 +453,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo build -p rust-agent-tui 2>&1 | tail -20`
   - 预期: 编译成功，无错误
@@ -459,6 +489,7 @@
 [上下游影响] 本 Task 依赖 Task 1（PanelKind/PanelState/PanelComponent/PanelManager/PanelContext/EventResult 类型定义）和 Task 2（PanelManager 添加到 AppCore/App + open/close 双写）。本 Task 输出的 5 个 `impl PanelComponent for XxxPanel` 被 Task 6（渲染迁移 + 状态栏解耦）和 Task 7（清理旧字段）依赖。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/model_panel.rs`（添加 `impl PanelComponent for ModelPanel`）
 - 修改: `rust-agent-tui/src/app/agent_panel.rs`（添加 `impl PanelComponent for AgentPanel`）
 - 修改: `rust-agent-tui/src/app/hooks_panel.rs`（添加 `impl PanelComponent for HooksPanel`）
@@ -472,6 +503,7 @@
 - [x] 为 ModelPanel 实现 PanelComponent trait
   - 位置: `rust-agent-tui/src/app/model_panel.rs` 文件末尾（`#[cfg(test)]` 之前）
   - 在文件顶部添加 use 语句：
+
     ```rust
     use std::any::Any;
     use ratatui::layout::Rect;
@@ -482,6 +514,7 @@
     use super::panel_manager::{EventResult, PanelContext, PanelKind};
     use super::App;
     ```
+
   - 添加 `impl PanelComponent for ModelPanel` 块，包含以下方法：
     - `fn kind(&self) -> PanelKind { PanelKind::Model }`
     - `fn handle_key(&mut self, input: Input, ctx: &mut PanelContext<'_>) -> EventResult`
@@ -500,10 +533,10 @@
       - `_` → `EventResult::Consumed`
     - 添加私有辅助方法 `fn apply_and_close(panel: &ModelPanel, ctx: &mut PanelContext<'_>)`
       - 此方法执行 `panel_ops.rs` L23-56 `model_panel_confirm` 的核心逻辑：
-        1. 调用 `panel.apply_to_config(ctx.zen_config.as_mut().unwrap())`
+        1. 调用 `panel.apply_to_config(ctx.peri_config.as_mut().unwrap())`
         2. 构建 alias_label 和 effort_display 字符串
         3. 向 `ctx.sessions[ctx.active].core.view_messages` push 系统消息 "模型已切换为: {alias_label} ({effort_display} effort)"
-        4. 调用 `App::save_config(ctx.zen_config.as_ref().unwrap(), ctx.config_path_override.as_deref())`，失败时 push 错误消息
+        4. 调用 `App::save_config(ctx.peri_config.as_ref().unwrap(), ctx.config_path_override.as_deref())`，失败时 push 错误消息
         5. 通过 `ctx.provider_name` 和 `ctx.model_name` 更新 provider/model 显示名称（从 `LlmProvider::from_config` 获取）
     - `fn desired_height(&self, _screen_height: u16, _screen_width: u16) -> u16 { 12 }`
     - `fn render(&self, f: &mut Frame, app: &App, area: Rect)` → 委托到 `crate::ui::main_ui::panels::model::render_model_panel(f, app, area)`
@@ -590,6 +623,7 @@
 - [x] 修改 `event.rs`，添加 PanelManager 分发入口（双写过渡）
   - 位置: `rust-agent-tui/src/event.rs` L251-303（5 个面板的 if-else 分发区域）
   - 在现有 `if app.sessions[app.active].core.agent_panel.is_some()` 之前（L251），插入 PanelManager 分发代码块：
+
     ```rust
     // PanelManager 分发（已迁移的面板）
     if app.sessions[app.active].core.session_panels.is_any_open() {
@@ -599,7 +633,7 @@
                 // 构造 PanelContext（与 Task 2 双写一致的解构模式）
                 let App {
                     ref mut sessions,
-                    ref mut zen_config,
+                    ref mut peri_config,
                     ref mut provider_name,
                     ref mut model_name,
                     ref mut mcp_pool,
@@ -616,7 +650,7 @@
                     sessions,
                     active: app.active,
                     cwd: cwd.clone(),
-                    zen_config,
+                    peri_config,
                     config_path_override: config_path_override.clone(),
                     provider_name,
                     model_name,
@@ -689,6 +723,7 @@
         }
     }
     ```
+
   - 保留 L251-303 中 ThreadBrowser/Cron/OAuth/MCP/Plugin/Login/Config 的旧 if-else 链不变
   - 将 L251-255（agent_panel）、L257-261（hooks_panel）、L269-273（model_panel）的旧分发代码注释掉（不删除，保留双写参考），添加 `// [Task 3] 已迁移到 PanelManager 分发` 注释
   - 将 L281-285（status_panel）、L287-303（memory_panel）的旧分发代码注释掉，添加相同注释
@@ -700,18 +735,22 @@
 - [x] 修改 `panel_ops.rs` 的 open/close 方法，同步 PanelManager（双写）
   - 位置: `rust-agent-tui/src/app/panel_ops.rs`
   - 在 `open_model_panel` 方法（L7-15）末尾，`self.sessions[self.active].core.model_panel = Some(...)` 之后，添加：
+
     ```rust
     // 同步 PanelManager（双写）
     self.sessions[self.active].core.session_panels.open(PanelState::Model(panel));
     self.global_panels.close();
     ```
+
     - 注意：`panel` 变量需 clone 或在赋值前构造（Rust 所有权），改为先 clone 再分别赋值：
+
     ```rust
     let panel = ModelPanel::from_config(cfg);
     let panel_clone = panel.clone(); // ModelPanel 需实现 Clone
     self.sessions[self.active].core.model_panel = Some(panel);
     self.sessions[self.active].core.session_panels.open(PanelState::Model(panel_clone));
     ```
+
   - 在 `close_model_panel`（L18-20）中添加 `self.sessions[self.active].core.session_panels.close_if(PanelKind::Model);`
   - 在 `open_agent_panel`（L795-800）末尾添加 `self.sessions[self.active].core.session_panels.open(PanelState::Agent(panel.clone()));`（AgentPanel 已实现 Clone）
   - 在 `close_agent_panel`（L803-804）中添加 `self.sessions[self.active].core.session_panels.close_if(PanelKind::Agent);`
@@ -740,6 +779,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 5 个面板文件都包含 `impl PanelComponent`
   - `grep -l "impl PanelComponent for" rust-agent-tui/src/app/{model,agent,hooks,status,memory}_panel.rs | wc -l`
   - 预期: 5
@@ -779,6 +819,7 @@
 - [x] 验证编译：`cargo build -p rust-agent-tui 2>&1 | tail -3`
 
 **失败排查:**
+
 - 编译失败 → 检查 Task 1 的类型定义是否完整（PanelKind 11 变体、PanelState 11 变体）
 - panel_ops.rs 双写不一致 → 检查 Task 2 的 open_* 方法是否全部包含 PanelManager 同步
 - event.rs 旧分发与新分发冲突 → 检查 Task 3 的 PanelManager 分发入口是否覆盖了注释掉的旧分支

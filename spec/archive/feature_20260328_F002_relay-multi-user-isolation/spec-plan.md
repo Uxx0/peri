@@ -11,9 +11,11 @@
 ### Task 1: UserNamespace 核心分层重构
 
 **涉及文件:**
+
 - 修改: `rust-relay-server/src/relay.rs`
 
 **执行步骤:**
+
 - [x] 新增 `UserNamespace` 结构体，包含 `sessions: DashMap<String, Arc<SessionEntry>>` 和 `broadcast_txs: RwLock<Vec<mpsc::UnboundedSender<String>>>`
   - 所有字段均使用 `pub`，与 `SessionEntry` 保持一致风格
 - [x] 删除 `RelayState.sessions` 和 `RelayState.broadcast_txs` 字段，替换为 `users: DashMap<String, Arc<UserNamespace>>`
@@ -27,6 +29,7 @@
 - [x] 更新 `spawn_session_cleanup`：清理 session 后，额外检查 namespace 是否为空（`sessions.is_empty()`），若为空则从 `users` 中移除该 namespace
 
 **检查步骤:**
+
 - [x] 单元测试通过
   - `cargo test -p rust-relay-server --lib 2>&1 | tail -20`
   - 预期: 输出 `test result: ok.` 无 FAILED
@@ -39,9 +42,11 @@
 ### Task 2: /register 端点 + user_id 参数校验
 
 **涉及文件:**
+
 - 修改: `rust-relay-server/src/main.rs`
 
 **执行步骤:**
+
 - [x] 新增 `register_handler`：`POST /register?token=` → 生成 UUID v4（`uuid::Uuid::new_v4().to_string()`）→ 返回 `axum::Json(serde_json::json!({"user_id": uuid}))`
   - 验证 token（与现有 handler 保持一致）；token 缺失/错误返回 401
 - [x] 更新 `AgentWsQuery` 增加 `user_id: Option<String>` 字段
@@ -54,6 +59,7 @@
   - `Cargo.toml` 中 `uuid` 依赖已存在于 `rust-create-agent`；在 `rust-relay-server/Cargo.toml` 中确认或添加 `uuid = { version = "1", features = ["v4"] }`
 
 **检查步骤:**
+
 - [x] /register 端点返回合法 UUID
   - `RELAY_TOKEN=test-token cargo run -p rust-relay-server --features server &; sleep 2; curl -s -X POST "http://localhost:8080/register?token=test-token" | jq .user_id`
   - 预期: 输出一个符合 UUID v4 格式的字符串，如 `"550e8400-e29b-41d4-..."`
@@ -69,15 +75,18 @@
 ### Task 3: RelayClient connect() 增加 user_id 参数
 
 **涉及文件:**
+
 - 修改: `rust-relay-server/src/client/mod.rs`
 
 **执行步骤:**
+
 - [x] `connect(url, token, name, user_id: &str)` 函数签名新增 `user_id` 参数
   - WS URL 拼接：`format!("{}/agent/ws?token={}&user_id={}", url, token, user_id)`
   - 若有 name，继续追加 `&name={}`
 - [x] 检查所有调用 `RelayClient::connect` 的位置（仅 `rust-agent-tui/src/app/mod.rs`），更新调用签名
 
 **检查步骤:**
+
 - [x] 编译无错误
   - `cargo build -p rust-agent-tui 2>&1 | grep "^error" | head -5`
   - 预期: 无输出
@@ -87,16 +96,19 @@
 ### Task 4: config/types.rs + relay_panel.rs — 配置字段与面板状态
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/config/types.rs`
 - 修改: `rust-agent-tui/src/app/relay_panel.rs`
 
 **执行步骤:**
+
 - [x] `RemoteControlConfig` 增加 `user_id: Option<String>` 字段，`#[serde(default, skip_serializing_if = "Option::is_none")]`
 - [x] `relay_panel.rs` 的 `RelayPanel` 增加 `web_access_url: Option<String>` 字段（只读展示，不参与编辑）
   - `from_config` 时初始化为 `None`（连接成功后由 relay_ops 填充）
 - [x] 新增 `RelayPanel::set_web_access_url(&mut self, url: Option<String>)` 方法
 
 **检查步骤:**
+
 - [x] RemoteControlConfig 序列化不含 user_id（当为 None）
   - `cargo test -p rust-agent-tui --lib test_remote_control_config_skip_when_none 2>&1 | tail -5`
   - 预期: `test result: ok.`
@@ -109,10 +121,12 @@
 ### Task 5: TUI 注册与连接流程
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/relay_ops.rs`
 - 修改: `rust-agent-tui/src/app/mod.rs`
 
 **执行步骤:**
+
 - [x] `relay_ops.rs` 中新增异步函数 `get_or_register_user_id(base_url: &str, token: &str, existing: Option<&str>) -> anyhow::Result<String>`：
   - 若 `existing.is_some()` → 直接返回
   - 否则：`reqwest::Client::new().post(format!("{}/register?token={}", base_url, token)).send().await` → 解析 `{"user_id": "..."}` → 返回 user_id
@@ -120,15 +134,16 @@
 - [x] `app/mod.rs` 的 `relay_params` 类型从 `Option<(String, String, Option<String>)>` 改为 `Option<(String, String, Option<String>, String)>`（增加 user_id）
 - [x] `init_relay_connection`（mod.rs 中约 line 300+ 的连接初始化逻辑）：
   - 调用 `get_or_register_user_id(base_url, token, existing_user_id)` 获取 user_id
-  - 若注册成功且 config 中 user_id 为 None：更新 `zen_config.config.remote_control.user_id = Some(uid)` 并调用 `config_store.save()`
+  - 若注册成功且 config 中 user_id 为 None：更新 `peri_config.config.remote_control.user_id = Some(uid)` 并调用 `config_store.save()`
   - 将 user_id 加入 `relay_params` 和 `RelayClient::connect` 调用
 - [x] `check_relay_reconnect`（relay_ops.rs）：从 `relay_params` 取出 user_id，传入 `RelayClient::connect`
 - [x] 连接成功后：通过 `app.relay_panel.as_mut().map(|p| p.set_web_access_url(...))` 设置 Web 接入 URL
   - 格式：从 relay URL 构造 HTTP URL，加上 `#user_id={user_id}` 路径，例如 `http://localhost:8080/web/#user_id=xxx`
 
 **检查步骤:**
+
 - [x] 首次连接后 settings.json 中包含 user_id 字段
-  - `cat ~/.zen-code/settings.json | jq '.config.remote_control.user_id'`
+  - `cat ~/.peri/settings.json | jq '.config.remote_control.user_id'`
   - 预期: 输出一个 UUID 字符串（非 null）
 - [x] 二次启动复用同一 user_id（不重新注册）
   - 记录第一次 user_id；重启 TUI 连接同一 relay；再次检查 settings.json
@@ -139,17 +154,21 @@
 ### Task 6: 前端 connection.js — URL hash user_id 支持
 
 **涉及文件:**
+
 - 修改: `rust-relay-server/web/connection.js`
 - 修改: `rust-relay-server/src/static_files.rs`（touch 触发重编译）
 
 **执行步骤:**
+
 - [x] `connection.js` 文件顶部添加 `getUserId()` 函数：解析 `window.location.hash`（去掉 `#`），使用 `URLSearchParams` 提取 `user_id`；若为空返回 `null`
+
   ```js
   function getUserId() {
     const hash = window.location.hash.slice(1)
     return new URLSearchParams(hash).get('user_id') || null
   }
   ```
+
 - [x] `connectManagement()` 中：获取 `userId = getUserId()`；若为 null，在页面展示提示（通过 `connectionStatus.value = 'no_user_id'` 或类似 signal）；若有值，URL 拼接 `&user_id=${userId}`
 - [x] `connectSession()` 中：同样获取 userId 并拼入 session WS URL
 - [x] 在 `state.js` 中新增 `noUserIdSignal = signal(false)` 或复用 `connectionStatus` 信号，在 App.js / Pane.js 适当位置渲染提示："请从 TUI 复制完整的接入 URL（包含 #user_id=...）"
@@ -157,6 +176,7 @@
 - [x] 重新编译 relay-server：`cargo build -p rust-relay-server --features server`
 
 **检查步骤:**
+
 - [x] 含 user_id hash 的 URL 可成功建立管理端 WS 连接
   - `RELAY_TOKEN=test-token cargo run -p rust-relay-server --features server &; sleep 2; node -e "const WebSocket = require('ws'); const ws = new WebSocket('ws://localhost:8080/web/ws?token=test-token&user_id=test-uuid'); ws.on('open', () => { console.log('connected'); process.exit(0); }); ws.on('error', e => { console.error(e.message); process.exit(1); });"`
   - 预期: 输出 `connected`
@@ -169,10 +189,12 @@
 ### Task 7: relay-multi-user-isolation Acceptance
 
 **Prerequisites:**
+
 - 启动命令: `RELAY_TOKEN=test-token cargo run -p rust-relay-server --features server`
 - 等待服务启动: `sleep 2`
 - 准备 WebSocket 客户端: `node -e "const WebSocket = require('ws'); ..."`（或使用 `wscat`）
 - user_id_A 和 user_id_B 预先注册：
+
   ```bash
   UID_A=$(curl -s -X POST "http://localhost:8080/register?token=test-token" | jq -r .user_id)
   UID_B=$(curl -s -X POST "http://localhost:8080/register?token=test-token" | jq -r .user_id)
@@ -210,6 +232,6 @@
 
 6. [ ] TUI 首次连接自动注册并持久化 user_id
    - 删除 settings 中的 user_id（或使用新配置）；启动 TUI 并连接 relay
-   - `cat ~/.zen-code/settings.json | jq '.config.remote_control.user_id // empty'`
+   - `cat ~/.peri/settings.json | jq '.config.remote_control.user_id // empty'`
    - Expected: 输出合法 UUID（非空）
    - On failure: check Task 5 get_or_register_user_id 与保存逻辑

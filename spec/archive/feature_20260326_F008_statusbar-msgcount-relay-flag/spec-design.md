@@ -36,10 +36,11 @@ Status bar 布局示意：
 修改 `rust-agent-tui/src/app/mod.rs` 中 `try_connect_relay` 函数的 `else` 分支：
 
 **修改前：**
+
 ```rust
 } else {
     // 无 CLI 参数：从配置读取（新字段优先，fallback 到 extra）
-    let config = self.zen_config
+    let config = self.peri_config
         .as_ref()
         .and_then(|cfg| cfg.config.remote_control.as_ref())
         ...
@@ -47,6 +48,7 @@ Status bar 布局示意：
 ```
 
 **修改后：**
+
 ```rust
 } else {
     // 无 --remote-control 参数：不尝试连接

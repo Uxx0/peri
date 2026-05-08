@@ -16,18 +16,20 @@
 
 ### 核心思路：LLM Factory 签名升级
 
-将 `SubAgentTool` 的 `llm_factory` 从 `Fn() -> Box<dyn ReactLLM>` 升级为 `Fn(Option<&str>) -> Box<dyn ReactLLM>`，接受可选的 model alias 参数。TUI 层的 factory 闭包内部持有 `ZenConfig`，根据 alias 查 `model_aliases` 表构造对应的 `LlmProvider`。
+将 `SubAgentTool` 的 `llm_factory` 从 `Fn() -> Box<dyn ReactLLM>` 升级为 `Fn(Option<&str>) -> Box<dyn ReactLLM>`，接受可选的 model alias 参数。TUI 层的 factory 闭包内部持有 `PeriConfig`，根据 alias 查 `model_aliases` 表构造对应的 `LlmProvider`。
 
 > 在适合的章节中插入设计配图：`![子 Agent 模型切换数据流](./images/01-data-flow.png)`
 
 ### LLM Factory 签名变更
 
 **当前**（`subagent/tool.rs:30`）：
+
 ```rust
 llm_factory: Arc<dyn Fn() -> Box<dyn ReactLLM + Send + Sync> + Send + Sync>
 ```
 
 **改为**：
+
 ```rust
 llm_factory: Arc<dyn Fn(Option<&str>) -> Box<dyn ReactLLM + Send + Sync> + Send + Sync>
 ```
@@ -39,10 +41,13 @@ llm_factory: Arc<dyn Fn(Option<&str>) -> Box<dyn ReactLLM + Send + Sync> + Send 
 ### SubAgentTool::invoke() 消费 model 字段
 
 在 `tool.rs:191` 处，将：
+
 ```rust
 let llm = (self.llm_factory)();
 ```
+
 改为：
+
 ```rust
 let model_alias = agent_def.frontmatter.model.as_deref()
     .filter(|m| !m.is_empty() && m != &"inherit");
@@ -53,10 +58,10 @@ let llm = (self.llm_factory)(model_alias);
 
 ### TUI 层 Factory 构造（`agent.rs:149`）
 
-将 `run_universal_agent()` 中的 `llm_factory` 升级为持有 `ZenConfig` 的闭包：
+将 `run_universal_agent()` 中的 `llm_factory` 升级为持有 `PeriConfig` 的闭包：
 
 ```rust
-let config_for_factory = config.clone(); // 新增：传入 ZenConfig
+let config_for_factory = config.clone(); // 新增：传入 PeriConfig
 let llm_factory = Arc::new(move |model_alias: Option<&str>| -> Box<dyn ReactLLM + Send + Sync> {
     match model_alias {
         Some(alias) => {
@@ -76,6 +81,7 @@ let llm_factory = Arc::new(move |model_alias: Option<&str>| -> Box<dyn ReactLLM 
 ### SkillFrontmatter 增加 model 字段
 
 `skills/loader.rs` 的 `SkillFrontmatter` 增加可选 `model` 字段：
+
 ```rust
 struct SkillFrontmatter {
     name: String,
@@ -85,13 +91,14 @@ struct SkillFrontmatter {
 ```
 
 `SkillMetadata` 也增加 `model: Option<String>`，并在 `SkillsMiddleware::build_summary()` 的摘要中展示：
+
 ```
 - **code-review**: /path/to/SKILL.md Expert code review... (model: haiku)
 ```
 
 ### AgentRunConfig 扩展
 
-当前 `run_universal_agent()` 接收 `AgentRunConfig`，不持有 `ZenConfig`。需要新增 `config: Arc<ZenConfig>` 字段，仅在构造 `llm_factory` 时使用。
+当前 `run_universal_agent()` 接收 `AgentRunConfig`，不持有 `PeriConfig`。需要新增 `config: Arc<PeriConfig>` 字段，仅在构造 `llm_factory` 时使用。
 
 ### 改动文件清单
 

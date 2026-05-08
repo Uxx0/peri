@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 use tui_textarea::Input;
 
-use crate::config::{ProviderConfig, ProviderModels, ZenConfig};
+use crate::config::{PeriConfig, ProviderConfig, ProviderModels};
 use crate::ui::message_view::MessageViewModel;
 
 use super::panel_component::PanelComponent;
@@ -90,7 +90,7 @@ impl LoginEditField {
 
 #[derive(Clone)]
 pub struct LoginPanel {
-    /// provider 列表快照（从 ZenConfig 获取）
+    /// provider 列表快照（从 PeriConfig 获取）
     pub providers: Vec<ProviderConfig>,
     /// 当前模式
     pub mode: LoginPanelMode,
@@ -118,8 +118,8 @@ pub struct LoginPanel {
 }
 
 impl LoginPanel {
-    /// 从 ZenConfig 初始化面板（Browse 模式，光标定位到 active_provider_id 对应的 Provider）
-    pub fn from_config(cfg: &ZenConfig) -> Self {
+    /// 从 PeriConfig 初始化面板（Browse 模式，光标定位到 active_provider_id 对应的 Provider）
+    pub fn from_config(cfg: &PeriConfig) -> Self {
         let providers = cfg.config.providers.clone();
         let cursor = providers
             .iter()
@@ -202,7 +202,7 @@ impl LoginPanel {
     }
 
     /// 选中（激活）光标处的 Provider，写入 cfg
-    pub fn select_provider(&mut self, cfg: &mut ZenConfig) {
+    pub fn select_provider(&mut self, cfg: &mut PeriConfig) {
         if let Some(p) = self.providers.get(self.cursor) {
             cfg.config.active_provider_id = p.id.clone();
         }
@@ -314,10 +314,10 @@ impl LoginPanel {
 
     // ── 保存/删除操作 ──────────────────────────────────────────────────────────
 
-    /// 将编辑/新建的内容保存到 ZenConfig，并更新内部 providers 快照
+    /// 将编辑/新建的内容保存到 PeriConfig，并更新内部 providers 快照
     /// 返回 true 表示成功
     /// 新建 Provider 后，active_provider_id 为空时自动设置为新建的 Provider ID
-    pub fn apply_edit(&mut self, cfg: &mut ZenConfig) -> bool {
+    pub fn apply_edit(&mut self, cfg: &mut PeriConfig) -> bool {
         let is_new = self.mode == LoginPanelMode::New;
         let id = if is_new {
             if self.buf_name.trim().is_empty() {
@@ -377,7 +377,7 @@ impl LoginPanel {
     }
 
     /// 确认删除光标处的 provider，写入 cfg
-    pub fn confirm_delete(&mut self, cfg: &mut ZenConfig) {
+    pub fn confirm_delete(&mut self, cfg: &mut PeriConfig) {
         if let Some(p) = self.providers.get(self.cursor) {
             let id = p.id.clone();
             cfg.config.providers.retain(|x| x.id != id);
@@ -422,7 +422,7 @@ impl PanelComponent for LoginPanel {
                             .get(self.cursor)
                             .map(|p| p.display_name().to_string())
                             .unwrap_or_default();
-                        let Some(cfg) = ctx.services.zen_config.as_mut() else {
+                        let Some(cfg) = ctx.services.peri_config.as_mut() else {
                             return EventResult::Consumed;
                         };
                         self.select_provider(cfg);
@@ -558,7 +558,7 @@ impl PanelComponent for LoginPanel {
                         // apply_edit + auto-activate + close
                         let edit_name = self.buf_name.clone();
                         let is_new = self.mode == LoginPanelMode::New;
-                        let Some(cfg) = ctx.services.zen_config.as_mut() else {
+                        let Some(cfg) = ctx.services.peri_config.as_mut() else {
                             return EventResult::Consumed;
                         };
                         if !self.apply_edit(cfg) {
@@ -620,7 +620,7 @@ impl PanelComponent for LoginPanel {
                         key: Key::Enter, ..
                     } => {
                         // confirm_delete (stay open, don't close)
-                        let Some(cfg) = ctx.services.zen_config.as_mut() else {
+                        let Some(cfg) = ctx.services.peri_config.as_mut() else {
                             return EventResult::Consumed;
                         };
                         let deleted_name = self
@@ -724,8 +724,8 @@ impl PanelComponent for LoginPanel {
 mod tests {
     use super::*;
 
-    fn make_test_config() -> ZenConfig {
-        let mut cfg = ZenConfig::default();
+    fn make_test_config() -> PeriConfig {
+        let mut cfg = PeriConfig::default();
         cfg.config.active_provider_id = "anthropic".to_string();
         cfg.config.providers.push(ProviderConfig {
             id: "anthropic".to_string(),
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_from_config_empty_providers_cursor_zero() {
-        let cfg = ZenConfig::default();
+        let cfg = PeriConfig::default();
         let panel = LoginPanel::from_config(&cfg);
         assert_eq!(panel.cursor, 0);
     }
@@ -831,7 +831,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_field_navigation() {
-        let mut panel = LoginPanel::from_config(&ZenConfig::default());
+        let mut panel = LoginPanel::from_config(&PeriConfig::default());
         assert_eq!(panel.edit_field, LoginEditField::Name);
         panel.field_next();
         assert_eq!(panel.edit_field, LoginEditField::Type);
@@ -855,7 +855,7 @@ mod tests {
     fn test_login_panel_push_pop_char() {
         use crate::app::handle_edit_key;
         use tui_textarea::{Input, Key};
-        let mut panel = LoginPanel::from_config(&ZenConfig::default());
+        let mut panel = LoginPanel::from_config(&PeriConfig::default());
         panel.edit_field = LoginEditField::OpusModel;
         let (buf, cur) = panel.active_field().unwrap();
         handle_edit_key(
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_push_char_ignored_for_type() {
-        let mut panel = LoginPanel::from_config(&ZenConfig::default());
+        let mut panel = LoginPanel::from_config(&PeriConfig::default());
         let orig_type = panel.buf_type.clone();
         panel.edit_field = LoginEditField::Type;
         assert!(panel.active_field().is_none());
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_paste_text_filters_newlines() {
-        let mut panel = LoginPanel::from_config(&ZenConfig::default());
+        let mut panel = LoginPanel::from_config(&PeriConfig::default());
         panel.edit_field = LoginEditField::ApiKey;
         panel.paste_text("key\nval\r\nend");
         assert_eq!(panel.buf_api_key, "keyvalend");
@@ -913,7 +913,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_paste_text_ignored_for_type() {
-        let mut panel = LoginPanel::from_config(&ZenConfig::default());
+        let mut panel = LoginPanel::from_config(&PeriConfig::default());
         let orig_type = panel.buf_type.clone();
         panel.edit_field = LoginEditField::Type;
         panel.paste_text("anthropic");
@@ -922,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_apply_edit_new_provider() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = LoginPanel::from_config(&cfg);
         panel.enter_new();
         panel.buf_name = "My Provider".to_string();
@@ -938,7 +938,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_apply_edit_new_provider_sets_active_id_when_empty() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = LoginPanel::from_config(&cfg);
         panel.enter_new();
         panel.buf_name = "Test".to_string();
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_apply_edit_empty_name_returns_false() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = LoginPanel::from_config(&cfg);
         panel.enter_new();
         panel.buf_name = String::new();
@@ -991,7 +991,7 @@ mod tests {
 
     #[test]
     fn test_login_panel_request_delete_no_providers_noop() {
-        let cfg = ZenConfig::default();
+        let cfg = PeriConfig::default();
         let mut panel = LoginPanel::from_config(&cfg);
         assert_eq!(panel.mode, LoginPanelMode::Browse);
         panel.request_delete();

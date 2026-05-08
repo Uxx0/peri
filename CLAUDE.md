@@ -69,7 +69,7 @@ acpx-g (DAG workflow engine，独立)
 
 ## Skills
 
-搜索顺序：`~/.claude/skills/` → `skillsDir`（`~/.zen-code/settings.json`） → `./.claude/skills/` → 插件 skills，同名先到先得。
+搜索顺序：`~/.claude/skills/` → `skillsDir`（`~/.peri/settings.json`） → `./.claude/skills/` → 插件 skills，同名先到先得。
 
 **插件 skills 集成**：`SkillsMiddleware.with_extra_dirs()` 是插件 skills 路径注入入口，修改 SkillsMiddleware 搜索逻辑时必须保留此扩展点。
 
@@ -121,7 +121,7 @@ Token 累积达到上下文窗口阈值（默认 85%）时自动触发：
 
 | 来源 | 路径 | 说明 |
 |------|------|------|
-| 全局 | `~/.zen-code/settings.json` 的 `config.mcpServers` 或 `mcpServers` | 所有项目共享 |
+| 全局 | `~/.peri/settings.json` 的 `config.mcpServers` 或 `mcpServers` | 所有项目共享 |
 | 项目级 | `{cwd}/.mcp.json` 的 `mcpServers` | 项目特定，同名覆盖全局 |
 
 **服务器配置**（`McpServerConfig`）：
@@ -147,6 +147,7 @@ Token 累积达到上下文窗口阈值（默认 85%）时自动触发：
 **资源读取**：`mcp__read_resource` 工具，参数 `server_name` + `uri`，120 秒超时。
 
 **连接池**（`McpClientPool`）：
+
 - 首次 agent 启动时惰性初始化（`agent_ops.rs`），后续复用
 - stdio 连接超时 10 秒，HTTP 连接超时 30 秒
 - 连接失败的 server 记录为 `Failed` 状态，不影响其他 server
@@ -280,7 +281,7 @@ ReActAgent::new(llm)
 | `LANGFUSE_*` | Langfuse 追踪配置 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry OTLP 导出端点 |
 
-配置通过 `~/.zen-code/settings.json` 的 `env` 字段注入环境变量（已替代 .env 文件）。
+配置通过 `~/.peri/settings.json` 的 `env` 字段注入环境变量（已替代 .env 文件）。
 
 ## CLI 参数
 
@@ -311,7 +312,7 @@ ReActAgent::new(llm)
 - **EditField 导航**：`next()/prev()` 链必须与表单实际渲染字段一致。
 - **快捷键设计**：禁止使用 `Shift + 字母`（A-Z）组合。编辑状态下 `Shift+字母` 等同于输入大写字母，二者不可区分。全局操作用 `Ctrl + 字母` 或功能键，面板操作用 `↑/↓`、`Space`、`Enter`、`Esc`。
 - **字符串显示宽度**：终端列宽计算使用 `unicode-width` crate（`UnicodeWidthStr::width()` / `UnicodeWidthChar::width()`），CJK 等全角字符占 2 列。面板列表项截断需基于显示宽度而非 `char` 数量。
-- **测试隔离——禁止写入全局配置**：`config::save()` 默认写入 `~/.zen-code/settings.json`。Headless 测试（`new_headless`）通过 `App.config_path_override` 将保存路径重定向到临时目录。新增面板操作方法若需持久化配置，必须调用 `App::save_config(cfg, self.config_path_override.as_deref())` 而非直接调用 `crate::config::save(cfg)`，否则测试会覆盖用户的真实 Provider/API Key 配置。
+- **测试隔离——禁止写入全局配置**：`config::save()` 默认写入 `~/.peri/settings.json`。Headless 测试（`new_headless`）通过 `App.config_path_override` 将保存路径重定向到临时目录。新增面板操作方法若需持久化配置，必须调用 `App::save_config(cfg, self.config_path_override.as_deref())` 而非直接调用 `crate::config::save(cfg)`，否则测试会覆盖用户的真实 Provider/API Key 配置。
 - **`CommandRegistry::dispatch` 借用限制 [TRAP]**：`dispatch(&self, app: &mut App)` 同时需要 `&self`（registry）和 `&mut App`，由于 registry 通过 session 嵌套在 App 内，Rust 借用检查器无法通过字段投影拆分。当前通过 `std::mem::take` + put-back workaround 解决。若要消除此 workaround，需重构 `dispatch` 签名（如改为传入 `&CommandRegistry` + 独立的 `&mut` 参数而非整个 `&mut App`）。
 
 ## 面板系统

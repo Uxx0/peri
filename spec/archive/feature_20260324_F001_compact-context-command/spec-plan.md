@@ -11,15 +11,17 @@
 ### Task 1: AgentEvent 扩展 + App 核心逻辑
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/mod.rs`
 
 **执行步骤:**
+
 - [x] 在 `AgentEvent` 枚举中新增两个变体
   - `CompactDone(String)` — 压缩成功，携带摘要文本
   - `CompactError(String)` — 压缩失败，携带错误信息
 - [x] 在 `App` 上实现 `start_compact(&mut self, instructions: String)` 方法
   - 若 `agent_state_messages` 为空，向 `view_messages` push 一条系统提示"无可压缩的上下文"后直接返回
-  - 从 `zen_config`（或环境变量）获取 LlmProvider；获取失败时 push 错误提示并返回
+  - 从 `peri_config`（或环境变量）获取 LlmProvider；获取失败时 push 错误提示并返回
   - 克隆 `agent_state_messages` 和 provider
   - 创建新的 `mpsc::channel::<AgentEvent>(8)`，将 rx 赋值给 `self.agent_rx`
   - 调用 `self.set_loading(true)` 进入 loading 状态
@@ -36,6 +38,7 @@
     2. `self.set_loading(false)`; `self.agent_rx = None`
 
 **检查步骤:**
+
 - [x] 编译通过，无新增警告
   - `cargo build -p rust-agent-tui 2>&1 | grep -E "^error"`
   - 预期: 无输出（无编译错误）
@@ -48,10 +51,13 @@
 ### Task 2: compact_task 异步函数
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/agent.rs`
 
 **执行步骤:**
+
 - [x] 在文件末尾新增 `pub async fn compact_task` 函数，签名：
+
   ```rust
   pub async fn compact_task(
       messages: Vec<rust_create_agent::messages::BaseMessage>,
@@ -60,6 +66,7 @@
       tx: tokio::sync::mpsc::Sender<super::AgentEvent>,
   )
   ```
+
 - [x] 实现消息格式化：遍历 `messages`，跳过 System 消息，将 Human/Ai/Tool 格式化为 `"[角色] 内容"` 文本行
   - Human → `"[用户] {content}"`
   - Ai（含工具调用）→ `"[助手] {text_content}（调用了工具: {tool_names}）"`
@@ -74,6 +81,7 @@
   - 失败：发送 `AgentEvent::CompactError(e.to_string())`
 
 **检查步骤:**
+
 - [x] 编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep -E "^error"`
   - 预期: 无输出
@@ -86,11 +94,14 @@
 ### Task 3: CompactCommand 注册
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/command/compact.rs`
 - 修改: `rust-agent-tui/src/command/mod.rs`
 
 **执行步骤:**
+
 - [x] 新建 `rust-agent-tui/src/command/compact.rs`，实现 `CompactCommand` struct：
+
   ```rust
   use crate::app::App;
   use super::Command;
@@ -105,10 +116,12 @@
       }
   }
   ```
+
 - [x] 在 `command/mod.rs` 头部添加 `pub mod compact;`，并在 `default_registry()` 中注册：
   - `r.register(Box::new(compact::CompactCommand));`
 
 **检查步骤:**
+
 - [x] 编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep -E "^error"`
   - 预期: 无输出
@@ -127,6 +140,7 @@
 ### Task 4: /compact 指令验收
 
 **Prerequisites:**
+
 - 启动命令: `cargo run -p rust-agent-tui -- -y`（YOLO 模式，跳过 HITL 审批）
 - 需要配置 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`
 - 确保 Task 1~3 全部完成且编译通过

@@ -10,7 +10,7 @@ use rust_create_agent::interaction::UserInteractionBroker;
 use rust_create_agent::llm::{BaseModelReactLLM, RetryConfig, RetryableLLM};
 
 use crate::app::agent::LlmProvider;
-use crate::config::ZenConfig;
+use crate::config::PeriConfig;
 
 pub type PeriLlm = RetryableLLM<BaseModelReactLLM>;
 pub type PeriReActAgent = ReActAgent<PeriLlm, AgentState>;
@@ -21,7 +21,7 @@ pub struct AgentAssembleConfig {
     pub system_prompt: String,
     pub broker: Arc<dyn UserInteractionBroker>,
     pub permission_mode: Arc<SharedPermissionMode>,
-    pub zen_config: Arc<ZenConfig>,
+    pub peri_config: Arc<PeriConfig>,
     pub preload_skills: Vec<String>,
     pub event_handler: Arc<dyn AgentEventHandler>,
     pub cancel: AgentCancellationToken,
@@ -40,7 +40,7 @@ pub fn assemble_agent(
         system_prompt,
         broker,
         permission_mode,
-        zen_config,
+        peri_config,
         preload_skills,
         event_handler,
         cancel,
@@ -95,7 +95,7 @@ pub fn assemble_agent(
 
     // 子 agent LLM 工厂
     let provider_clone = provider_for_factory;
-    let config_for_factory = zen_config;
+    let config_for_factory = peri_config;
     #[allow(clippy::type_complexity)]
     let llm_factory: Arc<
         dyn Fn(Option<&str>) -> Box<dyn rust_create_agent::agent::react::ReactLLM + Send + Sync>

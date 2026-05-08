@@ -160,7 +160,7 @@ src/
 │   ├── session.rs        — LangfuseSession（Thread 级别，持有 client + batcher + session_id）
 │   └── tracer.rs         — LangfuseTracer（Turn 级别，Trace/Generation/Span 上报）
 ├── config/
-│   ├── store.rs          — ZenConfig：~/.zen-code/settings.json 读写
+│   ├── store.rs          — PeriConfig：~/.peri/settings.json 读写
 │   └── types.rs          — 配置类型定义（Provider/Model）
 ├── thread/
 │   ├── mod.rs            — ThreadStore re-export
@@ -331,7 +331,7 @@ LlmCallEnd 携带 usage
 |---------|------|------|------|
 | Anthropic API | HTTPS REST + SSE | `ANTHROPIC_API_KEY` header | `https://api.anthropic.com/v1/messages` |
 | OpenAI 兼容 | HTTPS REST + SSE | `OPENAI_API_KEY` bearer | `OPENAI_BASE_URL` 环境变量 |
-| SQLite | 本地文件 | — | `~/.zen-core/threads/threads.db` |
+| SQLite | 本地文件 | — | `~/.peri-core/threads/threads.db` |
 | OpenTelemetry Collector | HTTP OTLP Proto | — | `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | Langfuse | HTTPS REST | `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | `LANGFUSE_HOST`（默认 cloud） |
 
@@ -345,7 +345,7 @@ LlmCallEnd 携带 usage
        ├─ 直接调用 Anthropic/OpenAI API（reqwest HTTP）
        ├─ 读写本地文件系统（FilesystemMiddleware）
        ├─ 执行 bash 命令（TerminalMiddleware）
-       ├─ 写入 ~/.zen-core/threads/threads.db（SQLite WAL）
+       ├─ 写入 ~/.peri-core/threads/threads.db（SQLite WAL）
        └─ 上报 Langfuse（可选，环境变量控制）
 ```
 

@@ -28,6 +28,7 @@
 [上下游影响] 本 Task 依赖 Task 1（PanelKind/PanelState/PanelComponent/PanelManager/PanelContext/EventResult 类型定义）和 Task 2（PanelManager 添加到 AppCore/App + open/close 双写 + CronPanel 迁移到 global_panels）。本 Task 输出的 5 个 `impl PanelComponent for XxxPanel` 被 Task 6（渲染迁移 + 状态栏解耦）和 Task 7（清理旧字段）依赖。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/login_panel.rs`（添加 `impl PanelComponent for LoginPanel`）
 - 修改: `rust-agent-tui/src/app/config_panel.rs`（添加 `impl PanelComponent for ConfigPanel`）
 - 修改: `rust-agent-tui/src/app/mcp_panel.rs`（添加 `impl PanelComponent for McpPanel`）
@@ -41,6 +42,7 @@
 - [x] 为 LoginPanel 实现 PanelComponent trait
   - 位置: `rust-agent-tui/src/app/login_panel.rs` 文件末尾（`#[cfg(test)]` 之前）
   - 在文件顶部添加 use 语句：
+
     ```rust
     use std::any::Any;
     use ratatui::layout::Rect;
@@ -51,6 +53,7 @@
     use super::panel_manager::{EventResult, PanelContext, PanelKind};
     use super::App;
     ```
+
   - 添加 `impl PanelComponent for LoginPanel` 块，包含以下方法：
     - `fn kind(&self) -> PanelKind { PanelKind::Login }`
     - `fn handle_key(&mut self, input: Input, ctx: &mut PanelContext<'_>) -> EventResult`
@@ -85,21 +88,21 @@
       - `fn select_provider(panel: &LoginPanel, ctx: &mut PanelContext<'_>)`
         - 迁移自 `panel_ops.rs` L78-112 `login_panel_select_provider` 核心逻辑
         - 1. 从 `panel.get_selected_provider()` 获取选中 provider
-        - 2. 调用 `panel.apply_provider_to_config(ctx.zen_config)` 写入配置
-        - 3. 向 `ctx.sessions[ctx.active].core.view_messages` push 系统消息 "Provider 已切换为: {name}"
-        - 4. 调用 `App::save_config(ctx.zen_config.as_ref().unwrap(), ctx.config_path_override.as_deref())` 保存
-        - 5. 通过 `ctx.provider_name` 和 `ctx.model_name` 更新显示名称
+        - 1. 调用 `panel.apply_provider_to_config(ctx.peri_config)` 写入配置
+        - 1. 向 `ctx.sessions[ctx.active].core.view_messages` push 系统消息 "Provider 已切换为: {name}"
+        - 1. 调用 `App::save_config(ctx.peri_config.as_ref().unwrap(), ctx.config_path_override.as_deref())` 保存
+        - 1. 通过 `ctx.provider_name` 和 `ctx.model_name` 更新显示名称
       - `fn apply_edit(panel: &mut LoginPanel, ctx: &mut PanelContext<'_>)`
         - 迁移自 `panel_ops.rs` L114-159 `login_panel_apply_edit` 核心逻辑
-        - 1. 调用 `panel.apply_edit_to_config(ctx.zen_config)` 将编辑字段写入配置
-        - 2. 调用 `panel.mode = LoginPanelMode::Browse` 回到浏览模式
-        - 3. 调用 `App::save_config(...)` 保存
-        - 4. push 系统消息 "配置已保存"
+        - 1. 调用 `panel.apply_edit_to_config(ctx.peri_config)` 将编辑字段写入配置
+        - 1. 调用 `panel.mode = LoginPanelMode::Browse` 回到浏览模式
+        - 1. 调用 `App::save_config(...)` 保存
+        - 1. push 系统消息 "配置已保存"
       - `fn confirm_delete_action(panel: &mut LoginPanel, ctx: &mut PanelContext<'_>)`
         - 迁移自 `panel_ops.rs` L161-210 `login_panel_confirm_delete` 核心逻辑
         - 1. 调用 `panel.delete_selected()` 获取删除的 provider 名称
-        - 2. push 系统消息 "Provider {name} 已删除"
-        - 3. 调用 `App::save_config(...)` 保存
+        - 1. push 系统消息 "Provider {name} 已删除"
+        - 1. 调用 `App::save_config(...)` 保存
     - `fn handle_paste(&mut self, text: &str, _ctx: &mut PanelContext<'_>) -> EventResult`
       - 调用 `self.paste_text(text); EventResult::Consumed`
     - `fn desired_height(&self, _screen_height: u16, _screen_width: u16) -> u16`
@@ -144,10 +147,10 @@
     - 添加私有辅助方法：
       - `fn apply_config(panel: &mut ConfigPanel, ctx: &mut PanelContext<'_>)`
         - 迁移自 `panel_ops.rs` L213-236 `config_panel_apply` 核心逻辑
-        - 1. 调用 `panel.apply_to_config(ctx.zen_config)` 写入配置
-        - 2. 调用 `panel.mode = ConfigPanelMode::Browse` 回到浏览模式
-        - 3. 调用 `App::save_config(...)` 保存
-        - 4. push 系统消息 "配置已保存"
+        - 1. 调用 `panel.apply_to_config(ctx.peri_config)` 写入配置
+        - 1. 调用 `panel.mode = ConfigPanelMode::Browse` 回到浏览模式
+        - 1. 调用 `App::save_config(...)` 保存
+        - 1. push 系统消息 "配置已保存"
     - `fn handle_paste(&mut self, text: &str, _ctx: &mut PanelContext<'_>) -> EventResult`
       - 调用 `self.paste_text(text); EventResult::Consumed`
     - `fn desired_height(&self, _screen_height: u16, _screen_width: u16) -> u16 { 14 }`
@@ -207,6 +210,7 @@
 - [x] 为 CronPanel 实现 PanelComponent trait
   - 位置: `rust-agent-tui/src/app/cron_state.rs` 文件末尾（`#[cfg(test)]` 之前）
   - 在文件顶部添加 use 语句：
+
     ```rust
     use std::any::Any;
     use ratatui::layout::Rect;
@@ -217,6 +221,7 @@
     use super::panel_manager::{EventResult, PanelContext, PanelKind};
     use super::App;
     ```
+
   - 添加 `impl PanelComponent for CronPanel` 块：
     - `fn kind(&self) -> PanelKind { PanelKind::Cron }`
     - `fn handle_key(&mut self, input: Input, ctx: &mut PanelContext<'_>) -> EventResult`
@@ -236,15 +241,15 @@
       - `fn do_toggle(panel: &mut CronPanel, ctx: &mut PanelContext<'_>)`
         - 迁移自 `cron_ops.rs` L18-28 `cron_panel_toggle` 核心逻辑
         - 1. 切换 `panel.tasks[panel.cursor].enabled`
-        - 2. 调用 `panel.refresh(&ctx.cron.scheduler)` 刷新显示
-        - 3. push 系统消息 "定时任务已启用/禁用"
+        - 1. 调用 `panel.refresh(&ctx.cron.scheduler)` 刷新显示
+        - 1. push 系统消息 "定时任务已启用/禁用"
       - `fn do_confirm_delete(panel: &mut CronPanel, ctx: &mut PanelContext<'_>) -> EventResult`
         - 迁移自 `cron_ops.rs` L39-63 `cron_panel_confirm_delete` 核心逻辑
         - 1. 调用 `panel.delete_selected()` 获取删除的任务名称
-        - 2. push 系统消息 "定时任务已删除: {name}"
-        - 3. 调用 `panel.refresh(&ctx.cron.scheduler)`
-        - 4. 如果 `panel.tasks.is_empty()` -> 返回 `EventResult::ClosePanel`
-        - 5. 否则 -> `EventResult::Consumed`
+        - 1. push 系统消息 "定时任务已删除: {name}"
+        - 1. 调用 `panel.refresh(&ctx.cron.scheduler)`
+        - 1. 如果 `panel.tasks.is_empty()` -> 返回 `EventResult::ClosePanel`
+        - 1. 否则 -> `EventResult::Consumed`
     - `fn desired_height(&self, _screen_height: u16, _screen_width: u16) -> u16 { (self.tasks.len() as u16 + 4).max(6) }`
     - `fn render` -> 委托到 `crate::ui::main_ui::panels::cron::render_cron_panel(f, app, area)`
     - `fn as_any_ref/as_any_mut` -> 标准 `self` 转换
@@ -288,7 +293,7 @@
     - 添加私有辅助方法：
       - `fn open_selected(panel: &ThreadBrowser, ctx: &mut PanelContext<'_>)`
         - 1. 调用 `panel.selected_id().cloned()` 获取 thread ID
-        - 2. 通过 `ctx.thread_store` 和 `ctx.sessions[ctx.active]` 执行 `open_thread_with_feedback` 的核心逻辑（从 `thread_ops.rs` 提取内联）
+        - 1. 通过 `ctx.thread_store` 和 `ctx.sessions[ctx.active]` 执行 `open_thread_with_feedback` 的核心逻辑（从 `thread_ops.rs` 提取内联）
     - `fn handle_paste(&mut self, text: &str, _ctx: &mut PanelContext<'_>) -> EventResult`
       - 搜索框聚焦时：逐字符调用 `self.search_query.insert(ch); self.refresh_filter(); EventResult::Consumed`
       - 非聚焦时：`EventResult::Consumed`（拦截粘贴，防止进入 textarea）
@@ -360,12 +365,13 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 5 个面板文件都包含 `impl PanelComponent`
   - `grep -rl "impl PanelComponent for" rust-agent-tui/src/app/login_panel.rs rust-agent-tui/src/app/config_panel.rs rust-agent-tui/src/app/mcp_panel.rs rust-agent-tui/src/app/cron_state.rs $(grep -rl "pub struct ThreadBrowser" rust-agent-tui/src/ rust_agent_middlewares/src/ 2>/dev/null) | wc -l`
   - 预期: 5
 - [x] 验证 LoginPanel 的 PanelComponent 实现中无 unwrap 调用（面板自身状态访问）
   - `grep -A 500 "impl PanelComponent for LoginPanel" rust-agent-tui/src/app/login_panel.rs | head -300 | grep -c "\.unwrap()"`
-  - 预期: 0（辅助方法中 `ctx.zen_config.as_mut().unwrap()` 等必要 unwrap 允许存在，面板自身 `self` 直接访问无 unwrap）
+  - 预期: 0（辅助方法中 `ctx.peri_config.as_mut().unwrap()` 等必要 unwrap 允许存在，面板自身 `self` 直接访问无 unwrap）
 - [x] 验证 event.rs 中 5 个面板的旧分发代码已被注释
   - `grep -c "Task 4.*已迁移" rust-agent-tui/src/event.rs`
   - 预期: 至少 5
@@ -394,6 +400,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 本 Task 将 `handle_plugin_panel` 函数体完整迁移到 `impl PanelComponent for PluginPanel`，消除 `app.plugin_panel.as_ref().unwrap()` 模式，通过 `PanelContext` 访问 app 状态。前置依赖：Task 1-2 已完成（PanelKind/PanelState/PanelManager/PanelContext/EventResult/PanelComponent trait 已定义并编译通过）。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/plugin_panel.rs` — 添加 `impl PanelComponent for PluginPanel`（handle_key/handle_paste/status_bar_hints/desired_height/render）
 - 修改: `rust-agent-tui/src/event.rs` — 删除 `handle_plugin_panel` 函数、`handle_discover_install_current` 函数、`handle_discover_batch_install` 函数；删除 Key 分发链中 `plugin_panel.is_some()` 分支（L246-L248）；删除 Paste 分发链中 plugin_panel 粘贴处理（L728-L756）；删除 Mouse Scroll 分发链中 plugin_panel 滚动处理（L789-L824）
 - 修改: `rust-agent-tui/src/ui/main_ui/status_bar.rs` — 删除 L307-L334 的 plugin_panel 快捷键 match 分支
@@ -558,6 +565,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo build -p rust-agent-tui 2>&1 | tail -5`
   - 预期: 编译成功，无错误
@@ -596,6 +604,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 [上下游影响] 本 Task 依赖 Task 1-5（所有 11 个面板已实现 `PanelComponent` trait，包含 `handle_key`/`desired_height`/`render`/`status_bar_hints` 方法）。本 Task 输出被 Task 7（清理旧 `Option<XxxPanel>` 字段和 `panel_ops.rs`）依赖。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/ui/main_ui.rs`（重构 `render_session_column` 渲染分发 + `active_panel_height` 高度计算）
 - 修改: `rust-agent-tui/src/ui/main_ui/status_bar.rs`（重构 `render_second_row` 快捷键显示 + 添加 `format_hints` 辅助函数）
 - 修改: `rust-agent-tui/src/app/panel_component.rs`（`render` 签名从 `&App` 改为 `&mut App`）
@@ -618,6 +627,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 为 `PanelManager` 添加 `active_state()` 和 `active_state_mut()` 方法
   - 位置: `rust-agent-tui/src/app/panel_manager.rs`，`PanelManager` impl 块内（`is_any_open()` 方法之后）
   - 添加两个方法:
+
     ```rust
     /// 获取当前激活面板的不可变引用（用于高度计算和状态栏查询）
     pub fn active_state(&self) -> Option<&PanelState> {
@@ -629,11 +639,13 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         self.active.as_mut()
     }
     ```
+
   - 原因: `active_state()` 用于 `desired_height()` 和 `status_bar_hints()`（只读）；`active_state_mut()` 用于 `render()`（需要 `&mut self` 写回缓存）
 
 - [x] 将 `PanelManager::status_bar_hints()` 改为委托到 `PanelState`
   - 位置: `rust-agent-tui/src/app/panel_manager.rs`
   - 将 `PanelManager::status_bar_hints()` 方法体替换为委托:
+
     ```rust
     pub fn status_bar_hints(&self) -> Vec<(&'static str, &'static str)> {
         match &self.active {
@@ -642,6 +654,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     }
     ```
+
   - 在 `impl PanelState` 块中添加 `status_bar_hints()` 方法，将原 `PanelManager::status_bar_hints()` 中的 match 链搬移过来。完整内容按 Task 1 中 `PanelManager::status_bar_hints()` 的定义，将 `PanelState::Xxx(p)` 分支中的逻辑保留，`Self::Plugin(p) => p.status_bar_hints()` 委托到 PluginPanel 自身方法
   - 需在 `panel_manager.rs` 顶部添加 import: `use super::login_panel::LoginPanelMode;`、`use super::config_panel::ConfigPanelMode;`、`use super::mcp_panel::McpPanelView;`
   - 原因: 快捷键提示是面板自身的属性，定义在 `PanelState` 上使 `active_state().status_bar_hints()` 可直接调用，无需经过 `PanelManager`
@@ -649,6 +662,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 在 `PanelState` 上添加 `render()` 和 `desired_height()` 委托方法
   - 位置: `rust-agent-tui/src/app/panel_manager.rs`，`impl PanelState` 块内
   - 添加 `render` 方法:
+
     ```rust
     pub fn render(&mut self, f: &mut Frame, app: &mut App, area: Rect) {
         match self {
@@ -666,7 +680,9 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     }
     ```
+
   - 添加 `desired_height` 方法:
+
     ```rust
     pub fn desired_height(&self, screen_height: u16, screen_width: u16) -> u16 {
         match self {
@@ -684,12 +700,14 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     }
     ```
+
   - 需在 `panel_manager.rs` 顶部添加 import: `use ratatui::layout::Rect;`、`use ratatui::Frame;`、`use super::App;`
   - 原因: `active_state()` 返回 `&PanelState`，高度和渲染方法定义在 `PanelState` 上使调用方无需 match 11 个变体
 
 - [x] 重构 `main_ui.rs` 的 `render_session_column` 渲染分发（L148-196）
   - 位置: `rust-agent-tui/src/ui/main_ui.rs` L148-196
   - 将 12 个 `if app.xxx.is_some() { render_xxx(f, app, panel_area); }` 顺序检查替换为:
+
     ```rust
     // 底部展开区
     if panel_height > 0 {
@@ -718,12 +736,14 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     }
     ```
+
   - 删除 L162-195 中所有 12 个面板的 `if app.xxx.is_some() { render_xxx_panel(f, app, panel_area); }` 代码块（login_panel L162-164、model_panel L165-167、config_panel L168-170、agent_panel L171-173、hooks_panel L174-176、thread_browser L177-179、cron_panel L180-182、mcp_panel L183-185、status_panel L186-188、memory_panel L189-191、plugin_panel L193-195）
   - 原因: 12 个 if-is_some 链由 `PanelManager::active_state_mut()` 统一分发
 
 - [x] 重构 `main_ui.rs` 的 `active_panel_height` 函数（L280-402）
   - 位置: `rust-agent-tui/src/ui/main_ui.rs` L280-402
   - 保留 `is_plugin_panel` 的 max_h 计算，改为通过 `PanelManager` 查询:
+
     ```rust
     fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 {
         // plugin 面板可以占 70%，其他面板最多 60%
@@ -774,6 +794,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         raw.min(max_h)
     }
     ```
+
   - 删除 L288-358 中所有面板的 if-else 高度计算分支（ThreadBrowser L288-296、Login L297-306、Model L307-308、Config L309-310、Agent L311-312、Hooks L313-317、Cron L318-328、MCP L329-347、Status L348-349、Memory L350-356、Plugin L357-358）
   - 在文件顶部添加 import: `use crate::app::PanelKind;`
   - 删除不再使用的 import: `use crate::app::login_panel::LoginPanelMode;`（L14）
@@ -782,6 +803,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 为 `status_bar.rs` 添加 `format_hints` 辅助函数
   - 位置: `rust-agent-tui/src/ui/main_ui/status_bar.rs`，`render_truncated_line` 函数之前（L354 之前）
   - 添加辅助函数:
+
     ```rust
     /// 将面板快捷键提示格式化为 Span 列表
     /// 输入: [("↑↓", "导航"), ("Enter", "确认")]
@@ -803,6 +825,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         spans
     }
     ```
+
   - 原因: `render_second_row` 原来使用 `key!` 宏内联构建 Span 列表，迁移后由 `format_hints` 统一格式化，消除 ~100 行重复的 Span 构建代码
 
 - [x] 重构 `status_bar.rs` 的 `render_second_row` 函数（L243-349）
@@ -810,6 +833,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
   - 保留 L183-233 的 `left_spans` 构建逻辑不变（复制成功提示、后台任务指示器、Agent 面板信息）
   - 保留 L236-241 的 `key_style`/`desc_style`/`key!` 宏定义（仍被 Interaction Prompts 分支使用）
   - 将 L243-349 的 `right_spans` match 链替换为:
+
     ```rust
     let right_spans: Vec<Span> = match &app.sessions[app.active].agent.interaction_prompt {
         // Interaction Prompts + OAuth：保留原样
@@ -839,6 +863,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     };
     ```
+
   - 删除 L254-347 中所有面板的 if-else 快捷键分支（agent_panel L254-255、hooks_panel L256-257、cron_panel L258-263、login_panel L264-276、mcp_panel L277-290、config_panel L291-300、model_panel L301-302、status_panel L303-304、memory_panel L305-306、plugin_panel L307-334、thread_browser L335-340、默认主界面 L341-347）
   - 原因: ~170 行 match 链由 `PanelState::status_bar_hints()` + `format_hints()` 替代，Interaction Prompts 和 OAuth 的特殊处理保留
 
@@ -856,6 +881,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 `main_ui.rs` 中不再有面板 `is_some()` 渲染分发
   - `grep -n "\.is_some()" rust-agent-tui/src/ui/main_ui.rs | grep -v "interaction_prompt\|oauth_prompt\|pending\|attachment\|loading\|setup_wizard\|textarea_area\|last_human\|highlight_until"`
   - 预期: 无匹配（所有面板的 `is_some()` 检查已替换为 `active_state()`/`active_state_mut()`）
@@ -897,6 +923,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 [上下游影响] 本 Task 依赖 Task 1-6 的全部输出（PanelManager 完整接管面板生命周期、事件分发、渲染分发、状态栏提示）。本 Task 是整个重构的最后一步，输出为干净的代码结构和测试覆盖。
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/core.rs`（移除 6 个旧 Option 面板字段）
 - 修改: `rust-agent-tui/src/app/mod.rs`（移除旧面板字段；添加 `open_panel`/`close_all_panels` 方法；更新 `new_headless` 构造）
 - 删除: `rust-agent-tui/src/app/panel_ops.rs`（整个文件）
@@ -958,6 +985,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 在 `App` 中添加 `open_panel` 和 `close_all_panels` 便捷方法
   - 位置: `rust-agent-tui/src/app/mod.rs`，`impl App` 块中 `refresh_after_setup` 方法之后（~L533 之后）
   - 添加方法：
+
     ```rust
     /// 统一面板打开入口：关闭所有面板后打开目标面板
     pub fn open_panel(&mut self, kind: crate::app::panel_manager::PanelKind) {
@@ -984,6 +1012,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         self.global_panels.close_all();
     }
     ```
+
   - 原因: 提供统一的面板操作入口，替代原来分散在 `panel_ops.rs` 中的 11 个 `open_*` / `close_*` 方法。后续代码（如命令处理、快捷键处理）通过 `app.open_panel(PanelKind::Model)` 打开面板
 
 - [x] 删除 `panel_ops.rs` 文件（注：文件保留为业务逻辑层，旧 Option 双写已清理，open/close 方法通过 PanelManager 调用）
@@ -997,6 +1026,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 更新 `CLAUDE.md` 面板系统架构说明
   - 位置: `CLAUDE.md`，在 `## 面板快捷键设计规范` 章节之前插入新的面板系统架构章节
   - 在该章节之前添加：
+
     ```markdown
     ## 面板组件化架构
 
@@ -1016,11 +1046,15 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 
     **特殊面板**（不纳入 PanelManager）：Setup Wizard、OAuth Prompt、Interaction Prompts——它们有特殊生命周期（全屏覆盖、来自 agent/MCP 触发），在 `event.rs` 中优先级高于 PanelManager。
     ```
+
   - 更新 `## 面板快捷键设计规范` 中的状态栏感知说明（L331-334）：
     - 将原来的列表替换为：
+
       ```markdown
     - 状态栏 `render_second_row` 通过 `PanelState::status_bar_hints()` 自描述快捷键，面板新增 `status_bar_hints()` 方法即可，无需修改 `status_bar.rs`
+
     - 需要状态栏感知的面板状态通过 `status_bar_hints()` 返回不同的提示列表实现（如 CronPanel 的 `confirm_delete` 状态、LoginPanel 的 4 种模式）
+
       ```
   - 原因: CLAUDE.md 是所有 Claude session 的项目记忆，必须反映新的面板架构，否则后续开发会按旧模式操作
 
@@ -1034,6 +1068,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] 为面板生命周期编写 headless 测试（注：已有 headless 测试覆盖面板打开/关闭/渲染/互斥）
   - 测试文件: `rust-agent-tui/src/ui/headless.rs`，`mod tests` 块末尾
   - 添加新的测试模块：
+
     ```rust
     mod panel_lifecycle_tests {
         use crate::app::panel_manager::PanelKind;
@@ -1096,6 +1131,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
         }
     }
     ```
+
   - 测试场景:
     - `test_open_close_panel_lifecycle`: 打开 ModelPanel -> 验证 `session_panels.is_any_open()` 为 true -> `close_all_panels()` -> 验证两个 manager 均为空
     - `test_panel_mutex_across_managers`: 打开 MCP(Global) -> 打开 Model(Session) -> 验证 global_panels 自动清空
@@ -1105,6 +1141,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 `panel_ops.rs` 文件已删除（保留为业务逻辑层，旧 Option 双写已清理）
   - `ls rust-agent-tui/src/app/panel_ops.rs 2>&1`
   - 预期: "No such file or directory"
@@ -1137,6 +1174,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
   - 预期: 无 warning 或 error
 
 **认知变更:**
+
 - [x] [CLAUDE.md] 面板系统已从 `Option<XxxPanel>` 迁移到 `PanelManager` + `PanelComponent` trait。新增面板只需：定义 `PanelState` 变体 + 实现 `PanelComponent` trait。统一入口为 `App::open_panel(PanelKind)`。`panel_ops.rs` 保留为业务逻辑层
 
 ---
@@ -1160,6 +1198,7 @@ Plugin 面板是全局面板中复杂度最高的面板，包含 4 种视图（I
 - [x] **clippy 无警告**：`cargo clippy -p rust-agent-tui 2>&1 | grep -E "warning|error" | grep -v "generated" | head -5`
 
 **失败排查:**
+
 - 编译失败 → 按逆序检查 Task 7→6→5→4→3→2→1，从最后一个 Task 开始检查 import 和类型签名
 - 面板功能异常 → 在 headless 测试中逐步打开各面板验证：Model → Login → Agent → Hooks → Config → ThreadBrowser → MCP → Plugin → Cron → Status → Memory
 - 互斥失效 → 检查 `PanelManager::open()` 的 mutex_group 逻辑和 `App::open_panel()` 的跨作用域关闭

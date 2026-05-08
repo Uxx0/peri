@@ -18,6 +18,7 @@
 确保构建和测试工具链在当前开发环境中可用，特别是 Rust toolchain 版本满足 rmcp 0.14 的最低要求（>= 1.85）。
 
 **执行步骤:**
+
 - [ ] 验证 Rust toolchain 版本
   - `rustc --version`
   - 确认版本 >= 1.85（rmcp 使用 edition 2024）
@@ -29,6 +30,7 @@
   - 预期: `test result: ok` 无失败
 
 **检查步骤:**
+
 - [ ] Rust 版本满足 rmcp 要求
   - `rustc --version | grep -oP '\d+\.\d+' | head -1`
   - 预期: >= 1.85
@@ -38,7 +40,6 @@
 
 ---
 
-
 ### Task 1: McpConfig 配置加载与合并
 
 **背景:**
@@ -47,6 +48,7 @@
 [上下游影响] — 本 Task 输出 `McpServerConfig` / `McpConfigFile` / `load_merged_config()` / `expand_env_vars()`，被 Task 2（传输层构建）和 Task 3（McpClientPool 初始化）直接依赖。
 
 **涉及文件:**
+
 - 新建: `rust-agent-middlewares/src/mcp/mod.rs`
 - 新建: `rust-agent-middlewares/src/mcp/config.rs`
 - 修改: `rust-agent-middlewares/Cargo.toml`
@@ -57,6 +59,7 @@
 - [ ] 在 `Cargo.toml` 添加 rmcp 依赖声明
   - 位置: `rust-agent-middlewares/Cargo.toml` 末尾 `[dependencies]` 块追加
   - 追加内容:
+
     ```toml
     rmcp = { version = "0.14", features = [
         "client",
@@ -64,11 +67,13 @@
         "transport-streamable-http-client-reqwest",
     ] }
     ```
+
   - 原因: Task 1 仅需 serde 反序列化，但 rmcp 依赖在此统一声明，避免后续 Task 重复修改 Cargo.toml
 
 - [ ] 创建 `mcp` 模块入口文件
   - 位置: 新建 `rust-agent-middlewares/src/mcp/mod.rs`
   - 内容:
+
     ```rust
     pub mod config;
 
@@ -76,20 +81,24 @@
         McpConfigError, McpConfigFile, McpServerConfig, load_merged_config,
     };
     ```
+
   - 原因: 模块骨架，后续 Task 2-6 在此目录追加子模块
 
 - [ ] 在 `lib.rs` 注册 `mcp` 模块并重导出关键类型
   - 位置: `rust-agent-middlewares/src/lib.rs`，在 `pub mod skills;` 行之后追加
   - 追加内容:
+
     ```rust
     pub mod mcp;
     pub use mcp::{McpConfigError, McpConfigFile, McpServerConfig, load_merged_config};
     ```
+
   - 原因: 与现有模块注册模式一致（声明 + pub use 重导出）
 
 - [ ] 在 `config.rs` 中定义 `McpServerConfig` 数据结构
   - 位置: 新建 `rust-agent-middlewares/src/mcp/config.rs`，文件顶部
   - 关键逻辑:
+
     ```rust
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
@@ -121,11 +130,13 @@
         pub mcp_servers: HashMap<String, McpServerConfig>,
     }
     ```
+
   - 原因: 与 spec-design.md §McpConfig 定义一致，支持 stdio（command + args + env）和 HTTP（url + headers）两种传输
 
 - [ ] 在 `config.rs` 中定义 `McpConfigError` 错误类型
   - 位置: `config.rs`，紧跟 `McpConfigFile` 定义之后
   - 关键逻辑:
+
     ```rust
     use thiserror::Error;
 
@@ -145,11 +156,13 @@
         },
     }
     ```
+
   - 原因: 遵循项目编码规范（库 crate 用 thiserror），包装底层错误并保留文件路径上下文
 
 - [ ] 实现 `load_from_path()` 函数——从单个文件加载 McpConfigFile
   - 位置: `config.rs`，`McpConfigError` 之后
   - 关键逻辑:
+
     ```rust
     /// 从指定 JSON 文件加载 MCP 配置，文件不存在时返回空配置
     pub fn load_from_path(path: &Path) -> Result<McpConfigFile, McpConfigError> {
@@ -166,11 +179,13 @@
         })
     }
     ```
+
   - 原因: 配置文件不存在时静默返回空（spec-design.md 错误处理策略），不中断 agent 启动
 
 - [ ] 实现 `load_global_config()` 函数——从 settings.json extra 字段提取 mcpServers
   - 位置: `config.rs`，`load_from_path()` 之后
   - 关键逻辑:
+
     ```rust
     /// 从全局 settings.json 的 extra 字段中提取 mcpServers
     /// settings.json 中 mcpServers 与其他 config 字段同级，被 AppConfig.extra 保留
@@ -197,11 +212,13 @@
         Ok(config)
     }
     ```
+
   - 原因: settings.json 结构为 `{ "config": { ...fields..., "mcpServers": {...} } }` 或直接 `{ "mcpServers": {...} }`，需兼容两种路径
 
 - [ ] 实现 `expand_env_vars()` 函数——展开字符串中的 `${VAR}` 占位符
   - 位置: `config.rs`，`load_global_config()` 之后
   - 关键逻辑:
+
     ```rust
     /// 展开 s 中所有 ${VAR} 占位符为环境变量值
     /// 变量不存在时替换为空字符串，并输出 warn 日志
@@ -228,11 +245,13 @@
         result
     }
     ```
+
   - 原因: 手动解析 `${VAR}` 语法，避免引入 `shellexpand` 额外依赖；变量不存在时 warn 日志（spec-design.md 错误处理策略）
 
 - [ ] 实现 `expand_server_config()` 函数——对单个 McpServerConfig 所有字符串字段展开环境变量
   - 位置: `config.rs`，`expand_env_vars()` 之后
   - 关键逻辑:
+
     ```rust
     /// 对 McpServerConfig 中所有字符串字段执行环境变量展开
     /// 注意: 日志中不打印 headers/env 值，防止泄露 API Key 等敏感信息
@@ -252,11 +271,13 @@
         }
     }
     ```
+
   - 原因: 配置合并后统一展开，确保 command/args/url/headers/env 中的 `${VAR}` 全部替换
 
 - [ ] 实现 `load_merged_config()` 函数——双层加载 + 合并 + 展开的主入口
   - 位置: `config.rs`，`expand_server_config()` 之后
   - 关键逻辑:
+
     ```rust
     /// 加载并合并 MCP 配置：全局 settings.json + 项目级 .mcp.json
     /// 同名 server 以项目级覆盖全局，所有字段执行 ${VAR} 展开
@@ -264,7 +285,7 @@
         // 1. 加载全局配置
         let global_path = dirs_next::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".zen-code")
+            .join(".peri")
             .join("settings.json");
         let global = load_global_config(&global_path).unwrap_or_else(|e| {
             tracing::warn!(path = %global_path.display(), error = %e, "加载全局 MCP 配置失败，跳过");
@@ -292,6 +313,7 @@
         merged
     }
     ```
+
   - 原因: spec-design.md §McpConfig 要求先全局后项目级、同名覆盖、加载时展开 `${VAR}`；加载失败 warn 日志不中断
 
 - [ ] 为 McpConfig 配置加载与合并编写单元测试
@@ -330,7 +352,6 @@
 
 ---
 
-
 ### Task 2: 传输层构建工厂
 
 **背景:**
@@ -339,6 +360,7 @@
 [上下游影响] — 本 Task 依赖 Task 1（`McpServerConfig` 数据结构），输出 `build_transport()` 工厂函数，被 Task 3（McpClientPool 初始化）在遍历配置建立连接时调用。
 
 **涉及文件:**
+
 - 新建: `rust-agent-middlewares/src/mcp/transport.rs`
 - 修改: `rust-agent-middlewares/src/mcp/mod.rs`（添加 `pub mod transport`）
 
@@ -347,6 +369,7 @@
 - [ ] 在 `transport.rs` 顶部定义 `TransportError` 错误类型和 `TransportConfig` 枚举
   - 位置: 新建 `rust-agent-middlewares/src/mcp/transport.rs`，文件顶部
   - 关键逻辑:
+
     ```rust
     use std::collections::HashMap;
     use thiserror::Error;
@@ -376,11 +399,13 @@
         HttpConfigFailed(String),
     }
     ```
+
   - 原因: 遵循项目编码规范（库 crate 用 thiserror）；`TransportConfig` 枚举与 spec-design.md §传输层适配一致；`TransportError` 覆盖配置缺失、子进程启动失败、HTTP 配置失败三类错误
 
 - [ ] 实现 `From<&McpServerConfig>` 转换——将 McpServerConfig 解析为 TransportConfig
   - 位置: `transport.rs`，`TransportError` 定义之后
   - 关键逻辑:
+
     ```rust
     use super::config::McpServerConfig;
 
@@ -403,11 +428,13 @@
         }
     }
     ```
+
   - 原因: 配置解析优先级与 spec-design.md 一致——有 `command` 字段时走 stdio，有 `url` 字段时走 Streamable HTTP；两者均无时返回 `InvalidConfig` 错误
 
 - [ ] 实现 `build_transport()` 工厂函数——将 TransportConfig 构建为 rmcp Transport trait 对象
   - 位置: `transport.rs`，`TryFrom` impl 之后
   - 关键逻辑:
+
     ```rust
     use rmcp::transport::IntoTransport;
     use rmcp::transport::child_process::TokioChildProcess;
@@ -441,17 +468,20 @@
         }
     }
     ```
+
   - 原因: `TokioChildProcess::new()` 接受 `Command` 对象，支持 args 和 env 注入；`StreamableHttpClientTransport::from_uri()` 返回 builder 模式，支持链式追加 headers；返回 `impl IntoTransport<RoleClient>` 而非具体类型，使调用方（Task 3 的 `serve_client()`）无需关心传输细节
   - **注意**: rmcp 0.14 的 `TokioChildProcess::new()` 签名为 `fn new(cmd: Command) -> Result<TokioChildProcess, io::Error>`；`StreamableHttpClientTransport::from_uri()` 签名需确认是否直接返回实例或 builder。实现时根据 rmcp 0.14 实际 API 调整，核心逻辑不变
 
 - [ ] 修改 `mcp/mod.rs` 添加 `pub mod transport` 声明和重导出
   - 位置: `rust-agent-middlewares/src/mcp/mod.rs`，在 `pub mod config;` 行之后追加
   - 追加内容:
+
     ```rust
     pub mod transport;
 
     pub use transport::{TransportConfig, TransportError, build_transport};
     ```
+
   - 原因: 与 Task 1 建立的模块注册模式一致（声明 + pub use 重导出）；`build_transport` 是 Task 3（McpClientPool）直接依赖的核心函数
 
 - [ ] 为传输层构建工厂编写单元测试
@@ -493,9 +523,7 @@
   - `grep -E "Stdio|StreamableHttp" rust-agent-middlewares/src/mcp/transport.rs`
   - 预期: 输出包含两个变体的定义
 
-
 ---
-
 
 ### Task 3: McpClientPool 连接池管理
 
@@ -505,6 +533,7 @@
 [上下游影响] — 本 Task 依赖 Task 1（`McpServerConfig` / `load_merged_config()`）和 Task 2（`build_transport()` 工厂函数），输出 `McpClientPool` / `McpClientHandle` / `ClientStatus`，被 Task 4（工具桥接）、Task 5（资源读取）、Task 6（中间件）、Task 8（TUI 集成）直接依赖。
 
 **涉及文件:**
+
 - 新建: `rust-agent-middlewares/src/mcp/client.rs`
 - 修改: `rust-agent-middlewares/src/mcp/mod.rs`（添加 `pub mod client` + 重导出）
 
@@ -513,6 +542,7 @@
 - [ ] 在 `client.rs` 顶部定义 `ClientStatus` 枚举和 `McpPoolError` 错误类型
   - 位置: 新建 `rust-agent-middlewares/src/mcp/client.rs`，文件顶部
   - 关键逻辑:
+
     ```rust
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -544,11 +574,13 @@
         CallTimeout { server: String },
     }
     ```
+
   - 原因: 遵循项目编码规范（库 crate 用 thiserror）；`ClientStatus::Failed` 携带原因字符串便于诊断；错误类型包含 server 上下文
 
 - [ ] 定义 `McpClientHandle` 结构体——封装单个 MCP 服务器连接的所有运行时状态
   - 位置: `client.rs`，紧跟 `McpPoolError` 之后
   - 关键逻辑:
+
     ```rust
     /// 单个 MCP 服务器的客户端句柄，通过 Arc 在多个 McpToolBridge 之间共享
     pub struct McpClientHandle {
@@ -561,11 +593,13 @@
         cancel_token: CancellationToken,
     }
     ```
+
   - 原因: `Peer<RoleClient>` 是 rmcp 提供的线程安全客户端接口（内部通过 mpsc channel 通信），`Arc<McpClientHandle>` 可安全跨 task 共享；`cancel_token` 由 pool 持有，shutdown 时统一触发
 
 - [ ] 定义 `McpClientPool` 结构体和 `RunningService` 持有列表
   - 位置: `client.rs`，紧跟 `McpClientHandle` 之后
   - 关键逻辑:
+
     ```rust
     /// MCP 客户端连接池，管理所有 MCP 服务器的连接生命周期
     pub struct McpClientPool {
@@ -574,11 +608,13 @@
         services: Vec<RunningService<rmcp::service::RoleClient, ()>>,
     }
     ```
+
   - 原因: `RunningService` 内部持有 `JoinHandle` 和 `DropGuard`，必须在 pool 中持有引用以保证连接存活；`RunningService` 实现了 `Deref<Target = Peer<RoleClient>>`，初始化时可通过 `*service.list_all_tools()` 直接调用 peer 方法
 
 - [ ] 实现 `McpClientPool::initialize()` —— 连接初始化主入口
   - 位置: `client.rs`，`McpClientPool` impl 块
   - 关键逻辑:
+
     ```rust
     const STDIO_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
     const HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -670,12 +706,14 @@
             pool
         }
     ```
+
   - 原因: spec-design.md 要求一次性初始化、连接失败跳过不影响其他 server；超时按传输类型区分（stdio 10s / HTTP 30s）；使用 `()` 作为 `ClientHandler`（rmcp 提供的空实现）；`list_all_tools()` / `list_all_resources()` 自动处理分页
   - **注意**: `RunningService` 通过 `Deref` 暴露 `Peer` 方法，初始化阶段可同时获取 peer 引用和调用发现方法；获取 peer 引用后 `RunningService` 必须移入 `pool.services` 保持存活
 
 - [ ] 实现 `McpClientPool` 查询方法——`get_client()`、`get_all_clients()`、`has_resources()`
   - 位置: `client.rs`，`McpClientPool` impl 块，`initialize()` 之后
   - 关键逻辑:
+
     ```rust
     impl McpClientPool {
         /// 获取指定名称的客户端句柄
@@ -716,11 +754,13 @@
         }
     }
     ```
+
   - 原因: `get_all_clients()` 供 Task 6（McpMiddleware.collect_tools）遍历创建 McpToolBridge；`resource_summary()` 供 Task 5（McpResourceTool）生成动态 description
 
 - [ ] 实现 `McpClientPool::shutdown()` —— 优雅关闭所有连接
   - 位置: `client.rs`，`McpClientPool` impl 块末尾
   - 关键逻辑:
+
     ```rust
     const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -746,16 +786,19 @@
         }
     }
     ```
+
   - 原因: spec-design.md 要求 App 退出时统一 `pool.shutdown()`；`close_with_timeout` 确保不会无限阻塞；stdio transport 的 `RunningService` 内部会触发子进程 graceful shutdown
 
 - [ ] 修改 `mcp/mod.rs` 添加 `pub mod client` 声明和重导出
   - 位置: `rust-agent-middlewares/src/mcp/mod.rs`，在 `pub mod config;` 之后追加
   - 追加内容:
+
     ```rust
     pub mod client;
 
     pub use client::{ClientStatus, McpClientHandle, McpClientPool, McpPoolError};
     ```
+
   - 原因: 与 Task 1 建立的模块注册模式一致（声明 + pub use 重导出）
 
 - [ ] 为 McpClientPool 连接池管理编写单元测试
@@ -802,6 +845,7 @@
 [上下游影响] — 本 Task 依赖 Task 3（`McpClientHandle` 提供 `peer` 和 `ClientStatus`），输出 `McpToolBridge` + `ToolCallError` + `build_tool_bridges()` 工厂函数，被 Task 6（McpMiddleware.collect_tools 遍历调用）直接依赖。
 
 **涉及文件:**
+
 - 新建: `rust-agent-middlewares/src/mcp/tool_bridge.rs`
 - 修改: `rust-agent-middlewares/src/mcp/mod.rs`（添加 `pub mod tool_bridge` + 重导出）
 
@@ -810,6 +854,7 @@
 - [ ] 在 `tool_bridge.rs` 顶部定义 `ToolCallError` 错误类型和 `McpToolBridge` 结构体
   - 位置: 新建 `rust-agent-middlewares/src/mcp/tool_bridge.rs`，文件顶部
   - 关键逻辑:
+
     ```rust
     use std::sync::Arc;
     use async_trait::async_trait;
@@ -837,11 +882,13 @@
         client: Arc<super::client::McpClientHandle>,
     }
     ```
+
   - 原因: 遵循项目编码规范（库 crate 用 thiserror）；结构体字段与 spec-design.md §McpToolBridge 一致；`Arc<McpClientHandle>` 共享连接句柄，多个 bridge 可并发调用同一 peer（rmcp Peer 内部线程安全）
 
 - [ ] 实现 `McpToolBridge::new()` 构造函数
   - 位置: `tool_bridge.rs`，`McpToolBridge` 定义之后
   - 关键逻辑:
+
     ```rust
     const TOOL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -866,11 +913,13 @@
         }
     }
     ```
+
   - 原因: `full_name` 格式 `mcp__{server}__{tool}` 与 spec-design.md 一致，双下划线分隔保证命名空间隔离；`description` 前缀 `[MCP:{server}]` 让 LLM 识别工具来源；`input_schema` 缺失时用空 JSON Object 兜底
 
 - [ ] 实现 `BaseTool` trait 的 `name()` / `description()` / `parameters()` 方法
   - 位置: `tool_bridge.rs`，`McpToolBridge` impl 块
   - 关键逻辑:
+
     ```rust
     #[async_trait]
     impl BaseTool for McpToolBridge {
@@ -886,11 +935,13 @@
             self.input_schema.clone()
         }
     ```
+
   - 原因: MCP Tool 的 `inputSchema` 本身就是 JSON Schema 格式，直接透传无需转换（spec-design.md 明确指出）；`name()` 返回 `mcp__{server}__{tool}` 格式，与 HITL 前缀匹配规则（Task 7）对齐
 
 - [ ] 实现 `BaseTool::invoke()` —— 核心调用逻辑：peer.call_tool + 结果格式化 + 超时
   - 位置: `tool_bridge.rs`，`BaseTool` impl 块，`parameters()` 之后
   - 关键逻辑:
+
     ```rust
         async fn invoke(
             &self,
@@ -945,11 +996,13 @@
         }
     }
     ```
+
   - 原因: 先检查连接状态避免对已断开 peer 发请求；超时 120s 与 Bash 工具对齐（spec-design.md §连接管理策略）；`is_error=true` 时将错误内容包装为 `ToolCallError::CallFailed` 返回，由 LLM 决定重试
 
 - [ ] 实现 `format_content()` 辅助函数——将 `Vec<Content>` 格式化为字符串
   - 位置: `tool_bridge.rs`，`BaseTool` impl 块之后（模块级自由函数）
   - 关键逻辑:
+
     ```rust
     use rmcp::model::Content;
 
@@ -979,11 +1032,13 @@
         parts.join("\n")
     }
     ```
+
   - 原因: rmcp 的 `Content` 枚举有多种变体（Text/Image/Resource/Audio），TUI 环境仅支持文本输出，图片和资源以占位符表示；`join("\n")` 保证多个 content 块之间有明确分隔
 
 - [ ] 实现 `build_tool_bridges()` 工厂函数——从连接池批量创建 McpToolBridge
   - 位置: `tool_bridge.rs`，`format_content()` 之后
   - 关键逻辑:
+
     ```rust
     use super::client::McpClientPool;
 
@@ -1003,16 +1058,19 @@
         bridges
     }
     ```
+
   - 原因: `get_all_clients()` 已过滤 `Failed` / `Disconnected` 状态，仅遍历已连接的客户端；每个 `Tool` 元数据创建独立的 `McpToolBridge` 实例，共享同一个 `Arc<McpClientHandle>`；返回 `Vec<Box<dyn BaseTool>>` 与 `Middleware::collect_tools()` 返回类型一致
 
 - [ ] 修改 `mcp/mod.rs` 添加 `pub mod tool_bridge` 声明和重导出
   - 位置: `rust-agent-middlewares/src/mcp/mod.rs`，在 `pub mod client;` 行之后追加
   - 追加内容:
+
     ```rust
     pub mod tool_bridge;
 
     pub use tool_bridge::{McpToolBridge, ToolCallError, build_tool_bridges};
     ```
+
   - 原因: 与 Task 1 建立的模块注册模式一致（声明 + pub use 重导出）；`build_tool_bridges` 是 Task 6（McpMiddleware）直接依赖的核心工厂函数
 
 - [ ] 为 McpToolBridge 工具桥接编写单元测试
@@ -1067,6 +1125,7 @@
 ### Acceptance: MCP 核心组件验收
 
 **前置条件:**
+
 - 启动命令: `cargo build -p rust-agent-middlewares`
 - 所有前置 Task（Task 1-4）的单元测试已通过
 
@@ -1091,4 +1150,3 @@
    - `cargo build -p rust-agent-middlewares 2>&1 | grep -E "error|warning" | head -20`
    - 预期: 无编译错误，允许少量无关警告
    - 失败排查: 检查各 Task 中类型引用是否正确（特别是 rmcp 的 Peer/Tool/Resource 类型路径）
-

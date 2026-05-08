@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 use tui_textarea::Input;
 
-use crate::config::{ThinkingConfig, ZenConfig};
+use crate::config::{PeriConfig, ThinkingConfig};
 
 use super::panel_component::PanelComponent;
 use super::panel_manager::{EventResult, PanelContext, PanelKind};
@@ -68,7 +68,7 @@ pub struct ModelPanel {
 }
 
 impl ModelPanel {
-    pub fn from_config(cfg: &ZenConfig) -> Self {
+    pub fn from_config(cfg: &PeriConfig) -> Self {
         let active_tab = match cfg.config.active_alias.as_str() {
             "sonnet" => AliasTab::Sonnet,
             "haiku" => AliasTab::Haiku,
@@ -133,8 +133,8 @@ impl ModelPanel {
         }
     }
 
-    /// 将面板状态写入 ZenConfig（alias + thinking）
-    pub fn apply_to_config(&self, cfg: &mut ZenConfig) {
+    /// 将面板状态写入 PeriConfig（alias + thinking）
+    pub fn apply_to_config(&self, cfg: &mut PeriConfig) {
         cfg.config.active_alias = self.active_tab.to_key().to_string();
         let t = cfg.config.thinking.get_or_insert_with(|| ThinkingConfig {
             enabled: true,
@@ -236,7 +236,7 @@ impl ModelPanel {
         let alias_label = panel.active_tab.label().to_string();
         let effort = panel.buf_thinking_effort.clone();
 
-        let Some(cfg) = ctx.services.zen_config.as_mut() else {
+        let Some(cfg) = ctx.services.peri_config.as_mut() else {
             return;
         };
         panel.apply_to_config(cfg);
@@ -278,8 +278,8 @@ mod tests {
     use crate::config::types::AppConfig;
     use crate::config::ProviderConfig;
 
-    fn make_config() -> ZenConfig {
-        ZenConfig {
+    fn make_config() -> PeriConfig {
+        PeriConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
                 active_provider_id: "test".to_string(),
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_apply_to_config_creates_thinking_when_none() {
-        let mut cfg = ZenConfig {
+        let mut cfg = PeriConfig {
             config: AppConfig {
                 active_alias: "opus".to_string(),
                 active_provider_id: "test".to_string(),

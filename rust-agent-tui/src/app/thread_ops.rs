@@ -324,7 +324,7 @@ impl App {
 
         let provider = match self
             .services
-            .zen_config
+            .peri_config
             .as_ref()
             .and_then(agent::LlmProvider::from_config)
             .or_else(agent::LlmProvider::from_env)

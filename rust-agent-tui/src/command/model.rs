@@ -16,7 +16,10 @@ impl Command for ModelCommand {
         let alias = args.trim().to_lowercase();
         match alias.as_str() {
             "opus" | "sonnet" | "haiku" => {
-                let cfg = app.services.zen_config.get_or_insert_with(Default::default);
+                let cfg = app
+                    .services
+                    .peri_config
+                    .get_or_insert_with(Default::default);
                 cfg.config.active_alias = alias.clone();
                 if let Err(e) = App::save_config(cfg, app.services.config_path_override.as_deref())
                 {

@@ -47,7 +47,7 @@ cargo run -p rust-agent-tui -- -a  # 启用 HITL 审批模式
 | `OPENAI_MODEL` | 模型名称 |
 | `YOLO_MODE` | `true` 跳过审批（默认），`false` 启用 HITL |
 
-环境变量也可通过 `~/.zen-code/settings.json` 的 `env` 字段配置。
+环境变量也可通过 `~/.peri/settings.json` 的 `env` 字段配置。
 
 ## Workspace 架构
 
@@ -102,7 +102,7 @@ acpx-g/                 DAG 工作流引擎——YAML 定义、Web API、SQLite 
 
 通过 `McpMiddleware` 将外部 MCP 服务器注入 ReAct 循环：
 
-- **配置来源**：全局 `~/.zen-code/settings.json` + 项目级 `.mcp.json`，同名项目级覆盖
+- **配置来源**：全局 `~/.peri/settings.json` + 项目级 `.mcp.json`，同名项目级覆盖
 - **传输方式**：stdio（子进程）/ Streamable HTTP（远程服务器）
 - **OAuth 2.0**：支持 Client Credentials Flow
 - **工具命名**：`mcp__{server_name}__{tool_name}`

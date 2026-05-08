@@ -237,17 +237,20 @@ pub struct KnownMarketplace {
 ```
 
 **GitHub 源拉取策略**：
+
 - 首次 `git clone --depth 1`
 - 后续 `git pull --ff-only`（auto_update=true 时）
 - 失败时使用已有的缓存版本，不阻塞启动
 - 超时 30 秒
 
 **URL 源拉取策略**：
+
 - HTTP GET 请求，带 If-Modified-Since 缓存头
 - 超时 15 秒
 - 失败时使用本地缓存
 
 **官方 Marketplace**：
+
 - 默认内置 `anthropics/claude-plugins-official`
 - 首次启动自动注册并拉取
 - `auto_update` 默认 true
@@ -279,11 +282,13 @@ uninstall_plugin(id)
 ```
 
 **版本管理**：
+
 - 同一插件只保留一个版本（与 Claude Code 行为一致）
 - 安装新版本时先卸载旧版本再安装新版本
 - marketplace 刷新后检测版本更新，TUI 显示可更新标记
 
 **安装范围**：
+
 - `user`（默认）：`~/.claude/settings.json` 中的 `enabledPlugins`
 - `project`：`.claude/settings.json` 中的 `enabledPlugins`
 
@@ -378,7 +383,7 @@ pub struct CommandEntry {
 
 4. **异步安装**：安装/卸载操作在 `tokio::spawn_blocking` 中执行文件系统操作，避免阻塞 async runtime。
 
-5. **`~/.claude/` 与 `~/.zen-code/` 双路径**：插件系统读写 `~/.claude/` 路径，现有配置继续使用 `~/.zen-code/settings.json`。两者独立管理，互不干扰。如需读取 `~/.claude/settings.json` 中的 `enabledPlugins` 字段，使用独立的文件读取而非替换现有配置系统。
+5. **`~/.claude/` 与 `~/.peri/` 双路径**：插件系统读写 `~/.claude/` 路径，现有配置继续使用 `~/.peri/settings.json`。两者独立管理，互不干扰。如需读取 `~/.claude/settings.json` 中的 `enabledPlugins` 字段，使用独立的文件读取而非替换现有配置系统。
 
 6. **测试隔离**：插件安装/卸载涉及 `~/.claude/` 写操作，headless 测试需要通过 `config_path_override` 机制将写入重定向到临时目录，与现有测试隔离模式一致。
 

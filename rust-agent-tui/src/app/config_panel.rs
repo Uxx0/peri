@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 use tui_textarea::Input;
 
-use crate::config::ZenConfig;
+use crate::config::PeriConfig;
 use crate::ui::message_view::MessageViewModel;
 
 use super::panel_component::PanelComponent;
@@ -89,7 +89,7 @@ pub struct ConfigPanel {
 }
 
 impl ConfigPanel {
-    pub fn from_config(cfg: &ZenConfig) -> Self {
+    pub fn from_config(cfg: &PeriConfig) -> Self {
         let compact_config = cfg.config.compact.as_ref();
         let autocompact = compact_config
             .map(|c| c.auto_compact_enabled)
@@ -190,7 +190,7 @@ impl ConfigPanel {
         }
     }
 
-    pub fn apply_edit(&mut self, cfg: &mut ZenConfig) {
+    pub fn apply_edit(&mut self, cfg: &mut PeriConfig) {
         // autocompact + threshold
         let compact = cfg
             .config
@@ -322,7 +322,7 @@ impl PanelComponent for ConfigPanel {
                         key: Key::Enter, ..
                     } => {
                         // apply_config and close
-                        let Some(cfg) = ctx.services.zen_config.as_mut() else {
+                        let Some(cfg) = ctx.services.peri_config.as_mut() else {
                             return EventResult::Consumed;
                         };
                         self.apply_edit(cfg);
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_from_config_defaults() {
-        let cfg = ZenConfig::default();
+        let cfg = PeriConfig::default();
         let panel = ConfigPanel::from_config(&cfg);
         assert!(panel.buf_autocompact);
         assert_eq!(panel.buf_threshold, "85");
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_field_navigation() {
-        let _panel = ConfigPanel::from_config(&ZenConfig::default());
+        let _panel = ConfigPanel::from_config(&PeriConfig::default());
         let _fields: Vec<_> = (0..6)
             .map(|_| {
                 let mut p = ConfigEditField::Autocompact;
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_cycle_autocompact() {
-        let mut panel = ConfigPanel::from_config(&ZenConfig::default());
+        let mut panel = ConfigPanel::from_config(&PeriConfig::default());
         assert!(panel.buf_autocompact);
         panel.cycle_autocompact();
         assert!(!panel.buf_autocompact);
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_cycle_proactiveness() {
-        let mut panel = ConfigPanel::from_config(&ZenConfig::default());
+        let mut panel = ConfigPanel::from_config(&PeriConfig::default());
         panel.buf_proactiveness = "low".to_string();
         panel.cycle_proactiveness();
         assert_eq!(panel.buf_proactiveness, "medium");
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_apply_edit_saves_to_config() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = ConfigPanel::from_config(&cfg);
         panel.buf_language = "zh-CN".to_string();
         panel.buf_persona = "Rust expert".to_string();
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_apply_edit_compact_threshold() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = ConfigPanel::from_config(&cfg);
         panel.buf_threshold = "90".to_string();
         panel.apply_edit(&mut cfg);
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_apply_edit_invalid_threshold_clamps() {
-        let mut cfg = ZenConfig::default();
+        let mut cfg = PeriConfig::default();
         let mut panel = ConfigPanel::from_config(&cfg);
         panel.buf_threshold = "30".to_string();
         panel.apply_edit(&mut cfg);
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_config_panel_active_field_text_editable() {
-        let mut panel = ConfigPanel::from_config(&ZenConfig::default());
+        let mut panel = ConfigPanel::from_config(&PeriConfig::default());
         // Autocompact → None
         panel.edit_field = ConfigEditField::Autocompact;
         assert!(panel.active_field().is_none());

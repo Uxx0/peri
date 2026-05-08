@@ -10,11 +10,11 @@ use rust_create_agent::error::AgentResult;
 use rust_create_agent::messages::BaseMessage;
 use rust_create_agent::middleware::r#trait::Middleware;
 
-/// 全局配置文件路径：~/.zen-code/settings.json
+/// 全局配置文件路径：~/.peri/settings.json
 pub fn global_config_path() -> PathBuf {
     dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json")
 }
 
@@ -83,7 +83,7 @@ impl SkillsMiddleware {
         self
     }
 
-    /// 从全局配置加载 skills 目录（默认从 `~/.zen-code/settings.json` 读取）
+    /// 从全局配置加载 skills 目录（默认从 `~/.peri/settings.json` 读取）
     pub fn with_global_config(mut self) -> Self {
         if let Some(dir) = load_global_skills_dir() {
             self.global_skills_dir = Some(dir);

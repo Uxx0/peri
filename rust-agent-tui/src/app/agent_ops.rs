@@ -91,7 +91,7 @@ impl App {
 
         let provider = match self
             .services
-            .zen_config
+            .peri_config
             .as_ref()
             .and_then(agent::LlmProvider::from_config)
             .or_else(agent::LlmProvider::from_env)
@@ -216,7 +216,7 @@ impl App {
             .clone();
         let thread_store = self.services.thread_store.clone();
         let thread_id_for_agent = thread_id.clone();
-        let zen_config_for_agent = Arc::new(self.services.zen_config.clone().unwrap_or_default());
+        let peri_config_for_agent = Arc::new(self.services.peri_config.clone().unwrap_or_default());
         let cron_scheduler = Some(self.services.cron.scheduler.clone());
         let permission_mode = self.services.permission_mode.clone();
 
@@ -304,7 +304,7 @@ impl App {
                     thread_store,
                     thread_id: thread_id_for_agent,
                     preload_skills,
-                    config: zen_config_for_agent,
+                    config: peri_config_for_agent,
                     cron_scheduler,
                     permission_mode,
                     mcp_pool,

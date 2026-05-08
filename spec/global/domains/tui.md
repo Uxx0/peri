@@ -5,6 +5,7 @@
 TUI 领域负责交互式终端界面的实现，包括渲染引擎、事件处理、命令系统、面板管理和与 Agent 核心的集成。
 
 核心职责：
+
 - 双线程渲染：独立渲染线程计算 Markdown 解析（pulldown-cmark）和行包装，UI 线程只从 `RenderCache` 读取可见行，按需重绘
 - 事件处理：crossterm 输入拦截、命令解析（`/` 前缀）、弹窗状态管理
 - 命令系统：`/model`、`/history`、`/clear`、`/help`、`/compact`、`/config`、`/cost`、`/context`、`/memory`、`/mcp`、`/loop`、`/cron`、`/agents`；Command trait 支持 alias 机制
@@ -77,7 +78,7 @@ submit_message(text)
 | 输入缓冲 | `pending_messages: Vec<String>`，Done/Error 时合并发送 |
 | 弹窗滚动 | `scroll_offset: u16`，`ensure_cursor_visible()`，80% 高度上限 |
 | SubAgent 展示 | SubAgentGroup ViewModel；滑动窗口 4 条；RenderEvent::UpdateLastMessage 原地更新 |
-| 远程控制配置 | RelayPanel View/Edit 模式；RemoteControlConfig 持久化到 ~/.zen-code/settings.json |
+| 远程控制配置 | RelayPanel View/Edit 模式；RemoteControlConfig 持久化到 ~/.peri/settings.json |
 | 环境变量注入 | AppConfig.env HashMap，main() 最先调用 inject_env_from_settings()，进程环境变量优先 |
 | 文件组织 | app/ 拆分 8 子文件；ui/ 拆分 popups/、panels/ 子目录；pub(super) 可见性 |
 | App 结构体 | AppCore/AgentComm/RelayState/LangfuseState 四子结构体（共 37 字段），Deref 代理访问 |
@@ -94,8 +95,10 @@ submit_message(text)
 ## Feature 附录
 
 ### 20260324_F001_tui-clipboard-image-paste
+
 **摘要:** Ctrl+V 粘贴剪贴板图片作为多模态消息发送
 **关键决策:**
+
 - 依赖: arboard 3 + png 0.17 + base64 0.22
 - 数据结构: `PendingAttachment { label, media_type, base64_data, size_bytes }`
 - run_universal_agent 签名变更: `input: String` → `input: AgentInput`
@@ -104,8 +107,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260324_F001_compact-context-command
+
 **摘要:** /compact 指令调用 LLM 将对话历史压缩为结构化摘要
 **关键决策:**
+
 - 独立压缩任务: `tokio::spawn compact_task`，不经过 ReAct 循环
 - 消息格式化: [用户]/[助手]/[工具结果] 标签，跳过 System
 - 摘要存储: `BaseMessage::system(summary)` 替换 agent_state_messages
@@ -116,8 +121,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260323_F001_tui-render-perf
+
 **摘要:** 双线程渲染架构：独立渲染线程 + 按需重绘，消除消息多时卡顿
 **关键决策:**
+
 - 渲染线程: `tokio::spawn RenderTask::run`，持有私有消息副本
 - RenderCache: `lines: Vec<Line<'static>>` + `version: u64`
 - AppendChunk 增量: 仅重新渲染最后一条 assistant 消息
@@ -126,8 +133,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260323_F002_tui-headless-mode
+
 **摘要:** Headless 测试模式：TestBackend + 渲染线程零 sleep 同步
 **关键决策:**
+
 - App::new_headless(): `TestBackend::new(w, h)` + `spawn_render_thread`
 - push_agent_event() + process_pending_events(): 测试注入事件，复用 handle_agent_event
 - wait_for_render(): `notify.notified().await`，零轮询
@@ -137,8 +146,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260323_F003_tui-status-panel
+
 **摘要:** TODO 状态固定面板、工具调用颜色分层、路径参数缩短
 **关键决策:**
+
 - TODO 面板: 独立 Layout slot，`todo_height` 动态计算，颜色分类（黄/灰/白）
 - 工具颜色分层: 工具名（颜色+BOLD）+ 参数（DarkGray）
 - 路径缩短: `strip_cwd(prefix)`，bash 和 search_files_rg 除外
@@ -147,8 +158,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260323_F001_model-alias-provider-mapping
+
 **摘要:** Opus/Sonnet/Haiku 三级别名映射，支持 /model <alias> 快捷切换
 **关键决策:**
+
 - 数据结构: `ModelAliasConfig { provider_id, model_id }` + `ModelAliasMap { opus, sonnet, haiku }`
 - 向后兼容迁移: 检测旧 provider_id 字段，自动填充 opus 别名
 - 空 model_id fallback: anthropic→claude-sonnet-4-6, 其他→gpt-4o
@@ -157,8 +170,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260323_F005_tui-bug-fixes
+
 **摘要:** 修复弹窗滚动/粘贴换行/loading 输入锁死三个 TUI bug
 **关键决策:**
+
 - 弹窗滚动: 所有面板 popup_height ≤ area.height * 4/5，`scroll_offset` + `ensure_cursor_visible`
 - Bracketed Paste: EnableBracketedPaste + Event::Paste → textarea.insert_str
 - Loading 缓冲: pending_messages + "已缓存 N 条" 标题，Done/Error 时合并发送
@@ -166,8 +181,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260322_F002_data-pipeline-unification
+
 **摘要:** 实时流式与历史恢复统一工具调用参数显示，含 tool_call_id 匹配
 **关键决策:**
+
 - ToolStart 扩展: 增加 `tool_call_id: String` 字段
 - prev_ai_tool_calls: 存储 `(id, name, input)` 三元组
 - 统一格式化: `format_tool_call_display()` 被实时和历史共用
@@ -176,8 +193,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### 20260322_F001_message-render-refactor
+
 **摘要:** MessageViewModel 中间层重构，tui-markdown 渲染，工具折叠
 **关键决策:**
+
 - ViewModel 变体: UserBubble / AssistantBubble / ToolBlock / SystemNote / TodoStatus
 - Markdown 渲染: `tui-markdown` crate，`ensure_rendered()` dirty flag 降频
 - 工具折叠: collapsed 状态，Tab 键切换，默认折叠
@@ -186,8 +205,10 @@ submit_message(text)
 **归档日期:** 2026-03-24
 
 ### feature_20260324_F001_ratatui-markdown-renderer
+
 **摘要:** pulldown-cmark 替代 tui-markdown，自制 ratatui Markdown 渲染器
 **关键决策:**
+
 - pulldown-cmark 0.12（CommonMark 规范，事件驱动）替代 tui-markdown 0.3
 - RenderState 累积行内 Span，事件驱动构建 Text<'static>
 - dirty flag 全量重解析（10KB 约 30μs，帧预算 16.7ms 内可接受）
@@ -196,8 +217,10 @@ submit_message(text)
 **归档日期:** 2026-03-27
 
 ### feature_20260325_F002_large-file-refactor
+
 **摘要:** app/mod.rs 和 main_ui.rs 大文件拆分为多子文件
 **关键决策:**
+
 - Rust 同模块多文件 impl 块，app/ 拆分为 8 个子文件（hitl_prompt/ask_user_prompt/agent_ops 等）
 - ui/ 拆分为 popups/（hitl/ask_user/hints）和 panels/（model/thread_browser/agent）子目录
 - 纯机械搬移，禁止顺手重构，pub use 重导出保持外部路径不变
@@ -206,8 +229,10 @@ submit_message(text)
 **归档日期:** 2026-03-27
 
 ### feature_20260326_F001_subagent-message-hierarchy
+
 **摘要:** SubAgent 执行消息分层为可折叠块
 **关键决策:**
+
 - 纯 TUI 层感知（方案 A）：利用 launch_agent ToolStart/End 事件作为边界
 - SubAgentGroup ViewModel：滑动窗口最多 4 条，total_steps 单独累计
 - RenderEvent::UpdateLastMessage 原地更新，不触发全量重建
@@ -216,18 +241,22 @@ submit_message(text)
 **归档日期:** 2026-03-27
 
 ### feature_20260326_F004_remote-control-panel
+
 **摘要:** /relay 命令面板：TUI 内配置并持久化远程控制参数
 **关键决策:**
+
 - RelayPanel View/Edit 两模式（参考 ModelPanel 设计）
 - RemoteControlConfig 结构化替代 extra 字段（向后兼容 extra.relay_*）
 - --remote-control 无参数时从配置读取；无 --remote-control 参数则不自动连接
-- Token 脱敏显示（****last4****），存储在 ~/.zen-code/settings.json
+- Token 脱敏显示（****last4****），存储在 ~/.peri/settings.json
 **归档:** [链接](../../archive/feature_20260326_F004_remote-control-panel/)
 **归档日期:** 2026-03-27
 
 ### feature_20260328_F001_skill-preload-on-send
+
 **摘要:** TUI 发送含 #skill-name 消息时自动全文预加载对应 skill
 **关键决策:**
+
 - AgentRunConfig 新增 preload_skills: Vec<String>
 - submit_message 用正则 `#([a-zA-Z0-9_-]+)` 解析 skill 名列表
 - run_universal_agent 有 preload_skills 时插入 SkillPreloadMiddleware（紧随 SkillsMiddleware 之后）
@@ -237,8 +266,10 @@ submit_message(text)
 **归档日期:** 2026-03-28
 
 ### feature_20260328_F003_test-coverage-improvement
+
 **摘要:** 四高风险区域补充 55+ 单元测试提升覆盖率
 **关键决策:**
+
 - 文件系统工具测试: tempfile TempDir 隔离，6 个工具各 4-5 个测试（正常/边界/错误）
 - Relay Server 测试: auth.rs 5 个 token 验证；client/mod.rs 7 个历史缓存（new_for_testing 绕过 WS）
 - AskUserTool 测试: MockBroker mock broker，10 个测试覆盖参数解析和返回格式
@@ -248,8 +279,10 @@ submit_message(text)
 **归档日期:** 2026-03-29
 
 ### feature_20260328_F004_settings-env-injection
+
 **摘要:** settings.json env 字段替代 .env 注入环境变量
 **关键决策:**
+
 - AppConfig.env: Option<HashMap<String, String>>，serde default + skip_serializing_if
 - inject_env_from_settings(): main() 最先调用，std::env::var(key).is_err() 判断不存在再 set_var
 - 优先级: 进程环境变量 > settings.json env 字段
@@ -259,16 +292,20 @@ submit_message(text)
 **归档日期:** 2026-03-29
 
 ### feature_20260326_F008_statusbar-msgcount-relay-flag
+
 **摘要:** 状态栏显示消息计数，禁止 relay 隐式自动连接
 **关键决策:**
+
 - 消息数从 app.view_messages.len() 直接读取，无需新增事件或字段
 - 无 --remote-control 参数时 try_connect_relay else 分支直接 return，不读配置
 **归档:** [链接](../../archive/feature_20260326_F008_statusbar-msgcount-relay-flag/)
 **归档日期:** 2026-03-27
 
 ### feature_20260408_F001_askuser-dialog-height
+
 **摘要:** AskUser 弹窗高度计算修复，滚动可见高度动态化
 **关键决策:**
+
 - wrapped_line_count 辅助函数：根据弹窗内宽度和 unicode-width 计算文本实际换行行数
 - active_panel_height 重写：question/options/description 均使用 wrapped_line_count 估算
 - visible_height 字段：AskUserBatchPrompt 新增字段，渲染函数每帧回写 content_area.height
@@ -277,8 +314,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260331_F001_history-workspace-tag
+
 **摘要:** /history 面板按 cwd 过滤只显示当前工作区对话
 **关键决策:**
+
 - open_thread_browser() 中 threads.into_iter().filter(|t| t.cwd == cwd).collect() 过滤
 - ThreadBrowser 面板标题包含 app.cwd 路径
 - ThreadMeta 已有 cwd 字段，无需数据库变更
@@ -286,8 +325,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260330_F005_tui-setup-wizard
+
 **摘要:** 首次启动三步引导（Provider → API Key → Model Alias）
 **关键决策:**
+
 - 配置完整性检测：启动时检查 provider/model/api_key，任一缺失触发向导
 - 三步向导：Provider 选择（Anthropic/OpenAI Compatible）→ API Key 输入 → Model Alias 配置
 - save_setup() 原子写回：先写临时文件再 rename 到 settings.json
@@ -296,8 +337,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260330_F002_tui-color-refresh
+
 **摘要:** 配色系统 v1.1 降噪，橙色聚焦交互，工具名三级分层
 **关键决策:**
+
 - 橙色收缩：仅保留命令输入框边框和高亮，其他橙色元素降级为 MUTED/WARNING
 - 工具名颜色分层：bash=ACCENT（橙色），write/edit/folder=WARNING（黄色），read/glob/search=MUTED（暗灰）
 - 配置面板边框统一为 MUTED，HITL/AskUser 弹窗使用 WARNING
@@ -306,8 +349,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260330_F001_sticky-human-message-header
+
 **摘要:** 聊天区顶部固定最后一条 Human 消息摘要
 **关键决策:**
+
 - 渲染位置：固定在聊天区最顶部，不随消息列表滚动
 - 显示规则：1-3 行截断（Str::from(msg).lines().take(3)），空消息/无人类消息时不显示
 - 生命周期：发送新消息后更新，/clear 后消失，打开历史 Thread 自动恢复
@@ -316,8 +361,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260329_F004_app-refactor
+
 **摘要:** App 结构体拆分为 AppCore/AgentComm/RelayState/LangfuseState
 **关键决策:**
+
 - 四子结构体：AppCore（UI 状态）、AgentComm（agent channel）、RelayState（relay 客户端）、LangfuseState（追踪配置）
 - 共 37 字段拆分，App 持有所有子结构体
 - 对外 API 通过 impl App 上的转发方法保持不变，调用方零改动
@@ -326,8 +373,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260329_F003_compact-thread-migration
+
 **摘要:** /compact 执行后创建新 Thread 保留旧历史
 **关键决策:**
+
 - 新建 Thread：compact 完成后 open_new_thread()，旧 Thread 保留在 SQLite 中
 - 新 Thread 开头：插入摘要 System 消息，标记"此对话从历史压缩而来"
 - Relay 同步：CompactDone 事件通知 Web 前端切换到新 Thread
@@ -336,8 +385,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260329_F003_ui-display-fixes
+
 **摘要:** 修复空消息欢迎页、长文本截断、子 Agent 空状态显示
 **关键决策:**
+
 - 空消息时不再显示空白聊天区，改为显示欢迎提示或品牌内容
 - 长文本消息截断策略优化，避免单条消息占据整个可见区域
 - 子 Agent 执行中无输出时显示"正在执行..."占位，而非空白
@@ -345,8 +396,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260329_F001_tui-welcome-card
+
 **摘要:** 空消息时显示品牌 ASCII Art Logo + 功能亮点
 **关键决策:**
+
 - 渲染条件：view_messages.is_empty() 时显示，发送消息后自动消失
 - 内容：ASCII Art Logo + 功能亮点列表 + 命令提示（/help /model /history 等）
 - 窄屏降级：宽度不足时隐藏 ASCII Art，仅显示文字标题
@@ -355,8 +408,10 @@ submit_message(text)
 **归档日期:** 2026-04-27
 
 ### feature_20260501_F001_color-system-refactor
+
 **摘要:** TUI 配色对齐 Claude Code Dark 主题，清理 28 处硬编码颜色
 **关键决策:**
+
 - 12 个主题常量 RGB 值从暖棕调更新为 Claude Code Dark 主题值
 - ACCENT #D77757、TEXT #FFFFFF、MUTED #999999、ERROR #FF6B80、WARNING #FFC107
 - 清理 17 个文件中 28 处硬编码 Color::White/DarkGray 等，统一引用 theme::*
@@ -365,8 +420,10 @@ submit_message(text)
 **归档日期:** 2026-05-04
 
 ### feature_20260503_F001_cc-commands-alignment
+
 **摘要:** 新增 /config /cost /context /memory 四个命令 + Command alias 机制
 **关键决策:**
+
 - 4 个新命令：/config(表单面板)、/cost(费用面板)、/context(上下文面板)、/memory(编辑 CLAUDE.md)
 - Command trait 扩展 alias 机制，现有命令补充别名（/clear→/reset、/new）
 - /config 表单面板：autocompact/语言/system prompt 覆盖
@@ -375,8 +432,10 @@ submit_message(text)
 **归档日期:** 2026-05-04
 
 ### feature_20260502_F002_mcp-management
+
 **摘要:** MCP 连接池后台初始化 + /mcp 运行时管理面板
 **关键决策:**
+
 - spawn_mcp_init() 后台 task，不阻塞 TUI
 - /mcp 面板三视图（Browse/Tools/Resources），支持重连和持久删除
 - submit_message() 异步等待 MCP 就绪（30s）
@@ -386,6 +445,7 @@ submit_message(text)
 ---
 
 ## 相关 Feature
+
 - → [agent.md#20260322_F001_agent-storage-refactor](./agent.md#20260322_F001_agent-storage-refactor) — SQLite 持久化，TUI 消息渲染依赖此存储
 - → [langfuse.md#feature_20260324_F001_langfuse-tui-monitoring](./langfuse.md#feature_20260324_F001_langfuse-tui-monitoring) — Langfuse 追踪集成在 TUI 的 app/agent.rs
 - → [agent.md#feature_20260328_F001_ask-user-question-align](./agent.md#feature_20260328_F001_ask-user-question-align) — AskUser 弹窗展示更新（header + description），TUI 弹窗同步更新

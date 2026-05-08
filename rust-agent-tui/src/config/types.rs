@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-/// 顶层包装（与 ~/.zen-code/settings.json 的 { "config": {...} } 对应）
+/// 顶层包装（与 ~/.peri/settings.json 的 { "config": {...} } 对应）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ZenConfig {
+pub struct PeriConfig {
     #[serde(default)]
     pub config: AppConfig,
 }

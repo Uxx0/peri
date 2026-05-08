@@ -8,7 +8,7 @@ use thiserror::Error;
 pub enum ConfigSource {
     /// 项目级配置（{cwd}/.mcp.json）
     Project(PathBuf),
-    /// 全局配置（~/.zen-code/settings.json）
+    /// 全局配置（~/.peri/settings.json）
     Global(PathBuf),
     /// 插件配置
     Plugin,
@@ -283,10 +283,10 @@ pub(crate) fn load_merged_config_full(
 ) -> (McpConfigFile, HashMap<String, String>) {
     let mut plugin_sources: HashMap<String, String> = HashMap::new();
 
-    // 1. 加载全局配置（~/.zen-code/settings.json）
+    // 1. 加载全局配置（~/.peri/settings.json）
     let global_path = dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json");
     let mut global = load_global_config(&global_path).unwrap_or_else(|e| {
         tracing::warn!(
@@ -432,7 +432,7 @@ fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), McpCo
 pub fn remove_server_from_config(cwd: &Path, server_name: &str) -> Result<(), McpConfigError> {
     let global_path = dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json");
     remove_server_from_config_with_paths(cwd, &global_path, server_name)
 }
@@ -524,7 +524,7 @@ pub fn set_server_disabled(
 ) -> Result<(), McpConfigError> {
     let global_path = dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json");
     set_server_disabled_with_paths(cwd, &global_path, server_name, disabled)
 }
@@ -857,7 +857,7 @@ mod tests {
     #[test]
     fn test_remove_server_from_global_config_nested() {
         let dir = tempfile::tempdir().unwrap();
-        let settings_dir = dir.path().join(".zen-code");
+        let settings_dir = dir.path().join(".peri");
         std::fs::create_dir_all(&settings_dir).unwrap();
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(
@@ -882,7 +882,7 @@ mod tests {
     #[test]
     fn test_remove_server_from_global_config_top_level() {
         let dir = tempfile::tempdir().unwrap();
-        let settings_dir = dir.path().join(".zen-code");
+        let settings_dir = dir.path().join(".peri");
         std::fs::create_dir_all(&settings_dir).unwrap();
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(
@@ -905,7 +905,7 @@ mod tests {
     fn test_remove_server_nonexistent_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
-        let settings_dir = dir.path().join(".zen-code");
+        let settings_dir = dir.path().join(".peri");
         std::fs::create_dir_all(&settings_dir).unwrap();
         std::fs::write(settings_dir.join("settings.json"), r#"{}"#).unwrap();
 

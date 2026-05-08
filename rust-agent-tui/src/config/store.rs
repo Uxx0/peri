@@ -1,37 +1,37 @@
-use super::types::ZenConfig;
+use super::types::PeriConfig;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-/// 配置文件路径：~/.zen-code/settings.json
+/// 配置文件路径：~/.peri/settings.json
 pub fn config_path() -> PathBuf {
     dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json")
 }
 
 /// 加载配置，文件不存在时返回默认空配置
-pub fn load() -> Result<ZenConfig> {
+pub fn load() -> Result<PeriConfig> {
     load_from(&config_path())
 }
 
 /// 从指定路径加载配置
-pub fn load_from(path: &Path) -> Result<ZenConfig> {
+pub fn load_from(path: &Path) -> Result<PeriConfig> {
     if !path.exists() {
-        return Ok(ZenConfig::default());
+        return Ok(PeriConfig::default());
     }
     let content = std::fs::read_to_string(path)?;
-    let cfg: ZenConfig = serde_json::from_str(&content)?;
+    let cfg: PeriConfig = serde_json::from_str(&content)?;
     Ok(cfg)
 }
 
 /// 原子写回配置文件（先写临时文件，再 rename，避免写入中断导致文件损坏）
-pub fn save(cfg: &ZenConfig) -> Result<()> {
+pub fn save(cfg: &PeriConfig) -> Result<()> {
     save_to(cfg, &config_path())
 }
 
 /// 将配置写入指定路径
-pub fn save_to(cfg: &ZenConfig, path: &Path) -> Result<()> {
+pub fn save_to(cfg: &PeriConfig, path: &Path) -> Result<()> {
     // 确保目录存在
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -11,9 +11,11 @@
 ### Task 1: 数据结构变更
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/config/types.rs`
 
 **执行步骤:**
+
 - [x] 新增 `ModelAliasConfig` 结构（`provider_id: String`, `model_id: String`），派生 `Serialize, Deserialize, Debug, Clone, Default`
 - [x] 新增 `ModelAliasMap` 结构（`opus / sonnet / haiku: ModelAliasConfig`），派生同上
   - serde 字段名与 JSON 键一致（小写）
@@ -27,6 +29,7 @@
   - 受影响测试：`test_app_config_thinking_optional`, `test_app_config_thinking_roundtrip`, `test_model_panel_apply_edit_saves_thinking`（后两个 Task 会进一步修复）
 
 **检查步骤:**
+
 - [x] 编译通过，无 unused field warning
   - `cargo build -p rust-agent-tui 2>&1 | grep -E "^error"`
   - 预期: 无输出（零编译错误）
@@ -39,9 +42,11 @@
 ### Task 2: 向后兼容迁移
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/config/store.rs`
 
 **执行步骤:**
+
 - [x] 在 `load()` 函数中，反序列化后检测旧格式：
   - 条件：`cfg.config.model_aliases.opus.provider_id` 为空，但 `cfg.config.provider_id`（旧字段，保留为临时字段）不为空
   - 迁移逻辑：将旧 `provider_id + model_id` 填入 `opus` 别名；`sonnet / haiku` 填入相同 `provider_id`，`model_id` 留空；`active_alias` 设为 "opus"
@@ -49,6 +54,7 @@
 - [x] 添加迁移单元测试：构造旧格式 JSON，调用迁移逻辑，断言新字段正确填充
 
 **检查步骤:**
+
 - [x] 旧格式 JSON 加载后字段迁移正确
   - `cargo test -p rust-agent-tui --lib -- migration 2>&1 | tail -20`
   - 预期: 迁移测试通过
@@ -61,10 +67,13 @@
 ### Task 3: LlmProvider 解析变更
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/provider.rs`
 
 **执行步骤:**
+
 - [x] `LlmProvider::from_config` 重写为按 `active_alias` 查 `model_aliases` 表：
+
   ```rust
   let alias = cfg.config.active_alias.as_str();  // "opus" | "sonnet" | "haiku"
   let mapping = match alias {
@@ -75,11 +84,13 @@
   };
   let provider = cfg.config.providers.iter().find(|p| p.id == mapping.provider_id)?;
   ```
+
 - [x] `model_id` 空值处理：若 `mapping.model_id` 为空，按 `provider.provider_type` 回退默认 model（anthropic → "claude-sonnet-4-6"，其他 → "gpt-4o"）
 - [x] 更新 `display_name()` / `model_name()` 不变，`from_env()` 不变
-- [x] 添加单元测试：构造含 `model_aliases` 的 `ZenConfig`，验证 `from_config` 返回正确 `LlmProvider`
+- [x] 添加单元测试：构造含 `model_aliases` 的 `PeriConfig`，验证 `from_config` 返回正确 `LlmProvider`
 
 **检查步骤:**
+
 - [x] from_config 正确解析 opus 别名
   - `cargo test -p rust-agent-tui --lib -- provider 2>&1 | tail -20`
   - 预期: 所有 provider 测试通过
@@ -92,9 +103,11 @@
 ### Task 4: ModelPanel 重构
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/model_panel.rs`
 
 **执行步骤:**
+
 - [x] 新增 `AliasTab` 枚举（`Opus / Sonnet / Haiku`），实现 `next() / prev() / label() / to_key()`
   - `to_key()` 返回 "opus" / "sonnet" / "haiku" 字符串（写入 `active_alias` 用）
 - [x] `ModelPanel` 结构增加字段：
@@ -114,6 +127,7 @@
 - [x] 更新受影响的旧测试，使其通过新 API
 
 **检查步骤:**
+
 - [x] ModelPanel 所有方法编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep "^error"`
   - 预期: 无错误
@@ -126,10 +140,12 @@
 ### Task 5: TUI 渲染适配
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/ui/main_ui.rs`
 - 修改: `rust-agent-tui/src/app/mod.rs`
 
 **执行步骤:**
+
 - [x] **`main_ui.rs` 模型面板渲染重写**（`render_model_panel` 相关区域）：
   - 上半区域改为三个 Tab 横向排列，高亮当前 `active_tab`，激活 Tab 旁加 `★`
   - 下半区域根据当前 `active_tab` 显示对应别名的 Provider（循环选择行）和 Model ID（文本输入行）
@@ -151,6 +167,7 @@
 - [x] 状态栏中 `provider_name / model_name` 的赋值点同步更新，改从 `active_alias` + `model_aliases` 读取
 
 **检查步骤:**
+
 - [x] 全量编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep "^error"`
   - 预期: 无错误
@@ -166,9 +183,10 @@
 ### Task 6: 模型别名映射 Acceptance
 
 **Prerequisites:**
+
 - 启动命令: `cargo run -p rust-agent-tui`
 - 环境: `rust-agent-tui/.env` 中至少配置一个有效 API Key
-- 测试前确认: `~/.zen-code/settings.json` 备份旧配置（若存在）
+- 测试前确认: `~/.peri/settings.json` 备份旧配置（若存在）
 
 **端到端验证:**
 
@@ -198,11 +216,13 @@
 ### Task 7: 验收后优化（验收期间发现）
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/event.rs`
 - 修改: `rust-agent-tui/src/ui/main_ui.rs`
 - 修改: `rust-agent-tui/src/command/model.rs`
 
 **执行步骤:**
+
 - [x] 键盘绑定调整（修复字符输入冲突）：
   - `Tab` / `Shift+Tab` → 切换 Alias Tab（原为切换字段）
   - `↑` / `↓` → 切换编辑字段（原为无绑定）
@@ -213,5 +233,6 @@
   - 无参数或未知参数仍打开配置面板
 
 **检查步骤:**
+
 - [x] 全量测试通过
   - `cargo test -p rust-agent-tui` → 40 passed; 0 failed ✓

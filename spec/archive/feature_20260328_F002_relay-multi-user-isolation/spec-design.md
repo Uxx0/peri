@@ -53,7 +53,8 @@ POST /register?token=RELAY_TOKEN
 服务器生成 UUID v4 并直接返回，**不存储**。服务端重启不影响已有 user_id（因为不做验证，user_id 仅用作命名空间 key，任何合法 UUID 格式均可路由）。
 
 首次使用流程：
-1. TUI 检查 `~/.zen-code/settings.json` 中 `relay.user_id` 是否存在
+
+1. TUI 检查 `~/.peri/settings.json` 中 `relay.user_id` 是否存在
 2. 不存在 → 调用 `POST /register?token=RELAY_TOKEN`，拿到 UUID
 3. 写入 settings 文件，后续复用
 
@@ -116,6 +117,7 @@ http://relay-server/web/#user_id=550e8400-xxxx
 TUI 的 `/relay` 面板在成功连接后，显示包含当前 `user_id` 的完整 Web 接入 URL，用户复制后在浏览器打开即可看到自己的 agents。
 
 前端实现：
+
 1. `connection.js` 启动时解析 `window.location.hash` 提取 `user_id`
 2. 所有 WS 连接 URL 拼入 `&user_id=USER_ID`
 3. 如果 hash 中没有 `user_id`，显示提示页面（"请从 TUI 复制完整的接入 URL"）

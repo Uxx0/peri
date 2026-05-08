@@ -11,9 +11,11 @@
 ### Task 1: 定义 AgentComm 子结构体
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/agent_comm.rs`
 
 **执行步骤:**
+
 - [x] 创建 `agent_comm.rs`，定义 `AgentComm` 结构体，包含以下 10 个字段：
   - `agent_rx: Option<mpsc::Receiver<AgentEvent>>`
   - `interaction_prompt: Option<InteractionPrompt>`
@@ -29,6 +31,7 @@
 - [x] 在 `mod.rs` 中添加 `mod agent_comm;` 声明
 
 **检查步骤:**
+
 - [x] 验证 `agent_comm.rs` 编译通过（仅定义结构体，暂不迁移 App 字段）
   - `cargo build -p rust-agent-tui 2>&1 | grep agent_comm`
   - 预期: 无 agent_comm 相关错误
@@ -38,9 +41,11 @@
 ### Task 2: 定义 RelayState 子结构体
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/relay_state.rs`
 
 **执行步骤:**
+
 - [x] 创建 `relay_state.rs`，定义 `RelayState` 结构体，包含以下 4 个字段：
   - `relay_client: Option<Arc<RelayClient>>`
   - `relay_event_rx: Option<RelayEventRx>`
@@ -50,6 +55,7 @@
 - [x] 在 `mod.rs` 中添加 `mod relay_state;` 声明
 
 **检查步骤:**
+
 - [x] 验证新增文件编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep relay_state`
   - 预期: 无 relay_state 相关错误
@@ -59,9 +65,11 @@
 ### Task 3: 定义 LangfuseState 子结构体
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/langfuse_state.rs`
 
 **执行步骤:**
+
 - [x] 创建 `langfuse_state.rs`，定义 `LangfuseState` 结构体，包含以下 3 个字段：
   - `langfuse_session: Option<Arc<crate::langfuse::LangfuseSession>>`
   - `langfuse_tracer: Option<Arc<parking_lot::Mutex<crate::langfuse::LangfuseTracer>>>`
@@ -70,6 +78,7 @@
 - [x] 在 `mod.rs` 中添加 `mod langfuse_state;` 声明
 
 **检查步骤:**
+
 - [x] 验证新增文件编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep langfuse_state`
   - 预期: 无 langfuse_state 相关错误
@@ -79,9 +88,11 @@
 ### Task 4: 定义 AppCore 子结构体
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/core.rs`
 
 **执行步骤:**
+
 - [x] 创建 `core.rs`，定义 `AppCore` 结构体，包含以下 ~20 个字段：
   - `view_messages: Vec<MessageViewModel>`
   - `textarea: TextArea<'static>`
@@ -107,6 +118,7 @@
 - [x] 在 `mod.rs` 中添加 `mod core;` 声明
 
 **检查步骤:**
+
 - [x] 验证新增文件编译通过
   - `cargo build -p rust-agent-tui 2>&1 | grep "core\.rs"`
   - 预期: 无 core.rs 相关错误
@@ -116,10 +128,13 @@
 ### Task 5: 重构 App 为组合结构 + 转发方法
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/mod.rs`
 
 **执行步骤:**
+
 - [x] 将 `App` 结构体改为持有 4 个子结构体 + 不变字段的组合：
+
   ```rust
   pub struct App {
       pub core: AppCore,
@@ -130,13 +145,14 @@
       pub cwd: String,
       pub provider_name: String,
       pub model_name: String,
-      pub zen_config: Option<ZenConfig>,
+      pub peri_config: Option<PeriConfig>,
       pub thread_store: Arc<dyn ThreadStore>,
       pub current_thread_id: Option<ThreadId>,
       pub todo_items: Vec<TodoItem>,
       pub relay_panel: Option<RelayPanel>,  // UI 面板，非连接状态
   }
   ```
+
 - [x] 为 App 添加高频访问器转发方法（保持 `app.xxx` 调用方式不变）：
   - `loading()` → `self.core.loading`
   - `set_loading(v)` → 设置 `self.core.loading`，重建 textarea
@@ -153,6 +169,7 @@
 - [x] 更新 `new_headless()` 测试构造：同样改为子结构体初始化
 
 **检查步骤:**
+
 - [x] 验证 `App` 结构体顶层字段数 ≤ 12
   - `grep -c 'pub [a-z_]*:' rust-agent-tui/src/app/mod.rs | head`
   - 预期: App 顶层字段 7-12 个（4 个子结构体 + 胶水字段）
@@ -164,6 +181,7 @@
 ### Task 6: 迁移 ops 文件内部访问路径
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/agent_ops.rs`
 - 修改: `rust-agent-tui/src/app/hitl_ops.rs`
 - 修改: `rust-agent-tui/src/app/ask_user_ops.rs`
@@ -178,6 +196,7 @@
 - 修改: `rust-agent-tui/src/main.rs`
 
 **执行步骤:**
+
 - [ ] **agent_ops.rs** — 核心迁移（最复杂）：
   - `self.agent_rx` → `self.agent.agent_rx`
   - `self.interaction_prompt` → `self.agent.interaction_prompt`
@@ -206,6 +225,7 @@
 - [ ] **main.rs** — `app.langfuse_flush_handle` → `app.langfuse.langfuse_flush_handle`
 
 **检查步骤:**
+
 - [ ] 全量编译无错误
   - `cargo build -p rust-agent-tui 2>&1 | tail -5`
   - 预期: 输出包含 "Finished" 且无 error
@@ -224,6 +244,7 @@
 ### Task 7: App Refactor Acceptance
 
 **Prerequisites:**
+
 - Start command: `cargo build -p rust-agent-tui`
 - Test command: `cargo test -p rust-agent-tui`
 

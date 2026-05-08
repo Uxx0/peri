@@ -10,12 +10,12 @@ use super::cron_state::CronState;
 use super::events::AgentEvent;
 use super::oauth_prompt::OAuthPrompt;
 use super::setup_wizard::SetupWizardPanel;
-use crate::config::ZenConfig;
+use crate::config::PeriConfig;
 use crate::thread::ThreadStore;
 
 /// 全局服务/状态聚合：跨 session 共享的服务字段。
 pub struct ServiceRegistry {
-    pub zen_config: Option<ZenConfig>,
+    pub peri_config: Option<PeriConfig>,
     pub cwd: String,
     pub provider_name: String,
     pub model_name: String,

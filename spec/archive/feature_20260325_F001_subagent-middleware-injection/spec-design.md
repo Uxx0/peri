@@ -83,7 +83,7 @@ if let Some(ref builder) = self.system_builder {
 
 ## 实现要点
 
-- `SkillsMiddleware::with_global_config()` 会从 `~/.zen-code/settings.json` 加载全局 skills 目录，与父 agent 行为一致
+- `SkillsMiddleware::with_global_config()` 会从 `~/.peri/settings.json` 加载全局 skills 目录，与父 agent 行为一致
 - `mpsc::channel(8)` 的 `_rx` 变量在 let 绑定后立即离开作用域被丢弃；子 agent 若调用 `todo_write`，`TodoWriteTool` 的 `notify_tx.send(...)` 会因 channel 已关闭而返回错误，该错误不影响工具返回结果（工具本身仍正常执行写入逻辑）
 - 注册顺序严格保持：`AgentsMdMiddleware` → `SkillsMiddleware` → `TodoMiddleware` → `PrependSystemMiddleware`（最后），以确保 `before_agent` prepend 顺序正确，系统提示始终处于消息列表最前
 

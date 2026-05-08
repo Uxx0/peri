@@ -97,7 +97,7 @@ pub(crate) fn render_welcome(f: &mut Frame, app: &App, area: Rect) {
     // ── 首次使用引导（未配置 Provider 时显示）───────────────────────────
     let has_provider = app
         .services
-        .zen_config
+        .peri_config
         .as_ref()
         .map(|c| !c.config.providers.is_empty())
         .unwrap_or(false);

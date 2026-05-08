@@ -54,7 +54,7 @@ enum Commands {
 fn inject_env_from_settings() {
     let path = dirs_next::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".zen-code")
+        .join(".peri")
         .join("settings.json");
 
     if !path.exists() {
@@ -181,7 +181,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     }
 
     // 检测是否需要 Setup 向导
-    if let Some(ref cfg) = app.services.zen_config {
+    if let Some(ref cfg) = app.services.peri_config {
         if rust_agent_tui::app::setup_wizard::needs_setup(&cfg.config) {
             app.services.setup_wizard = Some(rust_agent_tui::app::SetupWizardPanel::new());
         }

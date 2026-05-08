@@ -3,6 +3,7 @@
 ## 需求背景
 
 当前 TUI Agent 通过 `.env` 文件（dotenvy）加载环境变量，存在以下问题：
+
 - `.env` 文件分散，与 `settings.json` 配置割裂
 - 已移除 dotenvy 依赖，需要替代方案
 - 希望集中管理所有配置（API Key、环境变量、远程控制等）到单一配置文件
@@ -32,7 +33,7 @@ pub struct AppConfig {
 }
 ```
 
-**配置示例（~/.zen-code/settings.json）：**
+**配置示例（~/.peri/settings.json）：**
 
 ```json
 {
@@ -66,7 +67,7 @@ fn main() -> Result<()> {
 /// 从 settings.json 读取 env 字段并注入进程环境变量
 /// 仅在进程环境变量不存在时设置（进程环境优先）
 fn inject_env_from_settings() {
-    // 1. 构建 settings.json 路径（~/.zen-code/settings.json）
+    // 1. 构建 settings.json 路径（~/.peri/settings.json）
     // 2. 读取并解析 JSON
     // 3. 提取 config.env 字段
     // 4. 遍历键值对，仅在进程环境变量不存在时设置
@@ -74,6 +75,7 @@ fn inject_env_from_settings() {
 ```
 
 **优先级规则：**
+
 - 进程环境变量 > settings.json env 字段
 - 使用 `std::env::var(key).is_err()` 判断不存在，再 `std::env::set_var(key, value)` 设置
 
@@ -98,7 +100,7 @@ fn inject_env_from_settings() {
 
 ## 约束一致性
 
-- 符合 `constraints.md` 中「配置持久化: ~/.zen-code/settings.json」的架构决策
+- 符合 `constraints.md` 中「配置持久化: ~/.peri/settings.json」的架构决策
 - 符合「API Key 安全: 只通过环境变量传递」的安全约束（settings.json 已 gitignore）
 - 无架构偏离
 

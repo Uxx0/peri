@@ -5,6 +5,7 @@
 当前 `/model` 命令同时承载了 Provider 管理（CRUD）和模型别名配置两个职责。模型名分散存储在 `model_aliases` 中（每个别名绑定 `provider_id` + `model_id`），而非 Provider 内部，导致同一 Provider 的三个模型名需要在多个别名中重复配置。此外，Provider 管理与模型选择混在同一个面板，交互复杂度高。
 
 **核心问题：**
+
 - 模型名与 Provider 分离，配置不直观
 - `/model` 面板承载职责过多（Provider CRUD + 别名映射 + Thinking）
 - 新用户首次配置需理解"别名→Provider→模型"三层映射关系
@@ -68,6 +69,7 @@ pub struct AppConfig {
 ```
 
 **移除的字段/类型：**
+
 - `AppConfig.model_aliases`（`ModelAliasMap`）
 - `AppConfig.provider_id`（旧格式兼容字段）
 - `AppConfig.model_id`（旧格式兼容字段）
@@ -83,7 +85,7 @@ active_provider_id → providers.find(|p| p.id == active_provider_id)
                    → 实际模型名（如 "claude-opus-4-7"）
 ```
 
-**配置文件示例（`~/.zen-code/settings.json`）：**
+**配置文件示例（`~/.peri/settings.json`）：**
 
 ```json
 {
@@ -122,6 +124,7 @@ active_provider_id → providers.find(|p| p.id == active_provider_id)
 ### `/login` 命令：Provider CRUD
 
 **命令注册：**
+
 - 新建 `rust-agent-tui/src/command/login.rs`
 - 注册到 `CommandRegistry`（`/login`、前缀匹配 `/l`）
 - `/help` 输出中增加 login 命令
@@ -136,6 +139,7 @@ active_provider_id → providers.find(|p| p.id == active_provider_id)
 
 2. **新建/编辑表单（Edit/New 模式）**
    - 字段顺序（Tab/↑↓ 切换）：
+
      | 字段 | 输入方式 | 说明 |
      |------|---------|------|
      | Name | 文本输入 | Provider 显示名，id 由 name 派生（小写+下划线） |
@@ -145,6 +149,7 @@ active_provider_id → providers.find(|p| p.id == active_provider_id)
      | Opus Model | 文本输入 | 默认值根据 type 自动填（如 anthropic → `claude-opus-4-7`） |
      | Sonnet Model | 文本输入 | 默认值根据 type 自动填（如 anthropic → `claude-sonnet-4-6`） |
      | Haiku Model | 文本输入 | 默认值根据 type 自动填（如 anthropic → `claude-haiku-4-5`） |
+
    - Enter 保存，Esc 取消返回列表
    - Type 切换时，三个模型名字段自动更新为对应 provider_type 的默认值（仅当字段为空或仍为旧默认值时）
 
@@ -235,6 +240,7 @@ pub enum ModelFocusArea { ProviderList, AliasTabs, Thinking }
 ```
 
 **移除的内容：**
+
 - `ModelPanelMode::AliasConfig` / `Browse` / `Edit` / `New` / `ConfirmDelete`
 - `buf_alias_provider` / `buf_alias_model` / `alias_edit_field`
 - Provider CRUD 相关方法（`enter_edit`、`enter_new`、`apply_edit`、`confirm_delete` 等）
@@ -290,7 +296,7 @@ pub enum ModelFocusArea { ProviderList, AliasTabs, Thinking }
 - **与 architecture.md 一致**：修改范围限定在 `rust-agent-tui` crate（应用层），不涉及核心框架和中间件层
 - **与 constraints.md 一致**：
   - 使用 ratatui 渲染面板（TUI 框架不变）
-  - 配置持久化走 `serde_json` 序列化到 `~/.zen-code/settings.json`（不变）
+  - 配置持久化走 `serde_json` 序列化到 `~/.peri/settings.json`（不变）
   - 新命令注册遵循 `Command` trait + `CommandRegistry` 模式（不变）
   - 事件处理通过 `Event` 枚举分发（不变）
 - **无新增架构约束**

@@ -110,8 +110,8 @@ pub enum RelayEditField {
 }
 
 impl RelayPanel {
-    /// 从 ZenConfig 加载配置
-    pub fn from_config(config: &ZenConfig) -> Self {
+    /// 从 PeriConfig 加载配置
+    pub fn from_config(config: &PeriConfig) -> Self {
         let rc = config.config.remote_control.as_ref();
         Self {
             mode: RelayPanelMode::View,
@@ -149,7 +149,7 @@ impl RelayPanel {
 4. 用户按 `e` 进入 Edit 模式
 5. 按 `Tab` 切换编辑字段（Url → Token → Name）
 6. 输入完成后按 `Enter` 保存
-7. 配置写入 `~/.zen-code/settings.json`
+7. 配置写入 `~/.peri/settings.json`
 8. 显示 "配置已保存" 状态消息
 
 #### 场景 2：使用已保存的配置启动
@@ -204,7 +204,7 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
         // CLI 参数模式
         if c.url.is_empty() {
             // --remote-control 无参数：从配置读取
-            let config = self.zen_config
+            let config = self.peri_config
                 .as_ref()
                 .and_then(|cfg| cfg.config.remote_control.as_ref())
                 .filter(|rc| rc.is_complete());
@@ -213,7 +213,7 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
                 Some(rc) => (rc.url.clone(), rc.token.clone(), rc.name.clone()),
                 None => {
                     // 回退到旧 extra 字段（向后兼容）
-                    let extra_config = self.zen_config
+                    let extra_config = self.peri_config
                         .as_ref()
                         .and_then(|cfg| cfg.config.extra.get("relay_url"))
                         .and_then(|v| v.as_str());
@@ -226,13 +226,13 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
                         return;
                     }
                     let url = extra_config.unwrap().to_string();
-                    let token = self.zen_config
+                    let token = self.peri_config
                         .as_ref()
                         .and_then(|cfg| cfg.config.extra.get("relay_token"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let name = self.zen_config
+                    let name = self.peri_config
                         .as_ref()
                         .and_then(|cfg| cfg.config.extra.get("relay_name"))
                         .and_then(|v| v.as_str())
@@ -244,12 +244,12 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
             // --remote-control <url>：使用 CLI 参数（token 可从配置 fallback）
             let token = c.token.clone().unwrap_or_else(|| {
                 // 优先从新字段读取，fallback 到 extra 字段
-                self.zen_config
+                self.peri_config
                     .as_ref()
                     .and_then(|cfg| cfg.config.remote_control.as_ref())
                     .map(|rc| rc.token.clone())
                     .unwrap_or_else(|| {
-                        self.zen_config
+                        self.peri_config
                             .as_ref()
                             .and_then(|cfg| cfg.config.extra.get("relay_token"))
                             .and_then(|v| v.as_str())
@@ -261,7 +261,7 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
         }
     } else {
         // 无 CLI 参数：从配置读取（新字段优先，fallback 到 extra）
-        let config = self.zen_config
+        let config = self.peri_config
             .as_ref()
             .and_then(|cfg| cfg.config.remote_control.as_ref())
             .filter(|rc| rc.is_complete());
@@ -270,19 +270,19 @@ pub async fn try_connect_relay(&mut self, cli: Option<&crate::RelayCli>) {
             Some(rc) => (rc.url.clone(), rc.token.clone(), rc.name.clone()),
             None => {
                 // 回退到旧 extra 字段
-                let url = self.zen_config
+                let url = self.peri_config
                     .as_ref()
                     .and_then(|cfg| cfg.config.extra.get("relay_url"))
                     .and_then(|v| v.as_str());
                 match url {
                     Some(u) => {
-                        let token = self.zen_config
+                        let token = self.peri_config
                             .as_ref()
                             .and_then(|cfg| cfg.config.extra.get("relay_token"))
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let name = self.zen_config
+                        let name = self.peri_config
                             .as_ref()
                             .and_then(|cfg| cfg.config.extra.get("relay_name"))
                             .and_then(|v| v.as_str())
@@ -426,15 +426,15 @@ pub fn render<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
 ```rust
 // 配置读取时自动解析 remote_control 字段
-pub fn load() -> Result<ZenConfig> {
+pub fn load() -> Result<PeriConfig> {
     let path = config_path()?;
     let content = fs::read_to_string(path)?;
-    let config: ZenConfig = serde_json::from_str(&content)?;
+    let config: PeriConfig = serde_json::from_str(&content)?;
     Ok(config)
 }
 
 // 配置写入时保存 remote_control 字段
-pub fn save(config: &ZenConfig) -> Result<()> {
+pub fn save(config: &PeriConfig) -> Result<()> {
     let path = config_path()?;
     let content = serde_json::to_string_pretty(config)?;
     fs::write(path, content)?;
@@ -498,7 +498,7 @@ pub fn save(config: &ZenConfig) -> Result<()> {
   - 测试：单元测试在 `src/config/types.rs` 内 `#[cfg(test)]`
 - ✅ **安全约束**：
   - Token 在 `settings.json` 中明文存储（与现有 API Key 处理方式一致）
-  - `.zen-code/` 目录已通过 OS 权限保护
+  - `.peri/` 目录已通过 OS 权限保护
 
 ### 与 spec/global/architecture.md 一致性
 
@@ -537,7 +537,7 @@ pub fn save(config: &ZenConfig) -> Result<()> {
   - [ ] `/help` 命令列表包含 `/relay`
 
 - [ ] **配置持久化**：
-  - [ ] 保存配置到 `~/.zen-code/settings.json` 的 `remote_control` 字段
+  - [ ] 保存配置到 `~/.peri/settings.json` 的 `remote_control` 字段
   - [ ] TUI 重启后配置正确加载
   - [ ] 向后兼容：优先读取 `remote_control` 字段，fallback 到 `extra.relay_*`
 

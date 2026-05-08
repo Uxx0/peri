@@ -198,7 +198,7 @@ fn estimate_cost(app: &App) -> f64 {
         .session_token_tracker;
     let alias = app
         .services
-        .zen_config
+        .peri_config
         .as_ref()
         .map(|c| c.config.active_alias.as_str())
         .unwrap_or("sonnet");

@@ -134,7 +134,7 @@ pub struct PanelContext<'a> {
     pub sessions: &'a mut Vec<ChatSession>,
     pub active: usize,
     pub cwd: String,
-    pub zen_config: &'a mut Option<ZenConfig>,
+    pub peri_config: &'a mut Option<PeriConfig>,
     pub config_path_override: Option<PathBuf>,
     pub provider_name: &'a mut String,
     pub model_name: &'a mut String,
@@ -154,19 +154,20 @@ pub struct PanelContext<'a> {
 let App {
     ref mut sessions,
     ref mut global_panels,
-    ref mut zen_config,
+    ref mut peri_config,
     ref mut provider_name,
     // ...
     ..
 } = *app;
 
-let mut ctx = PanelContext { sessions, zen_config, provider_name, /* ... */ };
+let mut ctx = PanelContext { sessions, peri_config, provider_name, /* ... */ };
 let result = global_panels.dispatch_key(input, &mut ctx);
 ```
 
 ### 面板作用域
 
 两个 `PanelManager` 实例：
+
 - `AppCore::session_panels` — Session-scoped 面板，随 session 切换
 - `App::global_panels` — Global-scoped 面板，跨 session 保持
 
@@ -175,6 +176,7 @@ let result = global_panels.dispatch_key(input, &mut ctx);
 ### 特殊面板
 
 Setup Wizard、OAuth Prompt、Interaction Prompts 不纳入 PanelManager：
+
 - 它们有特殊生命周期（全屏覆盖、来自 agent/MCP 触发）
 - 在 `next_event` 中优先级高于 PanelManager
 

@@ -5,6 +5,7 @@
 MCP（Model Context Protocol）领域负责 Perihelion 与外部 MCP 服务器的集成能力。作为 MCP Client，支持 stdio 和 Streamable HTTP 两种传输协议，将外部服务器的工具和资源动态注入到 ReAct 循环中。
 
 核心职责：
+
 - MCP 服务器连接池管理（McpClientPool）
 - 工具桥接（mcp__{server}__{tool} 命名）
 - 资源读取（mcp_read_resource 工具）
@@ -50,7 +51,7 @@ MCP HTTP 请求 → 401 + WWW-Authenticate
     → TUI 展示授权 URL + 打开浏览器
     → 本地回调服务器 / 手动粘贴 code
     → token_exchange() → access_token + refresh_token
-    → 持久化到 ~/.zen-code/oauth_tokens.json（0600）
+    → 持久化到 ~/.peri/oauth_tokens.json（0600）
 ```
 
 ## 技术方案总结
@@ -64,17 +65,19 @@ MCP HTTP 请求 → 401 + WWW-Authenticate
 | 配置合并 | 全局 settings.json + 项目 .mcp.json，同名覆盖 |
 | 环境变量 | `${VAR}` 占位符自动展开 |
 | OAuth | rmcp auth feature + AuthClient，PKCE，Token 刷新 |
-| Token 持久化 | ~/.zen-code/oauth_tokens.json（0600 权限） |
+| Token 持久化 | ~/.peri/oauth_tokens.json（0600 权限） |
 | 运行时管理 | /mcp 面板：状态查看、重连、删除、工具/资源详情 |
 | 后台初始化 | spawn_mcp_init()，不阻塞 TUI |
 
 ## Feature 附录
 
 ### feature_20260502_F001_mcp-middleware
+
 **摘要:** MCP Client 中间件实现（stdio/HTTP 传输、工具桥接、双层配置合并）
 **关键决策:**
+
 - McpMiddleware 实现 Middleware trait，collect_tools 注入 MCP 工具
-- mcp__{server}__{tool} 命名格式，HITL 对 mcp__ 前缀默认需审批
+- mcp__{server}**{tool} 命名格式，HITL 对 mcp** 前缀默认需审批
 - 双层配置：全局 settings.json + 项目 .mcp.json，同名覆盖
 - McpClientPool 连接池：惰性初始化，单服务器失败不影响其他
 - mcp_read_resource 工具暴露 MCP 资源
@@ -83,8 +86,10 @@ MCP HTTP 请求 → 401 + WWW-Authenticate
 **归档日期:** 2026-05-04
 
 ### feature_20260502_F002_mcp-management
+
 **摘要:** MCP 连接池后台初始化 + /mcp 运行时管理面板
 **关键决策:**
+
 - spawn_mcp_init() 后台 task，不阻塞 TUI 渲染和用户输入
 - submit_message() 时异步等待 MCP 就绪（30s）
 - /mcp 面板：服务器状态、工具/资源详情、重连、持久删除
@@ -93,12 +98,14 @@ MCP HTTP 请求 → 401 + WWW-Authenticate
 **归档日期:** 2026-05-04
 
 ### feature_20260503_F001_mcp-oauth-auth
+
 **摘要:** MCP HTTP 传输层集成 OAuth 2.0（PKCE + Token 持久化 + 混合回调）
 **关键决策:**
+
 - rmcp auth feature 启用，AuthClient 集成到 HTTP 传输层
 - Authorization Code + PKCE 完整 OAuth 流程
 - 401 + WWW-Authenticate 自动触发 OAuth 授权
-- Token 持久化 ~/.zen-code/oauth_tokens.json（0600）
+- Token 持久化 ~/.peri/oauth_tokens.json（0600）
 - 混合回调：本地 HTTP 回调服务器 → 回退 TUI 手动粘贴
 - OAuthFlowManager + OAuthCallbackServer + OAuthConfig
 - 已知 TODO：scope 升级处理、启动时文件权限检查
@@ -108,5 +115,6 @@ MCP HTTP 请求 → 401 + WWW-Authenticate
 ---
 
 ## 相关 Feature
+
 - → [agent.md](./agent.md) — MCP 工具通过 BaseTool trait 注册到 ReAct 循环
 - → [tui.md](./tui.md) — /mcp 面板 UI、OAuth 授权引导界面

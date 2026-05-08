@@ -9,7 +9,7 @@ use rust_create_agent::thread::{ThreadId, ThreadMeta, ThreadStore};
 use tokio_util::sync::CancellationToken;
 
 use crate::app::agent::LlmProvider;
-use crate::config::{ThinkingConfig, ZenConfig};
+use crate::config::{PeriConfig, ThinkingConfig};
 
 pub struct AcpSession {
     pub session_id: String,
@@ -30,7 +30,7 @@ struct SessionManagerInner {
     sessions: DashMap<String, AcpSession>,
     thread_store: Arc<dyn ThreadStore>,
     provider: LlmProvider,
-    zen_config: Arc<ZenConfig>,
+    peri_config: Arc<PeriConfig>,
     permission_mode: Arc<SharedPermissionMode>,
     /// Global agent overrides from CLI --agent flag (applied to all sessions)
     pub agent_overrides: Option<AgentOverrides>,
@@ -45,7 +45,7 @@ impl SessionManager {
     pub fn new(
         thread_store: Arc<dyn ThreadStore>,
         provider: LlmProvider,
-        zen_config: Arc<ZenConfig>,
+        peri_config: Arc<PeriConfig>,
         permission_mode: Arc<SharedPermissionMode>,
         agent_overrides: Option<AgentOverrides>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl SessionManager {
                 sessions: DashMap::new(),
                 thread_store,
                 provider,
-                zen_config,
+                peri_config,
                 permission_mode,
                 agent_overrides,
             }),
@@ -122,9 +122,9 @@ impl SessionManager {
             cancel_token: CancellationToken::new(),
             state_messages: Vec::new(),
             created_at: Utc::now(),
-            model_alias: self.inner.zen_config.config.active_alias.clone(),
+            model_alias: self.inner.peri_config.config.active_alias.clone(),
             permission_mode: SharedPermissionMode::new(PermissionMode::AutoMode),
-            thinking: self.inner.zen_config.config.thinking.clone(),
+            thinking: self.inner.peri_config.config.thinking.clone(),
         }
     }
 
@@ -160,8 +160,8 @@ impl SessionManager {
         &self.inner.provider
     }
 
-    pub fn zen_config(&self) -> &Arc<ZenConfig> {
-        &self.inner.zen_config
+    pub fn peri_config(&self) -> &Arc<PeriConfig> {
+        &self.inner.peri_config
     }
 
     pub fn permission_mode(&self) -> &Arc<SharedPermissionMode> {

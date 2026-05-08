@@ -20,8 +20,8 @@ pub async fn run_acp_mode(
 ) -> Result<()> {
     let _telemetry = rust_create_agent::telemetry::init_tracing("peri-acp");
 
-    let zen_config = Arc::new(config::load().unwrap_or_default());
-    let provider = resolve_provider(&zen_config, model_override.as_deref());
+    let peri_config = Arc::new(config::load().unwrap_or_default());
+    let provider = resolve_provider(&peri_config, model_override.as_deref());
 
     // Load agent overrides if agent_type is specified
     let agent_overrides = agent_type
@@ -50,7 +50,7 @@ pub async fn run_acp_mode(
     let session_mgr = SessionManager::new(
         thread_store,
         provider,
-        zen_config,
+        peri_config,
         permission_mode,
         agent_overrides,
     );
@@ -76,17 +76,17 @@ pub async fn run_acp_mode(
         .map_err(Into::into)
 }
 
-fn resolve_provider(zen_config: &config::ZenConfig, model_override: Option<&str>) -> LlmProvider {
+fn resolve_provider(peri_config: &config::PeriConfig, model_override: Option<&str>) -> LlmProvider {
     if let Some(model) = model_override {
-        LlmProvider::from_config_for_alias(zen_config, model)
+        LlmProvider::from_config_for_alias(peri_config, model)
             .or_else(LlmProvider::from_env)
             .unwrap_or_else(|| {
-                LlmProvider::from_config(zen_config)
+                LlmProvider::from_config(peri_config)
                     .or_else(LlmProvider::from_env)
                     .expect("未配置任何 LLM Provider，请运行 peri tui 完成初始设置")
             })
     } else {
-        LlmProvider::from_config(zen_config)
+        LlmProvider::from_config(peri_config)
             .or_else(LlmProvider::from_env)
             .expect("未配置任何 LLM Provider，请运行 peri tui 完成初始设置")
     }

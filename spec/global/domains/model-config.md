@@ -5,6 +5,7 @@
 模型配置领域负责 Provider 和模型的管理，包括 Provider 的 CRUD 操作、三级别模型名（opus/sonnet/haiku）内聚配置、/login 与 /model 面板的职责分离。
 
 核心职责：
+
 - ProviderConfig 自包含 ProviderModels 字段，每个 Provider 独立管理三个模型名
 - active_provider_id + active_alias 直接解析，移除 ModelAliasMap 间接映射
 - /login 面板负责 Provider CRUD（新建/编辑/删除），/model 面板仅负责选择 + Thinking 配置
@@ -36,7 +37,7 @@
 
 | 维度 | 选型 |
 |------|------|
-| 配置存储 | ~/.zen-code/settings.json，AppConfig 统一读写 |
+| 配置存储 | ~/.peri/settings.json，AppConfig 统一读写 |
 | Provider 数据结构 | ProviderConfig { id, type, baseUrl, apiKey, models: ProviderModels } |
 | 别名解析 | active_provider_id + active_alias 直接定位，无间接映射 |
 | 默认模型名 | DEFAULT_MODELS 常量表（anthropic → claude-sonnet-4-6, openai → gpt-4o） |
@@ -46,8 +47,10 @@
 ## Feature 附录
 
 ### feature_20260427_F003_model-config-refactor
+
 **摘要:** Provider 自包含三级别模型名，/login 与 /model 职责分离
 **关键决策:**
+
 - ProviderConfig 新增 ProviderModels 字段，opus/sonnet/haiku 模型名内聚到 Provider
 - 移除 ModelAliasMap 间接映射，改为 active_provider_id + active_alias 直接解析
 - /login 负责 Provider CRUD，/model 仅负责选择 + Thinking

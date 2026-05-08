@@ -81,11 +81,13 @@ MCP middleware 遵循项目现有的 Middleware Chain 模式，在 `collect_tool
 **`settings.json` 同构格式**：合并到 `mcpServers` 字段。
 
 **合并规则**：
+
 - 先加载全局 `settings.json`，再加载项目级 `.mcp.json`
 - 同名 server 以项目级覆盖全局
 - 环境变量中的 `${VAR}` 占位符在加载时展开（如 `${GITHUB_TOKEN}` → 实际值）
 
 **传输配置判断**：
+
 - 有 `command` 字段 → stdio 传输（通过 `TokioChildProcess::new(command)` 创建）
 - 有 `url` 字段 → Streamable HTTP 传输（通过 `StreamableHttpClientTransport::from_uri(url)` 创建）
 
@@ -108,6 +110,7 @@ struct McpClientHandle {
 ```
 
 **连接管理策略**：
+
 - **一次性初始化**：agent 启动时建立所有连接（在 `new()` 或显式 `initialize()` 中触发），而非每次 `before_agent` 重复连接
 - 连接超时：stdio 10s、HTTP 30s
 - 工具调用超时：单次 120s（与 Bash 工具对齐）
@@ -115,6 +118,7 @@ struct McpClientHandle {
 - 子进程异常退出：标记 `Failed`，后续调用返回错误
 
 **生命周期集成**：
+
 - McpClientPool 在 App 层创建并持久化，通过 `Arc` 共享给每次 `run_universal_agent()` 调用
 - 每次 `run_universal_agent()` 创建的 McpMiddleware 引用同一个 pool
 - App 退出时统一调用 `pool.shutdown()` 关闭所有连接和子进程
@@ -152,11 +156,13 @@ struct McpResourceTool {
 - `name()` → `mcp_read_resource`
 - `parameters()` → `{ server_name: string, uri: string }`
 - `description()` → 动态注入已连接 server 的可用 resource URI 列表，格式如：
+
   ```
   Read a resource from an MCP server. Available resources:
   - server "filesystem": file:///tmp/... (3 resources)
   - server "database": pg://localhost/mydb/schema (5 resources)
   ```
+
 - `invoke(input)` → 从 `client_pool` 获取指定 server 的 peer，调用 `peer.read_resource(ReadResourceRequestParam { uri })`
 
 ### HITL 审批集成
@@ -188,7 +194,7 @@ struct McpResourceTool {
 ```
 App 启动 / 首次 execute():
   1. McpClientPool::new(config)
-     → 读取 ~/.zen-code/settings.json 的 mcpServers
+     → 读取 ~/.peri/settings.json 的 mcpServers
      → 读取 {cwd}/.mcp.json 的 mcpServers
      → 合并（项目级覆盖全局）
      → 环境变量 ${VAR} 展开
@@ -326,7 +332,7 @@ rmcp = { version = "0.14", features = [
 ] }
 ```
 
-> `rmcp` 即官方 MCP Rust SDK 的 crates.io 包名（仓库：https://github.com/modelcontextprotocol/rust-sdk/），当前版本 0.14.0，下载量 3.17M+，Apache-2.0 许可。
+> `rmcp` 即官方 MCP Rust SDK 的 crates.io 包名（仓库：<https://github.com/modelcontextprotocol/rust-sdk/），当前版本> 0.14.0，下载量 3.17M+，Apache-2.0 许可。
 >
 > **Edition 兼容性**：rmcp 使用 Rust edition 2024，编译要求 Rust toolchain >= 1.85。本项目其他 crate 使用 edition 2021 不受影响（edition 仅影响 crate 自身语法解析，跨 crate 调用无影响），但 CI 和开发环境需确保 Rust 版本 >= 1.85。
 
@@ -359,6 +365,7 @@ rmcp = { version = "0.14", features = [
 ```
 
 内存 MCP 服务器实现：
+
 - 监听 localhost 随机端口，支持 `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read` 方法
 - 预定义工具和资源，返回可预测的结果
 - 支持模拟超时和错误场景
@@ -366,6 +373,7 @@ rmcp = { version = "0.14", features = [
 ### 与 ACP 的关系
 
 ACP（Agent Client Protocol）和 MCP（Model Context Protocol）是两个独立协议：
+
 - **ACP**：IDE/编辑器如何驱动 Agent（会话管理、权限审批、UI 更新）
 - **MCP**：Agent 如何连接外部工具/资源服务器
 

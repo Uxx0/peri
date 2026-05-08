@@ -232,6 +232,7 @@ pub struct McpServerInfo {
 **确认删除弹窗**：
 
 `Ctrl+D` 触发后进入确认模式，与 cron 面板行为一致：
+
 - 只响应 `Enter`（确认删除）和 `Esc`（取消）
 - 其他按键均视为取消
 
@@ -280,7 +281,7 @@ pub struct McpServerInfo {
 /// 优先从项目级 .mcp.json 删除，若不存在则从全局 settings.json 删除
 pub fn remove_server_from_config(cwd: &Path, server_name: &str) -> Result<(), McpConfigError> {
     // 1. 尝试从 {cwd}/.mcp.json 删除
-    // 2. 若 .mcp.json 中无该 server → 尝试从 ~/.zen-code/settings.json 的 mcpServers 删除
+    // 2. 若 .mcp.json 中无该 server → 尝试从 ~/.peri/settings.json 的 mcpServers 删除
     // 3. 写回修改后的 JSON（保持格式化）
 }
 ```

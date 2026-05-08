@@ -21,6 +21,7 @@
 确认第一阶段（spec-plan-1.md）全部完成，构建和测试基线正常。
 
 **执行步骤:**
+
 - [x] 验证第一阶段产出
   - `ls rust-agent-tui/src/app/service_registry.rs rust-agent-tui/src/app/session_manager.rs rust-agent-tui/src/app/ui_state.rs rust-agent-tui/src/app/message_state.rs`
   - 预期: 4 个文件均存在
@@ -29,6 +30,7 @@
   - 预期: 全部测试通过
 
 **检查步骤:**
+
 - [x] 第一阶段文件完整
   - 上面的 ls 命令返回 0
 - [x] 测试通过
@@ -45,6 +47,7 @@
 [上下游影响] — 依赖 Task 1-4 全部完成（UiState/MessageState 已从 AppCore 提取）。本 Task 的输出被 Task 6（消除 AppCore）直接依赖
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/command_system.rs`, `rust-agent-tui/src/app/session_metadata.rs`
 - 修改: `rust-agent-tui/src/app/core.rs`, `rust-agent-tui/src/app/chat_session.rs`, `rust-agent-tui/src/app/mod.rs`, `rust-agent-tui/src/event.rs`, `rust-agent-tui/src/app/agent_ops.rs`, `rust-agent-tui/src/app/hint_ops.rs`, `rust-agent-tui/src/app/thread_ops.rs`, `rust-agent-tui/src/app/panel_ops.rs`, `rust-agent-tui/src/command/help.rs`, `rust-agent-tui/src/command/agents.rs`, `rust-agent-tui/src/ui/main_ui.rs`, `rust-agent-tui/src/ui/main_ui/popups/hints.rs`, `rust-agent-tui/src/ui/main_ui/sticky_header.rs`, `rust-agent-tui/src/ui/main_ui/status_bar.rs`, `rust-agent-tui/src/ui/headless.rs`
 
@@ -53,6 +56,7 @@
 - [x] 创建 `rust-agent-tui/src/app/command_system.rs`，定义 CommandSystem 结构体
   - 位置: 新建 `rust-agent-tui/src/app/command_system.rs`
   - 定义 3 个 pub 字段:
+
     ```rust
     use rust_agent_middlewares::prelude::SkillMetadata;
     use crate::command::CommandRegistry;
@@ -74,11 +78,13 @@
         }
     }
     ```
+
   - 原因: 将命令注册表、帮助列表、Skills 元数据聚合为独立结构体，消除 event.rs 中的 `std::mem::take` workaround
 
 - [x] 创建 `rust-agent-tui/src/app/session_metadata.rs`，定义 SessionMetadata 结构体
   - 位置: 新建 `rust-agent-tui/src/app/session_metadata.rs`
   - 定义 3 个 pub 字段:
+
     ```rust
     use super::hitl_prompt::PendingAttachment;
 
@@ -98,26 +104,32 @@
         }
     }
     ```
+
   - 原因: 将低频访问的会话元数据聚合为独立结构体
 
 - [x] 在 `app/mod.rs` 中注册两个新模块
   - 位置: `rust-agent-tui/src/app/mod.rs` 模块声明区（~L18-36），追加:
+
     ```rust
     mod command_system;
     mod session_metadata;
     pub use command_system::CommandSystem;
     pub use session_metadata::SessionMetadata;
     ```
+
   - 原因: 新模块需作为 app 子模块可见
 
 - [x] 在 ChatSession 中新增 `commands: CommandSystem` 和 `metadata: SessionMetadata` 字段（双写阶段）
   - 位置: `rust-agent-tui/src/app/chat_session.rs` ChatSession 结构体（~L11-19）
   - 在 `pub core: AppCore,` 之前添加:
+
     ```rust
     pub commands: CommandSystem,
     pub metadata: SessionMetadata,
     ```
+
   - 位置: `ChatSession::new()` 方法（~L23-44），将 `command_registry` 和 `skills` 参数改为先构建 CommandSystem，再传给 AppCore:
+
     ```rust
     let commands = CommandSystem::new(command_registry, skills.clone());
     Self {
@@ -127,30 +139,37 @@
         // ... 其余不变
     }
     ```
+
   - 注意: `CommandRegistry` 必须实现 `Clone`（或改为 `Arc<CommandRegistry>`）。检查 `CommandRegistry` 是否已实现 Clone，若未实现则在 `CommandSystem` 中持有 `Arc<CommandRegistry>` 并在 AppCore 中持有同一 Arc 的 clone
   - 原因: 双写过渡——新旧路径共存，确保编译不中断
 
 - [x] 在 `panel_ops.rs` 的 `new_headless()` 中初始化 `commands` 和 `metadata` 字段
   - 位置: `rust-agent-tui/src/app/panel_ops.rs` ChatSession 构造处（~L1076）
   - 在 `core,` 之前添加:
+
     ```rust
     commands: super::CommandSystem::new(/* 同 headless 中已有的 command_registry */, skills.clone()),
     metadata: super::SessionMetadata::new(),
     ```
+
   - 原因: headless 测试工厂必须同步创建新字段
 
 - [x] 迁移 `event.rs` 中 CommandSystem 字段访问并消除 `std::mem::take` workaround
   - 位置: `rust-agent-tui/src/event.rs` ~L594-621
   - 将:
+
     ```rust
     let registry = std::mem::take(&mut app.sessions[app.active].core.command_registry);
     let known = registry.dispatch(app, &text);
     app.sessions[app.active].core.command_registry = registry;
     ```
+
   - 替换为（通过字段投影拆分同时借用 commands 和 app 其余字段）:
+
     ```rust
     let known = app.session_mgr.current_mut().commands.command_registry.dispatch(app, &text);
     ```
+
   - 位置: `event.rs` ~L607-611 `.core.skills.iter().find(...)` 替换为 `.commands.skills.iter().find(...)`
   - 位置: `event.rs` ~L618-621 `.core.command_registry.match_prefix(...)` 替换为 `.commands.command_registry.match_prefix(...)`
   - 原因: 消除核心 workaround——`CommandSystem` 提取后 `commands` 和 `app` 是不同路径，Rust 借用检查器可同时持有
@@ -231,6 +250,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 AppCore 不再包含 CommandSystem 字段
   - `grep -E "pub (command_registry|command_help_list|skills)" rust-agent-tui/src/app/core.rs`
   - 预期: 0 行输出
@@ -269,6 +289,7 @@
 [上下游影响] — 依赖 Task 5 完成。本 Task 的输出被 Task 7（消除 God Object）直接依赖
 
 **涉及文件:**
+
 - 删除: `rust-agent-tui/src/app/core.rs`
 - 修改: `rust-agent-tui/src/app/chat_session.rs`, `rust-agent-tui/src/app/mod.rs`, `rust-agent-tui/src/event.rs`, `rust-agent-tui/src/app/agent_ops.rs`, `rust-agent-tui/src/app/panel_ops.rs`, `rust-agent-tui/src/app/thread_ops.rs`, `rust-agent-tui/src/app/hint_ops.rs`, `rust-agent-tui/src/ui/main_ui.rs`, `rust-agent-tui/src/ui/main_ui/status_bar.rs`, `rust-agent-tui/src/ui/main_ui/panels/hooks.rs`, `rust-agent-tui/src/ui/main_ui/panels/model.rs`, `rust-agent-tui/src/ui/main_ui/panels/agent.rs`, `rust-agent-tui/src/ui/main_ui/panels/login.rs`, `rust-agent-tui/src/ui/main_ui/panels/mcp.rs`, `rust-agent-tui/src/ui/main_ui/panels/cron.rs`, `rust-agent-tui/src/ui/main_ui/panels/plugin.rs`, `rust-agent-tui/src/ui/main_ui/panels/thread_browser.rs`, `rust-agent-tui/src/ui/main_ui/panels/memory.rs`, `rust-agent-tui/src/ui/headless.rs`
 
@@ -325,6 +346,7 @@
 - [x] 重新组织 ChatSession 结构体，确认 6 个一级字段
   - 位置: `rust-agent-tui/src/app/chat_session.rs`
   - 确认 ChatSession 最终结构:
+
     ```rust
     pub struct ChatSession {
         pub ui: UiState,
@@ -340,6 +362,7 @@
         pub spinner_state: perihelion_widgets::SpinnerState,
     }
     ```
+
   - 原因: ChatSession 成为清晰的多模块容器
 
 - [x] 为 AppCore 消除编写回归测试
@@ -351,6 +374,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [x] 验证 AppCore 结构体已删除
   - `grep -rn "pub struct AppCore" rust-agent-tui/src/`
   - 预期: 0 行输出
@@ -383,6 +407,7 @@
 [上下游影响] — 依赖 Task 6 完成。本 Task 是整个重构链的最终 Task，完成后 App 结构体从 64 字段（26+38）降至 3 字段
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/mod.rs`, `rust-agent-tui/src/event.rs`, `rust-agent-tui/src/ui/main_ui.rs`, `rust-agent-tui/src/app/panel_manager.rs`, `rust-agent-tui/src/app/panel_ops.rs`
 
 **执行步骤:**
@@ -396,22 +421,26 @@
 - [ ] 精简 PanelContext 结构体
   - 位置: `rust-agent-tui/src/app/panel_manager.rs` PanelContext 定义（~L265-279）
   - 当前 PanelContext 有 11 个字段，每个都是 App 字段的解构投影。Task 1-2 完成后可简化为:
+
     ```rust
     pub struct PanelContext<'a> {
         pub services: &'a mut ServiceRegistry,
         pub session_mgr: &'a mut SessionManager,
     }
     ```
+
   - 同步修改所有构造 PanelContext 的位置（event.rs ~L244, ~L296, ~L757）和 PanelComponent::handle_key() 的 impl
-  - 修改所有面板的 `ctx.cwd` → `ctx.services.cwd`、`ctx.zen_config` → `ctx.services.zen_config` 等访问路径
+  - 修改所有面板的 `ctx.cwd` → `ctx.services.cwd`、`ctx.peri_config` → `ctx.services.peri_config` 等访问路径
   - 原因: PanelContext 从 11 字段简化为 2 字段引用，面板代码通过 `ctx.services.xxx` 访问
 
 - [ ] 重构 event.rs 为字段投影分发模式
   - 位置: `rust-agent-tui/src/event.rs` — `handle_event()` 函数（全文件 2486 行）
   - 在函数入口处（关键分支之前）添加统一解构:
+
     ```rust
     let App { services, session_mgr, global_panels } = app;
     ```
+
   - 注意: 此解构仅在不需整体 `&mut App` 的分支中使用。对于需要整体 `App` 的分支（如 `update_textarea_hint()` 等 `impl App` 方法调用），使用 `app` 原始引用
   - 逐步将各分支中的 `app.services.xxx` 替换为 `services.xxx`，`app.session_mgr.xxx` 替换为 `session_mgr.xxx`，`app.global_panels.xxx` 替换为 `global_panels.xxx`
   - 原因: 统一解构后，Rust 借用检查器可验证各子结构体的独立可变性
@@ -419,19 +448,23 @@
 - [ ] 消除 event.rs 中 PanelContext 构造的 3 处重复
   - 位置: `event.rs` ~L244-258, ~L296-308, ~L757-802
   - 将 3 处重复的 PanelContext 构造统一为:
+
     ```rust
     let ctx = PanelContext { services, session_mgr };
     global_panels.dispatch_key(input, &mut ctx);
     ```
+
   - 消除重复的 `let cwd = app.services.cwd.clone();` 等 11 行字段投影代码
   - 原因: DRY 原则——PanelContext 构造从每处 15 行降为 2 行
 
 - [ ] 重构 main_ui.rs 渲染函数签名
   - 位置: `rust-agent-tui/src/ui/main_ui.rs` — `render()` 函数（~L19）
   - 将 `render(f: &mut Frame, app: &mut App)` 签名改为接收子结构体引用:
+
     ```rust
     pub fn render(f: &mut Frame, services: &ServiceRegistry, session_mgr: &SessionManager, global_panels: &PanelManager)
     ```
+
   - 同步修改 `render_session_column()`、`render_messages()`、`render_attachment_bar()` 等子函数签名
   - 原因: 渲染函数不再需要 `&mut App` 全访问，仅需读取子结构体
 
@@ -458,6 +491,7 @@
   - 预期: 所有测试通过
 
 **检查步骤:**
+
 - [ ] 验证 App 结构体仅 3 字段
   - `grep -E "^\s+pub [a-z_]+:" rust-agent-tui/src/app/mod.rs | grep -A 20 "pub struct App" | head -5`
   - 预期: 仅 services, session_mgr, global_panels 3 个字段
@@ -485,6 +519,7 @@
 ### Task 验收: App 分层重构 完整验收
 
 **前置条件:**
+
 - spec-plan-1.md Task 1-4 全部完成
 - spec-plan-2.md Task 5-7 全部完成
 

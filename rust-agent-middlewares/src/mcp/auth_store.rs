@@ -43,7 +43,7 @@ impl FileCredentialStore {
     pub fn new() -> Self {
         let path = dirs_next::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".zen-code")
+            .join(".peri")
             .join("oauth_tokens.json");
         Self {
             path,
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn test_new_creates_default_path() {
         let store = FileCredentialStore::new();
-        assert!(store.path().to_string_lossy().contains(".zen-code"));
+        assert!(store.path().to_string_lossy().contains(".peri"));
     }
 
     #[tokio::test]

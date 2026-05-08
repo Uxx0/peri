@@ -32,7 +32,7 @@
 - **进程内文件搜索:** grep+grep-regex crate 替代外部 rg 进程，WalkParallel 多线程并行，15 秒超时
 - **MCP 中间件:** McpMiddleware 作为 MCP Client 连接外部服务器（stdio/HTTP），`mcp__{server}__{tool}` 动态工具注册，`mcp_read_resource` 资源读取工具，双层配置合并（全局 settings.json + 项目 .mcp.json），${VAR} 环境变量展开
 - **MCP 运行时管理:** /mcp 面板（Browse/Tools/Resources 三视图），后台连接池初始化不阻塞 TUI，重连/删除服务器
-- **MCP OAuth 2.0:** rmcp auth feature + AuthClient，Authorization Code + PKCE 流程，401 自动触发，Token 持久化 ~/.zen-code/oauth_tokens.json（0600），混合回调（本地 HTTP → TUI 手动粘贴）
+- **MCP OAuth 2.0:** rmcp auth feature + AuthClient，Authorization Code + PKCE 流程，401 自动触发，Token 持久化 ~/.peri/oauth_tokens.json（0600），混合回调（本地 HTTP → TUI 手动粘贴）
 - **工具名称对齐 Claude Code:** 10 个内置工具名称完全对齐（Read/Write/Edit/Glob/Grep/Agent 等），Grep 重构为结构化接口，HITL 默认审批清单同步更新
 
 ## TUI 界面（rust-agent-tui）
@@ -75,7 +75,7 @@
 - **SQLite 线程持久化:** sqlx SqlitePool(max=5) 原生异步连接池，WAL 模式，`append_messages` 事务保证 crash-safe，`StateSnapshot` 事件驱动增量写入
 - **OpenTelemetry 追踪:** 内置 OTLP HTTP 导出，`OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量控制开关，tracing-opentelemetry 桥接，兼容 Jaeger
 - **结构化日志:** `RUST_LOG` 级别控制，`RUST_LOG_FORMAT=json` 切换 JSON 格式
-- **配置持久化:** `~/.zen-code/settings.json` 存储 Provider/Model 配置，`AppConfig` 统一读写，`env` 字段替代 .env 文件注入环境变量
+- **配置持久化:** `~/.peri/settings.json` 存储 Provider/Model 配置，`AppConfig` 统一读写，`env` 字段替代 .env 文件注入环境变量
 
 ---
 *最后更新: 2026-05-04 — 由 feature_20260504_F001_sqlx-migration 归档时更新*

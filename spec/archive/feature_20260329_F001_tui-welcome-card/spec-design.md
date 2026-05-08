@@ -87,6 +87,7 @@ pub(crate) fn render_welcome(f: &mut Frame, app: &App, area: Rect)
 ```
 
 参数说明：
+
 - `f: &mut Frame` — ratatui Frame
 - `app: &App` — 读取 `app.skills.len()` 等信息用于动态内容
 - `area: Rect` — 聊天区可用区域
@@ -107,8 +108,9 @@ pub(crate) fn render_welcome(f: &mut Frame, app: &App, area: Rect)
 ### 动态内容
 
 从 `app` 读取以下信息动态显示：
+
 - `app.skills.len()` → 显示可用 Skills 数量
-- `app.zen_config` → 显示当前模型别名（如 "★Opus"）
+- `app.peri_config` → 显示当前模型别名（如 "★Opus"）
 
 ## 实现要点
 

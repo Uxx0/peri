@@ -68,6 +68,7 @@ pub struct ModelAliasMap {
 ### 向后兼容迁移
 
 加载配置时，若检测到旧版字段（存在 `provider_id` 但不存在 `model_aliases`），自动迁移：
+
 - 将旧 `provider_id + model_id` 填入 `opus` 别名
 - `sonnet / haiku` 填入相同的 provider_id，model_id 留空（使用 Provider 的默认值）
 - `active_alias` 设为 "opus"
@@ -77,12 +78,14 @@ pub struct ModelAliasMap {
 `/model` 面板重构为两层结构：
 
 **第一层（上方横向 Tab 栏）：**
+
 - 显示三个别名 Tab：`[Opus]  [Sonnet]  [Haiku]`
 - 当前选中 Tab 高亮显示（无星号标记）
 - `Tab` / `Shift+Tab` 切换 Tab（向右/向左）
 - `Enter` 将当前 Tab 设为激活别名（写入 `active_alias`）
 
 **第二层（下方编辑区）：**
+
 - 显示当前 Tab 别名的 `Provider` 和 `Model ID` 两个字段
 - `Provider`：循环选择（`Space` 切换）——列表来自 `providers` 配置
 - `Model ID`：手动输入字符串（所有字符均写入缓冲，不被快捷键拦截）
@@ -98,7 +101,7 @@ pub struct ModelAliasMap {
 `LlmProvider::from_config` 改为按 `active_alias` 查 `model_aliases` 表：
 
 ```rust
-pub fn from_config(cfg: &ZenConfig) -> Option<Self> {
+pub fn from_config(cfg: &PeriConfig) -> Option<Self> {
     let alias = &cfg.config.active_alias;  // "opus" | "sonnet" | "haiku"
     let mapping = cfg.config.model_aliases.get(alias)?;  // ModelAliasConfig
     let provider = cfg.config.providers.iter()
@@ -113,7 +116,7 @@ pub fn from_config(cfg: &ZenConfig) -> Option<Self> {
 
 ## 实现要点
 
-1. **数据迁移**：在 `ZenConfig` 反序列化后的 post-process 中自动检测并迁移旧格式，避免用户配置文件失效
+1. **数据迁移**：在 `PeriConfig` 反序列化后的 post-process 中自动检测并迁移旧格式，避免用户配置文件失效
 2. **ModelPanel 重构**：现有 `ModelPanel` 的状态机需要整体重写，增加 `active_tab: AliasTab`（Opus/Sonnet/Haiku）枚举，以及针对每个 tab 独立的 `buf_provider` / `buf_model`
 3. **Provider 列表同步**：切换 Tab 时，Provider 选择项来自 `providers` 列表，动态渲染
 4. **TUI 状态栏**：在状态栏显示当前激活别名及其绑定信息，如 `[Opus → openrouter/gpt-5.4]`

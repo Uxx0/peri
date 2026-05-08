@@ -9,7 +9,7 @@
 当前 `App` 结构体承载了 34 个字段，`AppCore` 额外 39 个字段，`AgentComm` 22 个字段，`ChatSession` 7 个字段。总计 **102 个字段** 分布在 4 个结构体中，混合了 6 种以上职责：
 
 - 会话管理（sessions, active）
-- 应用配置（provider, model, zen_config）
+- 应用配置（provider, model, peri_config）
 - 外部服务（mcp_pool, thread_store, cron, plugins）
 - 面板状态（13 个 Option&lt;Panel&gt;）
 - UI 状态（scroll, selection, highlight timers）
@@ -49,7 +49,7 @@
 
 event.rs（2486 行）依赖几乎所有字段：
 
-- **读取+写入**: sessions, active, 所有 panel Option, loading, textarea, hint_cursor, history_index, text_selection, panel_selection, scroll_offset, pending_messages, quit_pending_since, highlight timers, permission_mode, zen_config
+- **读取+写入**: sessions, active, 所有 panel Option, loading, textarea, hint_cursor, history_index, text_selection, panel_selection, scroll_offset, pending_messages, quit_pending_since, highlight timers, permission_mode, peri_config
 - **仅读取**: cwd, provider_name, model_name, session_areas, messages_area, textarea_area, panel_area
 
 ### 3.2 main_ui.rs 依赖
@@ -59,11 +59,11 @@ event.rs（2486 行）依赖几乎所有字段：
 
 ### 3.3 agent_ops.rs 依赖
 
-- cwd, zen_config, provider_name, sessions, active, view_messages, textarea, loading, scroll, pending state, render pipeline, agent_rx, agent_state_messages, cancel_token, token tracking, retry, background tasks
+- cwd, peri_config, provider_name, sessions, active, view_messages, textarea, loading, scroll, pending state, render pipeline, agent_rx, agent_state_messages, cancel_token, token tracking, retry, background tasks
 
 ### 3.4 panel_ops.rs 依赖
 
-- zen_config, provider_name, model_name, cwd, sessions, active, config_path_override, 所有 panel options, panel selection state
+- peri_config, provider_name, model_name, cwd, sessions, active, config_path_override, 所有 panel options, panel selection state
 
 ---
 
@@ -104,7 +104,7 @@ AppCore → 消除
 
 ```rust
 pub struct ServiceRegistry {
-    pub zen_config: Option<ZenConfig>,
+    pub peri_config: Option<PeriConfig>,
     pub cwd: String,
     pub provider_name: String,
     pub model_name: String,
@@ -311,6 +311,7 @@ pub struct MessageState {
 - **先做面板**：面板组件化（阶段 1-3）可在 App 分层之前独立推进
 
 推荐路线：
+
 1. 先完成面板组件化（component-architecture-design.md 的 Phase 1-5）
 2. 然后按本方案的阶段 1-2-4-5-6-7-8-9-10 顺序推进 App 分层
 3. 面板组件化的 Phase 2（PanelManager）即为本方案的阶段 3

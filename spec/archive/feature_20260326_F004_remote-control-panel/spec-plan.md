@@ -11,9 +11,11 @@
 ### Task 1: 数据模型定义
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/config/types.rs`
 
 **执行步骤:**
+
 - [ ] 新增 `RemoteControlConfig` 结构体
   - 字段：`url: String`, `token: String`, `name: Option<String>`
   - `#[serde(default)]` 支持字段缺失时使用默认值
@@ -26,6 +28,7 @@
   - `skip_serializing_if` 验证
 
 **检查步骤:**
+
 - [x] 验证 `RemoteControlConfig` 编译通过
   - `cargo check -p rust-agent-tui 2>&1 | head -20`
   - 预期: 无编译错误
@@ -38,25 +41,28 @@
 ### Task 2: RelayPanel 状态管理
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/app/relay_panel.rs`
 - 修改: `rust-agent-tui/src/app/mod.rs`
 
 **执行步骤:**
+
 - [x] 新建 `relay_panel.rs`，定义 `RelayPanel` 结构体
   - `mode: RelayPanelMode` (View/Edit)
   - `edit_field: RelayEditField` (Url/Token/Name)
   - `buf_url`, `buf_token`, `buf_name` 缓冲区
   - `status_message: Option<String>` 保存反馈
   - `cursor: usize` 编辑光标
-- [x] 实现 `RelayPanel::from_config(&ZenConfig)` 从配置加载
+- [x] 实现 `RelayPanel::from_config(&PeriConfig)` 从配置加载
 - [x] 实现 `display_token()` 方法，返回脱敏 Token（如 `****3456****`）
 - [x] 实现字段切换方法 `field_next()`, `field_prev()`
 - [x] 实现字符输入 `push_char()`, `pop_char()`
-- [x] 实现 `apply_edit(&mut ZenConfig)` 保存到配置
+- [x] 实现 `apply_edit(&mut PeriConfig)` 保存到配置
 - [x] 在 `mod.rs` 中新增 `pub mod relay_panel;` 和 `pub use relay_panel::RelayPanel;`
 - [x] 在 `App` 结构体中新增 `pub relay_panel: Option<RelayPanel>`
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo check -p rust-agent-tui 2>&1 | head -20`
   - 预期: 无编译错误
@@ -69,10 +75,12 @@
 ### Task 3: /relay 命令注册
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/command/relay.rs`
 - 修改: `rust-agent-tui/src/command/mod.rs`
 
 **执行步骤:**
+
 - [x] 新建 `relay.rs`，实现 `RelayCommand`
   - `name() -> "relay"`
   - `description() -> "打开远程控制配置面板"`
@@ -81,6 +89,7 @@
 - [x] 在 `default_registry()` 中注册 `Box::new(relay::RelayCommand)`
 
 **检查步骤:**
+
 - [ ] 验证命令注册成功
   - `cargo run -p rust-agent-tui -- --help 2>&1 || true`
   - 预期: 编译通过（TUI 无 --help，但编译成功）
@@ -92,9 +101,11 @@
 ### Task 4: CLI 参数解析增强
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/main.rs`
 
 **执行步骤:**
+
 - [x] 修改 `parse_relay_args()` 支持 `--remote-control` 无参数模式
   - 检查 `--remote-control` 下一参数是否以 `--` 开头
   - 无值时返回空字符串 URL 标记"从配置读取"
@@ -103,6 +114,7 @@
 - [x] 新增单元测试 `test_parse_relay_args_with_url()`
 
 **检查步骤:**
+
 - [x] 验证参数解析逻辑
   - `cargo test -p rust-agent-tui --lib -- parse_relay_args 2>&1 | tail -10`
   - 预期: 测试通过（5 passed）
@@ -112,9 +124,11 @@
 ### Task 5: 配置读取逻辑集成
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/app/mod.rs` (`try_connect_relay`)
 
 **执行步骤:**
+
 - [x] 重构 `try_connect_relay()` 支持三层优先级
   1. CLI 参数完整指定（URL 非空）→ 使用 CLI 参数
   2. CLI 参数 `--remote-control` 无 URL → 从 `remote_control` 字段读取
@@ -124,6 +138,7 @@
 - [x] 新增单元测试覆盖优先级逻辑
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo check -p rust-agent-tui 2>&1 | head -20`
   - 预期: 无编译错误
@@ -136,10 +151,12 @@
 ### Task 6: RelayPanel UI 渲染
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/ui/main_ui.rs`
 - 修改: `rust-agent-tui/src/ui/panels/mod.rs`（或新建 `rust-agent-tui/src/ui/panels/relay.rs`）
 
 **执行步骤:**
+
 - [x] 在 `render()` 中新增 `if app.relay_panel.is_some()` 分支
 - [x] 实现 `render_relay_panel()` 函数
   - View 模式：显示 URL/Token(脱敏)/Name，底部 `[e] 编辑 [Esc] 关闭`
@@ -148,6 +165,7 @@
 - [x] 参考现有 `render_model_panel()` 的样式和尺寸
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo check -p rust-agent-tui 2>&1 | head -20`
   - 预期: 无编译错误
@@ -160,10 +178,12 @@
 ### Task 7: 键盘事件处理
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/event.rs`
 - 修改: `rust-agent-tui/src/app/panel_ops.rs`（或 `rust-agent-tui/src/app/relay_ops.rs`）
 
 **执行步骤:**
+
 - [x] 在 `next_event()` 中新增 `relay_panel` 状态分支
 - [x] View 模式：`e` → Edit, `Esc` → 关闭
 - [x] Edit 模式：`Tab` → 切换字段, `Enter` → 保存, `Esc` → 取消
@@ -173,6 +193,7 @@
 - [x] 保存时调用 `crate::config::save(&cfg)` 持久化
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo check -p rust-agent-tui 2>&1 | head -20`
   - 预期: 无编译错误
@@ -185,9 +206,10 @@
 ### Task 8: Remote Control Panel Acceptance
 
 **Prerequisites:**
+
 - Start command: `cargo run -p rust-agent-tui`
 - Test data setup: 无需特殊数据
-- 清理测试配置：`rm -f ~/.zen-code/settings.json`（可选）
+- 清理测试配置：`rm -f ~/.peri/settings.json`（可选）
 
 **End-to-end verification:**
 
@@ -196,7 +218,7 @@
    - 输入 `/relay` → 面板显示"无配置"
    - 按 `e` 进入编辑 → 按 `Tab` 切换字段 → 输入 URL/Token/Name
    - 按 `Enter` 保存
-   - `cat ~/.zen-code/settings.json | jq .config.remote_control`
+   - `cat ~/.peri/settings.json | jq .config.remote_control`
    - Expected: 输出包含 `url`, `token`, `name` 字段
    - On failure: check Task 2 (RelayPanel), Task 7 (键盘事件)
 
@@ -212,7 +234,7 @@
    - On failure: check Task 5 (优先级逻辑)
 
 4. **场景 4：配置不完整提示**
-   - 删除 `~/.zen-code/settings.json` 中的 `remote_control.url`
+   - 删除 `~/.peri/settings.json` 中的 `remote_control.url`
    - `cargo run -p rust-agent-tui -- --remote-control 2>&1 | head -5`
    - Expected: TUI 消息区显示 "未配置远程控制，请使用 /relay 命令配置"
    - On failure: check Task 5 (错误处理)
@@ -233,15 +255,18 @@
 ### Task 9: 文档更新
 
 **涉及文件:**
+
 - 修改: `CLAUDE.md`
 - 修改: `README.md`（可选）
 
 **执行步骤:**
+
 - [x] 在 `CLAUDE.md` 的 "TUI 命令" 章节新增 `/relay` 条目
 - [x] 在 "环境变量" 或 "CLI 参数" 章节说明 `--remote-control` 无参数模式
 - [x] 添加配置示例 JSON 片段
 
 **检查步骤:**
+
 - [x] 验证文档格式正确
   - `grep -A2 "/relay" CLAUDE.md`
   - 预期: 输出包含 `/relay` 命令说明

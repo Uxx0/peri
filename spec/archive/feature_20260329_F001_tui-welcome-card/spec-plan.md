@@ -11,17 +11,19 @@
 ### Task 1: Welcome Card 渲染模块
 
 **涉及文件:**
+
 - 新建: `rust-agent-tui/src/ui/welcome.rs`
 - 修改: `rust-agent-tui/src/ui/mod.rs`
 
 **执行步骤:**
+
 - [x] 创建 `ui/welcome.rs`，实现 `render_welcome(f, app, area)` 函数
   - 构建 ASCII Art Logo（6 行，"PERIHELION"，宽度约 46 字符），ACCENT + BOLD 样式
   - 构建副标题行 "Perihelion Agent Framework"，MUTED 色
   - 构建分隔线行 "────── What can I do? ──────"，DIM 色
   - 构建功能亮点行（• Ask me to code, debug, or refactor 等），TEXT 色 + ACCENT 符号
   - 构建命令提示行（/model /history /help /compact），WARNING 色快捷键
-  - 构建动态内容行（Skills 数量、当前模型别名），从 `app.skills.len()` 和 `app.zen_config` 读取
+  - 构建动态内容行（Skills 数量、当前模型别名），从 `app.skills.len()` 和 `app.peri_config` 读取
   - 所有行使用 `Line::centered()` 水平居中
   - 窄屏降级：`area.width < 50` 时跳过 ASCII Art Logo，改用单行文字标题 "Perihelion"
   - 垂直居中：计算 `content_height`，`vertical_offset = (area.height - content_height) / 2`
@@ -29,6 +31,7 @@
 - [x] 在 `ui/mod.rs` 添加 `pub mod welcome;`
 
 **检查步骤:**
+
 - [x] 验证 welcome.rs 编译通过
   - `cargo build -p rust-agent-tui 2>&1 | tail -5`
   - 预期: 输出包含 "Compiling rust-agent-tui" 且无 error
@@ -38,15 +41,18 @@
 ### Task 2: 集成到主渲染流程
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/ui/main_ui.rs`
 
 **执行步骤:**
+
 - [x] 在 `main_ui.rs` 顶部添加 `use super::welcome;`
 - [x] 在 `render_messages()` 函数开头添加空消息判断分支
   - `if app.view_messages.is_empty() { welcome::render_welcome(f, app, area); return; }`
   - 确保在 spinner 计算之前 return，避免空消息时执行无意义的渲染逻辑
 
 **检查步骤:**
+
 - [x] 验证编译通过
   - `cargo build -p rust-agent-tui 2>&1 | tail -5`
   - 预期: 无 error
@@ -59,9 +65,11 @@
 ### Task 3: Headless 测试
 
 **涉及文件:**
+
 - 修改: `rust-agent-tui/src/ui/headless.rs`
 
 **执行步骤:**
+
 - [x] 新增 `test_welcome_card_renders_when_empty` 测试
   - 创建空 App（默认 view_messages 为空）
   - 直接 `terminal.draw(main_ui::render)` 渲染
@@ -78,6 +86,7 @@
   - 断言仍包含文字版标题
 
 **检查步骤:**
+
 - [x] 验证新增测试全部通过
   - `cargo test -p rust-agent-tui -- test_welcome 2>&1 | tail -10`
   - 预期: 3 个测试全部 pass
@@ -90,6 +99,7 @@
 ### Task 4: Welcome Card Acceptance
 
 **Prerequisites:**
+
 - Start command: `cargo run -p rust-agent-tui`
 - Test data setup: 无需额外数据
 - Other environment preparation: 终端窗口宽度 ≥80 列

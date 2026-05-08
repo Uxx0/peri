@@ -28,7 +28,7 @@ pub struct AgentRunConfig {
     pub thread_store: Arc<dyn rust_create_agent::thread::ThreadStore>,
     pub thread_id: rust_create_agent::thread::ThreadId,
     pub preload_skills: Vec<String>,
-    pub config: Arc<crate::config::ZenConfig>,
+    pub config: Arc<crate::config::PeriConfig>,
     pub cron_scheduler:
         Option<Arc<parking_lot::Mutex<rust_agent_middlewares::cron::CronScheduler>>>,
     pub permission_mode: Arc<SharedPermissionMode>,
@@ -58,7 +58,7 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         thread_store,
         thread_id,
         preload_skills,
-        config: zen_config,
+        config: peri_config,
         cron_scheduler,
         permission_mode,
         mcp_pool,
@@ -205,7 +205,7 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
     // 系统提示词由 system_builder + with_system_prompt() 注入，使其在 Langfuse 中可见
     // model_alias: None 表示继承父模型；有值时通过 from_config_for_alias 解析
     let provider_clone = provider_for_factory;
-    let config_for_factory = zen_config;
+    let config_for_factory = peri_config;
     #[allow(clippy::type_complexity)]
     let llm_factory: Arc<
         dyn Fn(Option<&str>) -> Box<dyn rust_create_agent::agent::react::ReactLLM + Send + Sync>

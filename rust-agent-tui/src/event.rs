@@ -138,7 +138,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 || (key_event.modifiers.contains(KeyModifiers::ALT)
                     && matches!(key_event.code, KeyCode::Char('m')))
             {
-                if let Some(cfg) = app.services.zen_config.as_mut() {
+                if let Some(cfg) = app.services.peri_config.as_mut() {
                     let aliases = ["opus", "sonnet", "haiku"];
                     let current = cfg.config.active_alias.as_str();
                     let idx = aliases.iter().position(|&a| a == current).unwrap_or(0);

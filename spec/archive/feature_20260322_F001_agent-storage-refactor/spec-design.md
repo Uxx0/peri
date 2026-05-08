@@ -30,7 +30,7 @@
 
 #### 1.1 数据库文件
 
-路径：`~/.zen-core/threads/threads.db`
+路径：`~/.peri-core/threads/threads.db`
 
 使用 SQLite WAL 模式，保证并发读写安全。
 
@@ -279,7 +279,7 @@ LLM 请求发送时，通过 `MessageAdapter` 将 `BaseMessage` 转为 Provider 
 
 - 首次启动检测 `threads.db` 是否存在，不存在则创建
 - 不迁移旧 JSONL 数据（`index.json`、`messages.jsonl`）
-- 旧数据保留在 `~/.zen-core/threads/` 下，用户可手动处理
+- 旧数据保留在 `~/.peri-core/threads/` 下，用户可手动处理
 
 ### 5. 文件变更
 

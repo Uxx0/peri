@@ -1,4 +1,4 @@
-use crate::config::{ThinkingConfig, ZenConfig};
+use crate::config::{PeriConfig, ThinkingConfig};
 use rust_create_agent::llm::{BaseModel, ChatAnthropic, ChatOpenAI};
 
 #[derive(Clone)]
@@ -76,8 +76,8 @@ impl LlmProvider {
         }
     }
 
-    /// 从 ZenConfig 构造 LlmProvider（按 active_provider_id 查找 Provider，再按 active_alias 取模型名）
-    pub fn from_config(cfg: &ZenConfig) -> Option<Self> {
+    /// 从 PeriConfig 构造 LlmProvider（按 active_provider_id 查找 Provider，再按 active_alias 取模型名）
+    pub fn from_config(cfg: &PeriConfig) -> Option<Self> {
         let app = &cfg.config;
         let provider = app
             .providers
@@ -125,9 +125,9 @@ impl LlmProvider {
         }
     }
 
-    /// 从 ZenConfig 按指定 alias（如 "haiku"/"sonnet"/"opus"）构造 LlmProvider
+    /// 从 PeriConfig 按指定 alias（如 "haiku"/"sonnet"/"opus"）构造 LlmProvider
     /// 大小写不敏感；未知 alias fallback 到默认模型
-    pub fn from_config_for_alias(cfg: &ZenConfig, alias: &str) -> Option<Self> {
+    pub fn from_config_for_alias(cfg: &PeriConfig, alias: &str) -> Option<Self> {
         let app = &cfg.config;
         let provider = app
             .providers
@@ -224,15 +224,15 @@ impl LlmProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ProviderConfig, ProviderModels, ZenConfig};
+    use crate::config::{PeriConfig, ProviderConfig, ProviderModels};
 
     fn make_config(
         alias: &str,
         provider_id: &str,
         model_id: &str,
         provider_type: &str,
-    ) -> ZenConfig {
-        let mut cfg = ZenConfig::default();
+    ) -> PeriConfig {
+        let mut cfg = PeriConfig::default();
         cfg.config.active_alias = alias.to_string();
         cfg.config.active_provider_id = provider_id.to_string();
         cfg.config.providers.push(ProviderConfig {

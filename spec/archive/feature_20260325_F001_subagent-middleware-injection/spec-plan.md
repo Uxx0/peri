@@ -11,9 +11,11 @@
 ### Task 1: 补全子 agent 中间件注入
 
 **涉及文件:**
+
 - 修改: `rust-agent-middlewares/src/subagent/tool.rs`
 
 **执行步骤:**
+
 - [x] 在文件顶部新增 4 个 import
   - 新增：`use crate::agents_md::AgentsMdMiddleware;`
   - 新增：`use crate::middleware::todo::TodoMiddleware;`
@@ -22,7 +24,8 @@
 - [x] 在 `invoke` 方法中，`let mut agent_builder = ReActAgent::new(llm).max_iterations(max_iterations);` 之后，`PrependSystemMiddleware` 注册代码之前，插入三个中间件注册
   - 注册顺序严格按照：`AgentsMdMiddleware` → `SkillsMiddleware` → `TodoMiddleware`，确保 `before_agent` prepend 顺序正确
   - `TodoMiddleware` 创建独立 channel：`let (tx, _rx) = mpsc::channel(8);`，`_rx` 立即丢弃
-  - `SkillsMiddleware` 需调用 `.with_global_config()` 加载 `~/.zen-code/settings.json` 中的 skills 目录
+  - `SkillsMiddleware` 需调用 `.with_global_config()` 加载 `~/.peri/settings.json` 中的 skills 目录
+
   ```rust
   agent_builder = agent_builder
       .add_middleware(Box::new(AgentsMdMiddleware::new()))
@@ -34,6 +37,7 @@
   ```
 
 **检查步骤:**
+
 - [x] 编译通过，无错误无警告
   - `cargo build -p rust-agent-middlewares 2>&1 | grep -E "^error"`
   - 预期: 无输出（无编译错误）
@@ -49,6 +53,7 @@
 ### Task 2: subagent-middleware-injection Acceptance
 
 **Prerequisites:**
+
 - 编译环境: `cargo build -p rust-agent-middlewares`
 - 无需额外环境或服务
 

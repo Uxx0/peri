@@ -23,7 +23,7 @@ use rust_create_agent::messages::BaseMessage;
 use tokio::sync::OnceCell;
 
 use crate::app::agent::LlmProvider;
-use crate::config::ZenConfig;
+use crate::config::PeriConfig;
 
 use super::agent_assembler;
 use super::broker::AcpInteractionBroker;
@@ -72,12 +72,12 @@ fn build_session_mode_state(session: &AcpSession) -> SessionModeState {
     state
 }
 
-fn build_session_model_state(session: &AcpSession, zen_config: &ZenConfig) -> SessionModelState {
-    let provider = zen_config
+fn build_session_model_state(session: &AcpSession, peri_config: &PeriConfig) -> SessionModelState {
+    let provider = peri_config
         .config
         .providers
         .iter()
-        .find(|p| p.id == zen_config.config.active_provider_id);
+        .find(|p| p.id == peri_config.config.active_provider_id);
     let current = session.model_alias.clone();
     let mut models = vec![];
     for alias in &["opus", "sonnet", "haiku"] {
@@ -93,7 +93,7 @@ fn build_session_model_state(session: &AcpSession, zen_config: &ZenConfig) -> Se
 fn build_config_options(
     session: &AcpSession,
 ) -> Vec<agent_client_protocol::schema::SessionConfigOption> {
-    let zen_config = mgr().zen_config();
+    let peri_config = mgr().peri_config();
 
     // 1. Mode selector
     let current_mode = match session.permission_mode.load() {
@@ -122,11 +122,11 @@ fn build_config_options(
     .description("Permission mode for tool execution");
 
     // 2. Model selector
-    let provider = zen_config
+    let provider = peri_config
         .config
         .providers
         .iter()
-        .find(|p| p.id == zen_config.config.active_provider_id);
+        .find(|p| p.id == peri_config.config.active_provider_id);
     let mut model_options = vec![];
     for alias in &["opus", "sonnet", "haiku"] {
         if let Some(name) =
@@ -175,7 +175,10 @@ fn build_config_options(
 fn fill_new_session_resp(session: &AcpSession, mut resp: NewSessionResponse) -> NewSessionResponse {
     resp = resp.modes(Some(build_session_mode_state(session)));
     resp = resp.config_options(Some(build_config_options(session)));
-    resp = resp.models(Some(build_session_model_state(session, mgr().zen_config())));
+    resp = resp.models(Some(build_session_model_state(
+        session,
+        mgr().peri_config(),
+    )));
     resp
 }
 
@@ -186,7 +189,10 @@ fn fill_load_session_resp(
 ) -> LoadSessionResponse {
     resp = resp.modes(Some(build_session_mode_state(session)));
     resp = resp.config_options(Some(build_config_options(session)));
-    resp = resp.models(Some(build_session_model_state(session, mgr().zen_config())));
+    resp = resp.models(Some(build_session_model_state(
+        session,
+        mgr().peri_config(),
+    )));
     resp
 }
 
@@ -324,10 +330,10 @@ pub async fn handle_prompt(
     tracing::info!(session_id = %session_id_str, text_len = user_text.len(), "ACP prompt received");
 
     // 从 session 级 model_alias 构建 LlmProvider
-    let provider = LlmProvider::from_config_for_alias(mgr().zen_config(), &session_model_alias)
+    let provider = LlmProvider::from_config_for_alias(mgr().peri_config(), &session_model_alias)
         .unwrap_or_else(|| mgr().provider().clone());
 
-    let mgr_zen_config = mgr().zen_config().clone();
+    let mgr_peri_config = mgr().peri_config().clone();
     let mgr_thread_store = mgr().thread_store().clone();
 
     // 将 Responder 和 conn 移入 spawned task，避免阻塞事件循环
@@ -385,7 +391,7 @@ pub async fn handle_prompt(
             system_prompt,
             broker,
             permission_mode: session_permission_mode,
-            zen_config: mgr_zen_config,
+            peri_config: mgr_peri_config,
             preload_skills: vec![],
             event_handler: handler,
             cancel: cancel.clone(),
@@ -523,7 +529,7 @@ pub async fn handle_resume_session(
             let mut resp = agent_client_protocol::schema::ResumeSessionResponse::default();
             resp = resp.modes(Some(build_session_mode_state(&s)));
             resp = resp.config_options(Some(build_config_options(&s)));
-            resp = resp.models(Some(build_session_model_state(&s, mgr().zen_config())));
+            resp = resp.models(Some(build_session_model_state(&s, mgr().peri_config())));
             resp
         })
         .unwrap_or_default();
@@ -690,8 +696,8 @@ pub async fn handle_fork_session(
         .map(|s| (s.model_alias.clone(), s.thinking.clone()))
         .unwrap_or_else(|| {
             (
-                mgr().zen_config().config.active_alias.clone(),
-                mgr().zen_config().config.thinking.clone(),
+                mgr().peri_config().config.active_alias.clone(),
+                mgr().peri_config().config.thinking.clone(),
             )
         });
 
@@ -707,7 +713,7 @@ pub async fn handle_fork_session(
                     let mut resp = ForkSessionResponse::new(new_session_id.clone());
                     resp = resp.modes(Some(build_session_mode_state(&s)));
                     resp = resp.config_options(Some(build_config_options(&s)));
-                    resp = resp.models(Some(build_session_model_state(&s, mgr().zen_config())));
+                    resp = resp.models(Some(build_session_model_state(&s, mgr().peri_config())));
                     resp
                 })
                 .unwrap_or_else(|| ForkSessionResponse::new(new_session_id.clone()));

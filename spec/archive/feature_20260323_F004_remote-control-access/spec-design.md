@@ -170,6 +170,7 @@ struct RelayState {
 ![Web 前端页面布局](./images/03-wireframe.png)
 
 **Tab 状态规范：**
+
 - `●` 绿点：Agent 在线
 - `○` 灰点：Agent 断线（消息历史本地缓存保留）
 - `🔔` 角标：该 Agent 有待处理的 HITL 审批或 ask_user 请求（切换后显示弹窗）
@@ -234,12 +235,13 @@ perihelion/
 ### rust-agent-tui 改动
 
 **`app/mod.rs` 改动：**
+
 - `App` 增加 `relay_client: Option<RelayClient>` 字段
 - 启动时若配置了 `relay_url`，异步初始化 RelayClient（传入可选 `relay_name`）
 - `submit_message`/`hitl_confirm`/`ask_user_confirm` 路径同时触发 relay 事件转发
 - 新增 relay 事件接收循环（接收 Web 端输入，注入 App 消息队列）
 
-**配置扩展（`~/.zen-code/settings.json`）：**
+**配置扩展（`~/.peri/settings.json`）：**
 
 ```json
 {

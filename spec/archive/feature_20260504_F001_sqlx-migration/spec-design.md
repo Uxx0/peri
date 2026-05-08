@@ -33,9 +33,11 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 ```
 
 > 注意：不加 `"macros"` 和 `"migrate"` feature。`bundled` SQLite 通过 sqlx 的 `sqlite` feature 的 `bundled` 子 feature 启用：
+>
 > ```toml
 > sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 > ```
+>
 > 实际 bundling 由 `bundled-sqlite` feature 控制（sqlx 0.8 默认在 `sqlite` feature 下启用 bundled）。
 
 ### parking_lot 检查
@@ -87,7 +89,7 @@ pub async fn new(db_path: impl Into<PathBuf>) -> Result<Self> {
 pub async fn default_path() -> Result<Self> {
     let db_path = dirs_next::home_dir()
         .context("无法获取 home 目录")?
-        .join(".zen-core")
+        .join(".peri-core")
         .join("threads")
         .join("threads.db");
     Self::new(db_path).await

@@ -12,6 +12,7 @@
 面板组件化重构（F001）已完成阶段 3（PanelManager 提取），消除了 13 个 `Option<Panel>` 字段。本 feature 完成剩余 9 个阶段的分层重构。
 
 **关联设计**：
+
 - [组件化面板架构](../feature_20260508_F001_panel-component-architecture/spec-design.md)（已完成）
 - [App God Object 分析](../global/app-god-object-analysis.md)（调研基础）
 
@@ -52,7 +53,7 @@ App 级全局服务，跨 session 共享，大部分不可变或低频变更。
 
 ```rust
 pub struct ServiceRegistry {
-    pub zen_config: Option<ZenConfig>,
+    pub peri_config: Option<PeriConfig>,
     pub cwd: String,
     pub provider_name: String,
     pub model_name: String,
@@ -201,7 +202,7 @@ global_panels.dispatch_key(input, &mut ctx);
 
 1. 定义 `ServiceRegistry` 结构体
 2. App 新增 `services: ServiceRegistry` 字段
-3. 逐文件迁移 `app.zen_config` → `app.services.zen_config`（双写期）
+3. 逐文件迁移 `app.peri_config` → `app.services.peri_config`（双写期）
 4. 删除 App 中旧字段
 5. `App::new()` 中初始化 `ServiceRegistry`
 

@@ -95,7 +95,7 @@ App (公共外壳，保持原有方法签名)
 |------|------|
 | `cwd` | 被多处使用 |
 | `provider_name` / `model_name` | 状态栏 + Agent 组装 |
-| `zen_config` | 配置被多处引用 |
+| `peri_config` | 配置被多处引用 |
 | `thread_store` | Thread 操作 + Agent 组装 |
 | `current_thread_id` | Thread 操作 + Agent 组装 |
 | `todo_items` | UI 渲染 + Relay 转发 |
@@ -113,7 +113,7 @@ pub struct App {
     pub cwd: String,
     pub provider_name: String,
     pub model_name: String,
-    pub zen_config: Option<ZenConfig>,
+    pub peri_config: Option<PeriConfig>,
     pub thread_store: Arc<dyn ThreadStore>,
     pub current_thread_id: Option<ThreadId>,
     pub todo_items: Vec<TodoItem>,

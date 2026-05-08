@@ -731,8 +731,8 @@ fn handle_step_done(
 pub fn save_setup_to(
     wizard: &SetupWizardPanel,
     path: &std::path::Path,
-) -> anyhow::Result<crate::config::ZenConfig> {
-    let mut cfg = crate::config::ZenConfig::default();
+) -> anyhow::Result<crate::config::PeriConfig> {
+    let mut cfg = crate::config::PeriConfig::default();
     let mut first_id = String::new();
 
     for mp in &wizard.providers {
@@ -774,7 +774,7 @@ pub fn save_setup_to(
 }
 
 /// 将 setup wizard 结果写入默认配置路径
-pub fn save_setup(wizard: &SetupWizardPanel) -> anyhow::Result<crate::config::ZenConfig> {
+pub fn save_setup(wizard: &SetupWizardPanel) -> anyhow::Result<crate::config::PeriConfig> {
     let path = crate::config::store::config_path();
     let cfg = save_setup_to(wizard, &path)?;
 

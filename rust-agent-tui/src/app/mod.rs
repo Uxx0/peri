@@ -75,7 +75,7 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 use tui_textarea::TextArea;
 
-use crate::config::ZenConfig;
+use crate::config::PeriConfig;
 use crate::thread::{SqliteThreadStore, ThreadBrowser, ThreadId, ThreadMeta, ThreadStore};
 
 // Re-export MessageViewModel from ui::message_view
@@ -117,10 +117,10 @@ impl App {
             .to_string_lossy()
             .to_string();
 
-        // 优先从 ~/.zen-code/settings.json 加载配置，失败时 fallback 到环境变量
-        let zen_config = crate::config::load().ok();
+        // 优先从 ~/.peri/settings.json 加载配置，失败时 fallback 到环境变量
+        let peri_config = crate::config::load().ok();
 
-        let provider_from_config = zen_config
+        let provider_from_config = peri_config
             .as_ref()
             .and_then(agent::LlmProvider::from_config);
         let (provider_name, model_name, _status_msg) =
@@ -178,7 +178,7 @@ impl App {
             rust_agent_middlewares::prelude::PermissionMode::Bypass,
         );
         let services = ServiceRegistry {
-            zen_config: zen_config.clone(),
+            peri_config: peri_config.clone(),
             cwd: cwd.clone(),
             provider_name: provider_name.clone(),
             model_name: model_name.clone(),
@@ -347,7 +347,7 @@ impl App {
 
     /// 保存配置：优先写入 override 路径（测试用），否则写入全局路径
     pub fn save_config(
-        cfg: &ZenConfig,
+        cfg: &PeriConfig,
         override_path: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
         match override_path {
@@ -566,9 +566,9 @@ impl App {
     }
 
     /// Setup 向导保存后刷新内存中的 Provider 状态
-    pub fn refresh_after_setup(&mut self, cfg: crate::config::ZenConfig) {
-        self.services.zen_config = Some(cfg);
-        let cfg_ref = self.services.zen_config.as_ref().unwrap();
+    pub fn refresh_after_setup(&mut self, cfg: crate::config::PeriConfig) {
+        self.services.peri_config = Some(cfg);
+        let cfg_ref = self.services.peri_config.as_ref().unwrap();
         if let Some(p) = agent::LlmProvider::from_config(cfg_ref) {
             self.services.provider_name = p.display_name().to_string();
             self.services.model_name = p.model_name().to_string();
@@ -578,7 +578,7 @@ impl App {
     pub fn get_compact_config(&self) -> rust_create_agent::agent::compact::CompactConfig {
         let mut config = self
             .services
-            .zen_config
+            .peri_config
             .as_ref()
             .and_then(|zc| zc.config.compact.clone())
             .unwrap_or_default();
