@@ -429,8 +429,12 @@ mod tests {
         };
         let result = build_system_prompt(None, dir.to_str().unwrap(), features, &[]);
         assert!(
-            result.contains("No agents currently configured"),
-            "Should contain no-agents message"
+            result.contains("- explore:"),
+            "Should contain built-in agents even without .claude/agents/ directory"
+        );
+        assert!(
+            !result.contains("No agents currently configured"),
+            "Should NOT show no-agents message when built-in agents exist"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -472,18 +476,32 @@ mod tests {
             result.contains("- analyst: Analyzes data"),
             "Should contain analyst entry"
         );
-        // Verify each agent is on its own line
+        // Should also contain built-in agents (explore, general-purpose, plan, verification)
+        assert!(
+            result.contains("- explore:"),
+            "Should contain built-in explore agent"
+        );
+        // Verify project agents + built-in agents
         let lines: Vec<&str> = result.lines().filter(|l| l.starts_with("- ")).collect();
-        assert_eq!(lines.len(), 2, "Should have 2 agent entries");
+        assert_eq!(
+            lines.len(),
+            6,
+            "Should have 2 project + 4 built-in agent entries"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_format_available_agents_empty_dir() {
         let result = format_available_agents("/nonexistent/path/that/does/not/exist", &[]);
+        // Built-in agents are always available
         assert!(
-            result.contains("No agents currently configured"),
-            "Should return no-agents message for nonexistent path"
+            result.contains("- explore:"),
+            "Should contain built-in agents even without .claude/agents/ directory"
+        );
+        assert!(
+            !result.contains("No agents currently configured"),
+            "Should NOT show no-agents message when built-in agents exist"
         );
     }
 }

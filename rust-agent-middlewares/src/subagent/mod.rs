@@ -1,7 +1,9 @@
 mod background;
+mod built_in_agents;
 mod skill_preload;
 mod tool;
 pub use background::{BackgroundTask, BackgroundTaskRegistry, BackgroundTaskStatus};
+pub use built_in_agents::{get_built_in_agent, list_built_in_agents, BuiltInAgent};
 pub use skill_preload::SkillPreloadMiddleware;
 pub use tool::SubAgentTool;
 
@@ -155,62 +157,75 @@ impl SubAgentMiddleware {
     }
 }
 
-/// Scan `{cwd}/.claude/agents/` directory, return `(agent_id, name, description)` list
+/// Scan `{cwd}/.claude/agents/` directory, return `(agent_id, name, description)` list.
+/// Built-in agents are included as fallback — project-level agents with the same ID take precedence.
 pub fn scan_agents(cwd: &str) -> Vec<(String, String, String)> {
+    let mut result = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    // 1. Scan project-level agents (highest priority)
     let agents_dir = Path::new(cwd).join(".claude").join("agents");
-    if !agents_dir.is_dir() {
-        return vec![];
+    if agents_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                let (agent_id, file_path): (String, PathBuf) = if path.is_file() {
+                    if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                        continue;
+                    }
+                    let id = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    (id, path)
+                } else if path.is_dir() {
+                    let nested = path.join("agent.md");
+                    if !nested.is_file() {
+                        continue;
+                    }
+                    let id = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    (id, nested)
+                } else {
+                    continue;
+                };
+
+                let content = match std::fs::read_to_string(&file_path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                if let Some(agent) = parse_agent_file(&content) {
+                    let name = if agent.frontmatter.name.is_empty() {
+                        agent_id.clone()
+                    } else {
+                        agent.frontmatter.name.clone()
+                    };
+                    let description = agent.frontmatter.description.clone();
+                    seen_ids.insert(agent_id.clone());
+                    result.push((agent_id, name, description));
+                }
+            }
+        }
     }
 
-    let entries = match std::fs::read_dir(&agents_dir) {
-        Ok(e) => e,
-        Err(_) => return vec![],
-    };
-
-    let mut result = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        // Two formats: `{agent_id}.md` or `{agent_id}/agent.md`
-        let (agent_id, file_path): (String, PathBuf) = if path.is_file() {
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
+    // 2. Append built-in agents (project-level agents take precedence by ID)
+    for built_in in list_built_in_agents() {
+        if seen_ids.insert(built_in.agent_id.to_string()) {
+            if let Some(agent) = parse_agent_file(built_in.content) {
+                let name = if agent.frontmatter.name.is_empty() {
+                    built_in.agent_id.to_string()
+                } else {
+                    agent.frontmatter.name.clone()
+                };
+                let description = agent.frontmatter.description.clone();
+                result.push((built_in.agent_id.to_string(), name, description));
             }
-            let id = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            (id, path)
-        } else if path.is_dir() {
-            let nested = path.join("agent.md");
-            if !nested.is_file() {
-                continue;
-            }
-            let id = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            (id, nested)
-        } else {
-            continue;
-        };
-
-        let content = match std::fs::read_to_string(&file_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        if let Some(agent) = parse_agent_file(&content) {
-            let name = if agent.frontmatter.name.is_empty() {
-                agent_id.clone()
-            } else {
-                agent.frontmatter.name.clone()
-            };
-            let description = agent.frontmatter.description.clone();
-            result.push((agent_id, name, description));
         }
     }
 
@@ -226,6 +241,8 @@ pub fn scan_agents_with_extra_dirs(
     extra_dirs: &[PathBuf],
 ) -> Vec<(String, String, String)> {
     let mut result = scan_agents(cwd);
+    let mut seen_ids: std::collections::HashSet<String> =
+        result.iter().map(|(id, _, _)| id.clone()).collect();
 
     for dir in extra_dirs {
         if !dir.is_dir() {
@@ -265,6 +282,11 @@ pub fn scan_agents_with_extra_dirs(
                 continue;
             };
 
+            // Skip duplicates (CWD + built-in agents already registered)
+            if !seen_ids.insert(agent_id.clone()) {
+                continue;
+            }
+
             let content = match std::fs::read_to_string(&file_path) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -282,7 +304,6 @@ pub fn scan_agents_with_extra_dirs(
         }
     }
 
-    result.dedup_by(|a, b| a.0 == b.0);
     result.sort_by(|a, b| a.0.cmp(&b.0));
     result
 }
@@ -368,7 +389,15 @@ mod tests {
     #[test]
     fn test_scan_agents_no_dir() {
         let result = scan_agents("/nonexistent/path");
-        assert!(result.is_empty());
+        // No project-level agents, but built-in agents should still appear
+        assert!(
+            !result.is_empty(),
+            "Built-in agents should always be present"
+        );
+        assert!(
+            result.iter().any(|(id, _, _)| id == "explore"),
+            "Built-in explore agent should be present"
+        );
     }
 
     #[test]
@@ -383,10 +412,15 @@ mod tests {
         ).unwrap();
 
         let result = scan_agents(dir.path().to_str().unwrap());
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "code-reviewer");
-        assert_eq!(result[0].1, "code-reviewer");
-        assert_eq!(result[0].2, "Reviews code quality");
+        // Should contain the project agent + built-in agents
+        assert!(
+            result.len() > 1,
+            "Should contain project agent + built-in agents"
+        );
+        let reviewer = result.iter().find(|(id, _, _)| id == "code-reviewer");
+        assert!(reviewer.is_some(), "Project agent should be present");
+        assert_eq!(reviewer.unwrap().1, "code-reviewer");
+        assert_eq!(reviewer.unwrap().2, "Reviews code quality");
     }
 
     #[test]
@@ -402,10 +436,15 @@ mod tests {
         .unwrap();
 
         let result = scan_agents(dir.path().to_str().unwrap());
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "analyst");
-        assert_eq!(result[0].1, "data-analyst");
-        assert_eq!(result[0].2, "Analyzes data");
+        // Should contain the project agent + built-in agents
+        assert!(
+            result.len() > 1,
+            "Should contain project agent + built-in agents"
+        );
+        let analyst = result.iter().find(|(id, _, _)| id == "analyst");
+        assert!(analyst.is_some(), "Project agent should be present");
+        assert_eq!(analyst.unwrap().1, "data-analyst");
+        assert_eq!(analyst.unwrap().2, "Analyzes data");
     }
 
     #[tokio::test]
@@ -516,9 +555,10 @@ mod tests {
             dir.path().to_str().unwrap(),
             std::slice::from_ref(&extra_dir),
         );
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "plugin-agent");
-        assert_eq!(result[0].2, "From plugin");
+        // Should contain plugin-agent + built-in agents
+        let plugin = result.iter().find(|(id, _, _)| id == "plugin-agent");
+        assert!(plugin.is_some(), "Plugin agent should be present");
+        assert_eq!(plugin.unwrap().2, "From plugin");
     }
 
     #[test]
@@ -542,7 +582,11 @@ mod tests {
         .unwrap();
 
         let result = scan_agents_with_extra_dirs(dir.path().to_str().unwrap(), &[extra_dir]);
-        assert_eq!(result.len(), 1, "duplicate agent_id should be deduped");
+        // Duplicate "reviewer" should be deduped (CWD takes precedence)
+        let reviewer_count = result.iter().filter(|(id, _, _)| id == "reviewer").count();
+        assert_eq!(reviewer_count, 1, "duplicate agent_id should be deduped");
+        // Total: CWD reviewer (1) + built-in agents (4, none named "reviewer") + extra reviewer (deduped) = 5
+        assert_eq!(result.len(), 5);
     }
 
     #[test]

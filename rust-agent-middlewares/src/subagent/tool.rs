@@ -12,11 +12,12 @@ use rust_create_agent::tools::BaseTool;
 
 use crate::agent_define::{AgentDefineMiddleware, AgentOverrides};
 use crate::agents_md::AgentsMdMiddleware;
-use crate::claude_agent_parser::{parse_agent_file, ToolsValue};
+use crate::claude_agent_parser::{parse_agent_file, ClaudeAgent, ToolsValue};
 use crate::hooks::types::{HookEvent, RegisteredHook};
 use crate::middleware::todo::TodoMiddleware;
 use crate::skills::SkillsMiddleware;
 use crate::subagent::background::{BackgroundTask, BackgroundTaskRegistry, BackgroundTaskStatus};
+use crate::subagent::built_in_agents::get_built_in_agent;
 use crate::subagent::skill_preload::SkillPreloadMiddleware;
 use crate::tools::ArcToolWrapper;
 use tokio::sync::mpsc;
@@ -192,6 +193,39 @@ impl SubAgentTool {
     pub fn with_registered_hooks(mut self, hooks: Vec<RegisteredHook>) -> Self {
         self.registered_hooks = Arc::new(hooks);
         self
+    }
+
+    /// Load and parse an agent definition, falling back to built-in agents.
+    ///
+    /// Search order:
+    /// 1. `{cwd}/.claude/agents/{agent_id}/agent.md` or `{cwd}/.claude/agents/{agent_id}.md`
+    /// 2. Built-in agent registry (compile-time embedded)
+    fn load_agent_def(&self, agent_id: &str, cwd: &str) -> Result<ClaudeAgent, String> {
+        // Try filesystem first (project-level takes precedence)
+        let agent_path = AgentDefineMiddleware::candidate_paths(cwd, agent_id)
+            .into_iter()
+            .find(|p| p.is_file());
+
+        if let Some(path) = agent_path {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Error: failed to read agent definition file: {}", e))?;
+            return parse_agent_file(&content).ok_or_else(|| {
+                format!(
+                    "Error: failed to parse agent definition file '{}'",
+                    path.display()
+                )
+            });
+        }
+
+        // Fallback to built-in agents
+        let built_in = get_built_in_agent(agent_id)
+            .ok_or_else(|| format!("Error: cannot find agent definition '{}'. Check .claude/agents/ directory or use a built-in agent (explore, plan, general-purpose, verification)", agent_id))?;
+        parse_agent_file(built_in.content).ok_or_else(|| {
+            format!(
+                "Error: failed to parse built-in agent definition '{}'",
+                agent_id
+            )
+        })
     }
 
     /// Extract AgentOverrides from already-parsed agent_def to avoid redundant I/O
@@ -428,28 +462,10 @@ impl SubAgentTool {
             }
         };
 
-        let agent_path = AgentDefineMiddleware::candidate_paths(&cwd, &agent_id)
-            .into_iter()
-            .find(|p| p.is_file());
-
-        let agent_path = match agent_path {
-            Some(p) => p,
-            None => {
-                return Ok(format!(
-                    "Error: cannot find agent definition file '{}'",
-                    agent_id
-                ))
-            }
+        let agent_def = match self.load_agent_def(&agent_id, &cwd) {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
         };
-
-        let content = std::fs::read_to_string(&agent_path)
-            .map_err(|e| format!("Error: failed to read agent definition file: {}", e))?;
-        let agent_def = parse_agent_file(&content).ok_or_else(|| {
-            format!(
-                "Error: failed to parse agent definition file '{}'",
-                agent_path.display()
-            )
-        })?;
 
         let filtered_tools = self.filter_tools(
             &agent_def.frontmatter.tools,
@@ -686,7 +702,7 @@ impl BaseTool for SubAgentTool {
             return self.invoke_fork(&prompt, &cwd).await;
         }
 
-        // 1. Find agent definition file
+        // 1. Load agent definition (filesystem with built-in fallback)
         let agent_id = match &subagent_type {
             Some(id) => id.clone(),
             None => {
@@ -697,41 +713,12 @@ impl BaseTool for SubAgentTool {
             }
         };
 
-        let agent_path = AgentDefineMiddleware::candidate_paths(&cwd, &agent_id)
-            .into_iter()
-            .find(|p| p.is_file());
-
-        let agent_path = match agent_path {
-            Some(p) => p,
-            None => {
-                return Ok(format!(
-                    "Error: cannot find agent definition file '{}', please check .claude/agents/ directory",
-                    agent_id
-                ))
-            }
+        let agent_def = match self.load_agent_def(&agent_id, &cwd) {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
         };
 
-        // 2. Read and parse agent definition file
-        let content = match std::fs::read_to_string(&agent_path) {
-            Ok(c) => c,
-            Err(e) => {
-                return Ok(format!(
-                    "Error: failed to read agent definition file: {}",
-                    e
-                ))
-            }
-        };
-        let agent_def = match parse_agent_file(&content) {
-            Some(a) => a,
-            None => {
-                return Ok(format!(
-                    "Error: failed to parse agent definition file '{}', please check YAML frontmatter format",
-                    agent_path.display()
-                ))
-            }
-        };
-
-        // 3. Tool filtering
+        // 2. Tool filtering
         let filtered_tools = self.filter_tools(
             &agent_def.frontmatter.tools,
             &agent_def.frontmatter.disallowed_tools,
