@@ -162,6 +162,8 @@ pub fn parse_agent_file(content: &str) -> Option<ClaudeAgent> {
 
 /// 内部实现，返回具体错误信息
 fn parse_agent_file_inner(content: &str) -> Result<ClaudeAgent, String> {
+    // Normalize line endings to LF to avoid CRLF-related byte offset issues on Windows.
+    let content = content.replace("\r\n", "\n");
     let content = content.trim();
 
     if !content.starts_with("---") {
@@ -180,7 +182,7 @@ fn parse_agent_file_inner(content: &str) -> Result<ClaudeAgent, String> {
             after_open
                 .lines()
                 .take(i + 1)
-                .map(|l| l.len() + 1)
+                .map(|l| l.len() + 1) // +1 for the '\n' stripped by .lines()
                 .sum::<usize>()
         })
         .ok_or_else(|| "未找到闭合的 '---' 分隔符".to_string())?;
