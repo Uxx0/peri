@@ -41,6 +41,7 @@ perihelion-widgets = { path = "../perihelion-widgets", features = [
     "markdown-highlight",
 ] }
 unicode-width = "0.2"
+unicode-segmentation = "1"
 reqwest.workspace = true
 clap = { version = "4", features = ["derive"] }
 agent-client-protocol = { version = "0.11", features = ["unstable"] }

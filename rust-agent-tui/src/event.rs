@@ -106,11 +106,8 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
     let ev = event::read()?;
 
     match ev {
-        Event::Resize(w, _) => {
-            let _ = app.session_mgr.sessions[app.session_mgr.active]
-                .messages
-                .render_tx
-                .send(RenderEvent::Resize(w));
+        Event::Resize(_, _) => {
+            // 宽度同步改由 render_messages 渲染驱动（比较 cache.width 与 text_area.width）
             app.session_mgr.sessions[app.session_mgr.active]
                 .ui
                 .text_selection

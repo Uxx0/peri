@@ -3693,6 +3693,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tui-textarea-2",
+ "unicode-segmentation",
  "unicode-width",
  "uuid",
 ]

@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Wrap};
 use tokio::sync::{mpsc, Notify};
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::markdown::ensure_rendered;
 use super::message_render::render_view_model;
@@ -35,6 +36,8 @@ pub struct RenderCache {
     /// 版本号，UI 线程比较是否有变化以决定是否重绘
     pub version: u64,
     pub wrap_map: Vec<WrappedLineInfo>,
+    /// 当前渲染使用的宽度（= text_area.width，已减去滚动条 1 列）
+    pub width: u16,
 }
 
 impl Default for RenderCache {
@@ -51,6 +54,7 @@ impl RenderCache {
             total_lines: 0,
             version: 0,
             wrap_map: Vec::new(),
+            width: 0,
         }
     }
 
@@ -99,31 +103,35 @@ struct RenderTask {
 }
 
 impl RenderTask {
-    /// 根据 cache.lines 和当前宽度计算 wrap_map
+    /// 根据 cache.lines 和当前宽度计算 wrap_map。
+    /// 对每个逻辑行使用 ratatui 的 Paragraph::line_count 精确计算视觉行数，
+    /// 与实际渲染的 WordWrapper 算法完全一致。
+    /// char_widths 使用 grapheme 级别（与 ratatui 一致）。
     fn build_wrap_map(lines: &[Line<'static>], width: u16) -> Vec<WrappedLineInfo> {
-        let usable_width = width.saturating_sub(1) as usize; // 右侧留 1 列给滚动条
-        if usable_width == 0 || lines.is_empty() {
+        if width == 0 || lines.is_empty() {
             return Vec::new();
         }
         let mut wrap_map = Vec::with_capacity(lines.len());
         let mut visual_row: u16 = 0;
 
         for (idx, line) in lines.iter().enumerate() {
-            // 1. 提取纯文本
             let plain_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            // 2. 计算每个字符的显示宽度
+            // 使用 grapheme 级别（与 ratatui WordWrapper 一致）
             let char_widths: Vec<u8> = plain_text
-                .chars()
-                .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(0) as u8)
+                .graphemes(true)
+                .map(|g| unicode_width::UnicodeWidthStr::width(g) as u8)
                 .collect();
-            // 3. 模拟 word-wrap 计算该行占几个视觉行
-            let line_display_width: usize = char_widths.iter().map(|&w| w as usize).sum();
-            let visual_count = if line_display_width == 0 {
-                1 // 空行占 1 个视觉行
+
+            // 使用 ratatui 的 Paragraph::line_count 精确计算该行的视觉行数
+            let visual_count = if plain_text.is_empty() {
+                1
             } else {
-                line_display_width.div_ceil(usable_width) // 向上取整
+                let text = ratatui::text::Text::from(line.clone());
+                let count = Paragraph::new(text)
+                    .wrap(Wrap { trim: false })
+                    .line_count(width);
+                count.max(1) as u16
             };
-            let visual_count = visual_count.max(1) as u16;
 
             wrap_map.push(WrappedLineInfo {
                 line_idx: idx,
@@ -156,7 +164,7 @@ impl RenderTask {
 
     /// 全量重新渲染所有消息，写入缓存
     fn rebuild_all(&mut self) {
-        let width = self.width.saturating_sub(1) as usize;
+        let width = self.width as usize;
         let mut all_lines: Vec<Line<'static>> = Vec::new();
         let mut offsets: Vec<usize> = Vec::new();
 
@@ -165,12 +173,13 @@ impl RenderTask {
             all_lines.extend(Self::render_one(vm, i + 1, width));
         }
 
-        let render_width = self.width.saturating_sub(1);
+        let render_width = self.width;
         let mut cache = self.cache.write();
         cache.lines = all_lines;
         cache.message_offsets = offsets;
         cache.total_lines = RenderCache::compute_wrapped_height(&cache.lines, render_width);
         cache.wrap_map = Self::build_wrap_map(&cache.lines, self.width);
+        cache.width = self.width;
         cache.version += 1;
     }
 
@@ -180,11 +189,11 @@ impl RenderTask {
             match event {
                 RenderEvent::AddMessage(vm) => {
                     self.messages.push(vm);
-                    let width = self.width.saturating_sub(1) as usize;
+                    let width = self.width as usize;
                     let idx = self.messages.len() - 1;
                     let lines = Self::render_one(&mut self.messages[idx], idx + 1, width);
 
-                    let render_width = self.width.saturating_sub(1);
+                    let render_width = self.width;
                     let mut cache = self.cache.write();
                     let offset = cache.lines.len();
                     cache.message_offsets.push(offset);
@@ -215,12 +224,12 @@ impl RenderTask {
                     }
 
                     // 重新渲染最后一条消息，替换缓存中对应区间
-                    let width = self.width.saturating_sub(1) as usize;
+                    let width = self.width as usize;
                     let last_idx = self.messages.len() - 1;
                     let new_lines =
                         Self::render_one(&mut self.messages[last_idx], last_idx + 1, width);
 
-                    let render_width = self.width.saturating_sub(1);
+                    let render_width = self.width;
                     let mut cache = self.cache.write();
                     // 获取最后一条消息的起始偏移
                     let start = if let Some(&offset) = cache.message_offsets.last() {
@@ -247,12 +256,12 @@ impl RenderTask {
                         *is_streaming = false;
                     }
                     // 重新渲染最后一条消息
-                    let width = self.width.saturating_sub(1) as usize;
+                    let width = self.width as usize;
                     if !self.messages.is_empty() {
                         let last_idx = self.messages.len() - 1;
                         let new_lines =
                             Self::render_one(&mut self.messages[last_idx], last_idx + 1, width);
-                        let render_width = self.width.saturating_sub(1);
+                        let render_width = self.width;
                         let mut cache = self.cache.write();
                         if let Some(&start) = cache.message_offsets.last() {
                             cache.lines.truncate(start);
@@ -293,12 +302,12 @@ impl RenderTask {
                         self.messages.push(vm);
                     }
                     // 重新渲染最后一条消息，替换缓存中对应区间的行
-                    let width = self.width.saturating_sub(1) as usize;
+                    let width = self.width as usize;
                     if !self.messages.is_empty() {
                         let last_idx = self.messages.len() - 1;
                         let new_lines =
                             Self::render_one(&mut self.messages[last_idx], last_idx + 1, width);
-                        let render_width = self.width.saturating_sub(1);
+                        let render_width = self.width;
                         let mut cache = self.cache.write();
                         if let Some(&start) = cache.message_offsets.last() {
                             cache.lines.truncate(start);
@@ -314,7 +323,7 @@ impl RenderTask {
                     // 移除最后一条消息及其对应的渲染缓存
                     if !self.messages.is_empty() {
                         self.messages.pop();
-                        let render_width = self.width.saturating_sub(1);
+                        let render_width = self.width;
                         let mut cache = self.cache.write();
                         // 移除最后一条消息的 offset
                         cache.message_offsets.pop();
@@ -442,9 +451,9 @@ mod tests {
         let lines: Vec<Line<'static>> = vec![Line::from(long_text)];
         let result = RenderTask::build_wrap_map(&lines, 40);
         assert_eq!(result.len(), 1);
-        // usable_width = 40 - 1 = 39; 200 / 39 = 5.13 → 6 visual rows
+        // width=40; 200 chars / 40 per line = 5 visual rows
         assert_eq!(result[0].visual_row_start, 0);
-        assert_eq!(result[0].visual_row_end, 6);
+        assert_eq!(result[0].visual_row_end, 5);
     }
 
     #[test]
@@ -452,17 +461,17 @@ mod tests {
         let lines = vec![Line::from("你好世界")];
         let result = RenderTask::build_wrap_map(&lines, 80);
         assert_eq!(result[0].char_widths, vec![2, 2, 2, 2]);
-        // line_display_width = 8, usable_width = 79, fits in 1 row
+        // line_display_width = 8, width = 80, fits in 1 row
         assert_eq!(result[0].visual_row_end - result[0].visual_row_start, 1);
     }
 
     #[test]
     fn test_build_wrap_map_multi_line_visual_rows() {
-        // First line: 80 chars, width=41 → usable=40, 80/40=2 visual rows
+        // First line: 80 chars, width=40 → 80/40=2 visual rows
         let first_line: String = "A".repeat(80);
         let second_line = Line::from("short");
         let lines: Vec<Line<'static>> = vec![Line::from(first_line), second_line];
-        let result = RenderTask::build_wrap_map(&lines, 41);
+        let result = RenderTask::build_wrap_map(&lines, 40);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].visual_row_start, 0);
         assert_eq!(result[0].visual_row_end, 2);

@@ -315,18 +315,18 @@ pub fn render_view_model(
             let is_error =
                 content.contains("❌") || content.contains("失败") || content.contains("错误");
             let is_warn = content.contains("⚠") || content.contains("已中断");
-            let (icon, icon_color, text_color) = if is_error {
-                ("✗ ", theme::ERROR, theme::ERROR)
+            let text_color = if is_error {
+                theme::ERROR
             } else if is_warn {
-                ("⚠ ", theme::WARNING, theme::WARNING)
+                theme::WARNING
             } else {
-                ("[i] ", theme::SAGE, theme::MUTED)
+                theme::MUTED
             };
             for line in content.lines() {
-                lines.push(Line::from(vec![
-                    Span::styled(icon.to_string(), Style::default().fg(icon_color)),
-                    Span::styled(line.to_string(), Style::default().fg(text_color)),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    line.to_string(),
+                    Style::default().fg(text_color),
+                )]));
             }
             lines
         }

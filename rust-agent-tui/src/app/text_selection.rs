@@ -1,3 +1,5 @@
+use unicode_segmentation::UnicodeSegmentation;
+
 /// 文本选区状态
 #[derive(Debug, Clone)]
 pub struct TextSelection {
@@ -152,19 +154,19 @@ pub fn extract_panel_text(
     for (i, text) in plain_lines.iter().enumerate().take(er + 1).skip(sr) {
         if sr == er {
             // 同一行
-            let b_start = char_to_byte_idx(text, sc as usize);
-            let b_end = char_to_byte_idx(text, ec as usize);
+            let b_start = grapheme_to_byte_idx(text, sc as usize);
+            let b_end = grapheme_to_byte_idx(text, ec as usize);
             if b_start >= b_end {
                 return None;
             }
             parts.push(text[b_start..b_end].to_string());
         } else if i == sr {
             // 首行：从 sc 到行尾
-            let b_start = char_to_byte_idx(text, sc as usize);
+            let b_start = grapheme_to_byte_idx(text, sc as usize);
             parts.push(text[b_start..].to_string());
         } else if i == er {
             // 末行：从行首到 ec
-            let b_end = char_to_byte_idx(text, ec as usize);
+            let b_end = grapheme_to_byte_idx(text, ec as usize);
             parts.push(text[..b_end].to_string());
         } else {
             // 中间行：整行
@@ -179,8 +181,14 @@ pub fn extract_panel_text(
     }
 }
 
-/// 在 char_widths 中定位到第 row_in_line 个视觉行，在该视觉行内
-/// 累积宽度到 visual_col，返回字符偏移量。
+/// 在 char_widths（grapheme 级别）中，模拟 ratatui WordWrapper 的 word-break 算法，
+/// 定位到第 row_in_line 个视觉行的起始 grapheme 偏移，然后在该视觉行内累积宽度到 visual_col，
+/// 返回 grapheme 偏移量。
+///
+/// word-break 规则（与 ratatui WordWrapper 一致，trim=false）：
+/// - 空白跟随前一个 word 到同一行
+/// - 当 line_width + whitespace_width + word_width > usable_width 时换行
+/// - 当一个 word 本身超过行宽时，在行宽处硬断
 fn char_col_to_offset(
     char_widths: &[u8],
     visual_col: u16,
@@ -191,43 +199,73 @@ fn char_col_to_offset(
     if uw == 0 || char_widths.is_empty() {
         return 0;
     }
-    // 定位到第 row_in_line 个视觉行的起始字符偏移
-    let mut line_start = 0;
-    let mut current_row = 0;
-    let mut col_in_line: usize = 0;
+
+    let target = visual_col as usize;
+    let mut current_row: usize = 0;
+    let mut line_width: usize = 0;
+    let mut word_width: usize = 0;
+    let mut whitespace_width: usize = 0;
+    let mut non_ws_previous = false;
+    let mut in_target_row = row_in_line == 0;
+
     for (i, &w) in char_widths.iter().enumerate() {
         let w = w as usize;
-        if col_in_line + w > uw {
+        let is_whitespace = w == 0; // 零宽字符视为空白
+
+        // 跳过比行宽还宽的 grapheme
+        if w > uw {
+            non_ws_previous = false;
+            continue;
+        }
+
+        let word_found = non_ws_previous && is_whitespace;
+        let untrimmed_overflow = line_width == 0 && word_width + whitespace_width + w > uw;
+
+        if word_found || untrimmed_overflow {
+            line_width += whitespace_width + word_width;
+            whitespace_width = 0;
+            word_width = 0;
+        }
+
+        let line_full = line_width >= uw;
+        let pending_overflow = w > 0 && line_width + whitespace_width + word_width >= uw;
+
+        if line_full || pending_overflow {
+            if in_target_row {
+                break;
+            }
             current_row += 1;
-            col_in_line = w;
-            line_start = i;
+            line_width = 0;
+            whitespace_width = 0;
+            if current_row == row_in_line {
+                in_target_row = true;
+            }
+            if is_whitespace {
+                continue;
+            }
+        }
+
+        if is_whitespace {
+            whitespace_width += w;
         } else {
-            col_in_line += w;
+            word_width += w;
         }
-        if current_row >= row_in_line {
-            break;
+
+        if in_target_row {
+            let effective = line_width + whitespace_width + word_width;
+            if effective > target {
+                return i;
+            }
         }
+
+        non_ws_previous = !is_whitespace;
     }
-    // 在当前视觉行内累积到 visual_col
-    let target = visual_col as usize;
-    let mut accumulated: usize = 0;
-    let mut offset = line_start;
-    for (i, &w) in char_widths[line_start..].iter().enumerate() {
-        let w = w as usize;
-        if accumulated + w > target {
-            break;
-        }
-        accumulated += w;
-        offset = line_start + i + 1;
-        if accumulated >= target {
-            break;
-        }
-    }
-    offset
+
+    char_widths.len()
 }
 
-/// 将视觉坐标 (visual_row, visual_col) 通过 wrap_map 映射为 (line_idx, char_offset)。
-/// `usable_width` 为消息区域可用宽度（右侧留 1 列给滚动条后）。
+/// 将视觉坐标 (visual_row, visual_col) 通过 wrap_map 映射为 (line_idx, grapheme_offset)。
+/// `usable_width` 为消息区域可用宽度（text_area.width）。
 pub fn visual_to_logical(
     visual_row: u16,
     visual_col: u16,
@@ -247,12 +285,12 @@ pub fn visual_to_logical(
     Some((info.line_idx, char_offset))
 }
 
-/// 将字符索引转换为字节索引，用于安全切割 String。
-/// `char_idx` 是 text 中的字符位置（从 0 开始）。
-/// 返回对应的 byte 偏移量。如果 char_idx 超出字符数，返回 text.len()。
-fn char_to_byte_idx(text: &str, char_idx: usize) -> usize {
-    text.char_indices()
-        .nth(char_idx)
+/// 将 grapheme 索引转换为字节索引，用于安全切割 String。
+/// `grapheme_idx` 是 text 中的 grapheme 位置（从 0 开始）。
+/// 返回对应的 byte 偏移量。如果 grapheme_idx 超出 grapheme 数，返回 text.len()。
+fn grapheme_to_byte_idx(text: &str, grapheme_idx: usize) -> usize {
+    text.grapheme_indices(true)
+        .nth(grapheme_idx)
         .map(|(i, _)| i)
         .unwrap_or(text.len())
 }
@@ -260,7 +298,7 @@ fn char_to_byte_idx(text: &str, char_idx: usize) -> usize {
 /// 根据选区起止坐标从 wrap_map 的 plain_text 提取文本（字符级精度）。
 /// 自动处理 start > end 的情况（swap）。
 /// 首行从 start_col 对应的字符位置截取，末行到 end_col 对应的字符位置截取，中间行整行。
-/// 所有 char offset 通过 char_to_byte_idx 转为 byte 索引后切割，保证 unicode 安全。
+/// 所有 char offset 通过 grapheme_to_byte_idx 转为 byte 索引后切割，保证 unicode 安全。
 pub fn extract_selected_text(
     start: (u16, u16),
     end: (u16, u16),
@@ -298,8 +336,8 @@ pub fn extract_selected_text(
             let c_start =
                 char_col_to_offset(&info.char_widths, start_col, row_in_start, usable_width);
             let c_end = char_col_to_offset(&info.char_widths, end_col, row_in_end, usable_width);
-            let b_start = char_to_byte_idx(text, c_start);
-            let b_end = char_to_byte_idx(text, c_end);
+            let b_start = grapheme_to_byte_idx(text, c_start);
+            let b_end = grapheme_to_byte_idx(text, c_end);
             if b_start >= b_end {
                 return None;
             }
@@ -309,13 +347,13 @@ pub fn extract_selected_text(
             let row_in_line = (start_row - info.visual_row_start) as usize;
             let c_start =
                 char_col_to_offset(&info.char_widths, start_col, row_in_line, usable_width);
-            let b_start = char_to_byte_idx(text, c_start);
+            let b_start = grapheme_to_byte_idx(text, c_start);
             parts.push(text[b_start..].to_string());
         } else if i == end_idx {
             // 末行：从行首到 end_col 对应的字符位置
             let row_in_line = (end_row - info.visual_row_start) as usize;
             let c_end = char_col_to_offset(&info.char_widths, end_col, row_in_line, usable_width);
-            let b_end = char_to_byte_idx(text, c_end);
+            let b_end = grapheme_to_byte_idx(text, c_end);
             parts.push(text[..b_end].to_string());
         } else {
             // 中间行：整行

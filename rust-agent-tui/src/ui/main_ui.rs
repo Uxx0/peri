@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::ui::render_thread::RenderEvent;
 use crate::ui::theme;
 use crate::ui::welcome;
 use rust_agent_middlewares::prelude::TodoStatus;
@@ -447,6 +448,15 @@ fn render_messages(f: &mut Frame, app: &mut App, header_area: Rect, messages_are
             .messages
             .render_cache
             .read();
+
+        // 渲染驱动宽度同步：比较 cache 记录的渲染宽度与当前 text_area 宽度
+        let text_area_width = inner.width.saturating_sub(1);
+        if cache.width != text_area_width && text_area_width > 0 {
+            let _ = app.session_mgr.sessions[app.session_mgr.active]
+                .messages
+                .render_tx
+                .send(RenderEvent::Resize(text_area_width));
+        }
 
         // total_lines 已是 wrap 后的真实视觉行数（由渲染线程通过 Paragraph::line_count 计算）
         let total_lines = cache.total_lines;
