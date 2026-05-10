@@ -1434,26 +1434,6 @@ impl App {
                 (true, false, false)
             }
             AgentEvent::StateSnapshot(msgs) => {
-                tracing::debug!(count = msgs.len(), "received StateSnapshot in poll_agent");
-                for msg in &msgs {
-                    match msg {
-                        BaseMessage::Ai {
-                            content: _,
-                            tool_calls,
-                            ..
-                        } => {
-                            tracing::debug!(
-                                has_tc = !tool_calls.is_empty(),
-                                tc_len = tool_calls.len(),
-                                "ai msg in snapshot"
-                            );
-                        }
-                        BaseMessage::Tool { tool_call_id, .. } => {
-                            tracing::debug!(tc_id = %tool_call_id, "tool msg in snapshot");
-                        }
-                        _ => {}
-                    }
-                }
                 self.session_mgr.sessions[self.session_mgr.active]
                     .agent
                     .agent_state_messages

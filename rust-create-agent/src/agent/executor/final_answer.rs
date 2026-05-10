@@ -43,26 +43,6 @@ pub(crate) async fn emit_snapshot_and_drain_notifications<L: ReactLLM, S: State>
 ) {
     // 发送状态快照（从用户消息开始的所有消息），便于增量持久化
     let msgs_since_human = state.messages()[*last_message_count..].to_vec();
-    tracing::debug!(count = msgs_since_human.len(), "sending state snapshot");
-    for msg in &msgs_since_human {
-        match msg {
-            BaseMessage::Ai {
-                content: _,
-                tool_calls,
-                ..
-            } => {
-                tracing::debug!(
-                    has_tc = !tool_calls.is_empty(),
-                    tc_len = tool_calls.len(),
-                    "ai message in snapshot"
-                );
-            }
-            BaseMessage::Tool { tool_call_id, .. } => {
-                tracing::debug!(tc_id = %tool_call_id, "tool message in snapshot");
-            }
-            _ => {}
-        }
-    }
     if !msgs_since_human.is_empty() {
         agent.emit(AgentEvent::StateSnapshot(msgs_since_human));
     }

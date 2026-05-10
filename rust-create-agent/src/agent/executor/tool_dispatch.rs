@@ -161,11 +161,6 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
             }
         };
 
-        tracing::debug!(
-            tool.name = %result.tool_name,
-            tool.is_error = result.is_error,
-            "tool call completed"
-        );
         if result.is_error {
             tracing::warn!(
                 tool.name = %result.tool_name,

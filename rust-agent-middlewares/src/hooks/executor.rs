@@ -38,7 +38,6 @@ pub async fn execute_command_hook(
             timeout.unwrap_or(600),
         ),
         _ => {
-            tracing::warn!("execute_command_hook called with non-Command hook type");
             return HookAction::Allow;
         }
     };
@@ -170,7 +169,6 @@ pub async fn execute_prompt_hook(
             prompt, timeout, ..
         } => (prompt.as_str(), timeout.unwrap_or(30)),
         _ => {
-            tracing::warn!("execute_prompt_hook called with non-Prompt hook type");
             return HookAction::Allow;
         }
     };
@@ -236,7 +234,6 @@ pub async fn execute_http_hook(hook: &HookType, input: &HookInput) -> HookAction
             allowed_env_vars,
         ),
         _ => {
-            tracing::warn!("execute_http_hook called with non-Http hook type");
             return HookAction::Allow;
         }
     };
@@ -336,7 +333,6 @@ pub async fn execute_agent_hook(
             prompt, timeout, ..
         } => (prompt.as_str(), timeout.unwrap_or(60)),
         _ => {
-            tracing::warn!("execute_agent_hook called with non-Agent hook type");
             return HookAction::Allow;
         }
     };

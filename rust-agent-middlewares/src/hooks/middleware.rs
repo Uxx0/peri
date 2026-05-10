@@ -131,7 +131,6 @@ impl HookMiddleware {
                     h.clone()
                 }
                 None => {
-                    tracing::debug!(event = ?event, "HookMiddleware: no hooks registered for event");
                     return HookAction::Allow;
                 }
             }

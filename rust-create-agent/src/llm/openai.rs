@@ -400,13 +400,6 @@ impl ChatOpenAI {
 impl BaseModel for ChatOpenAI {
     async fn invoke(&self, request: LlmRequest) -> AgentResult<LlmResponse> {
         let msg_count = request.messages.len();
-        tracing::debug!(
-            provider = "openai",
-            model = %self.model,
-            msg_count,
-            has_tools = !request.tools.is_empty(),
-            "LLM invoke start"
-        );
         let start = std::time::Instant::now();
 
         let chat_url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));

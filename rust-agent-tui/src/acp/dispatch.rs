@@ -214,12 +214,6 @@ pub async fn handle_new_session(
                 .map(|s| fill_new_session_resp(&s, NewSessionResponse::new(session_id.clone())))
                 .unwrap_or_else(|| NewSessionResponse::new(session_id.clone()));
 
-            tracing::info!(
-                session_id = %session_id,
-                response = %serde_json::to_string(&resp).unwrap_or_default(),
-                "ACP session/new response"
-            );
-
             let _ = responder.respond(resp);
         }
         Err(e) => {

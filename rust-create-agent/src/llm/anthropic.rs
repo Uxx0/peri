@@ -342,14 +342,6 @@ impl ChatAnthropic {
 impl BaseModel for ChatAnthropic {
     async fn invoke(&self, request: LlmRequest) -> AgentResult<LlmResponse> {
         let msg_count = request.messages.len();
-        tracing::debug!(
-            provider = "anthropic",
-            model = %self.model,
-            msg_count,
-            has_tools = !request.tools.is_empty(),
-            extended_thinking = self.extended_thinking,
-            "LLM invoke start"
-        );
         let start = std::time::Instant::now();
 
         let chat_url = match &self.base_url {

@@ -87,7 +87,6 @@ impl Batcher {
                                 );
                                 Self::do_flush(&client, &mut buffer).await;
                             }
-                            info!("Batcher background task exited");
                             return;
                         }
                     }
