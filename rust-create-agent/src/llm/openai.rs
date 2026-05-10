@@ -16,6 +16,8 @@ pub struct ChatOpenAI {
     /// o1/o3 系列推理强度："low" | "medium" | "high"
     /// 设置后请求体加 `reasoning_effort` 字段，同时移除 temperature
     pub reasoning_effort: Option<String>,
+    /// 是否在请求体中发送 `thinking: { type: "enabled" }`（deepseek-v4-pro 等）
+    pub thinking_enabled: bool,
     /// 是否在 content 中回传 `thinking` 类型的 Reasoning 块。
     /// 仅 deepseek-v4-pro 等明确支持的模型开启，其他 provider 不支持会报 400。
     pub supports_thinking_content: bool,
@@ -29,6 +31,7 @@ impl ChatOpenAI {
             api_key: api_key.into(),
             base_url: "https://api.openai.com/v1".to_string(),
             reasoning_effort: None,
+            thinking_enabled: false,
             supports_thinking_content: Self::detect_thinking_content_support(&model),
             model,
             client: reqwest::Client::new(),
@@ -44,6 +47,17 @@ impl ChatOpenAI {
     /// `effort`: "low" | "medium" | "high"
     pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Self {
         self.reasoning_effort = Some(effort.into());
+        self
+    }
+
+    /// 开启 DeepSeek thinking 模式（deepseek-v4-pro 等）
+    ///
+    /// 请求体中添加 `"thinking": {"type": "enabled"}`，API 会返回 `reasoning_content` 字段。
+    /// 注意：`supports_thinking_content` 由构造函数根据模型名自动检测，此方法不修改它。
+    /// 只有 deepseek-v4 系列支持 content 数组中的 `thinking` 块，其他模型只支持
+    /// 顶层 `reasoning_content` 字段回传。
+    pub fn with_thinking_enabled(mut self) -> Self {
+        self.thinking_enabled = true;
         self
     }
 
@@ -171,6 +185,10 @@ impl ChatOpenAI {
     }
 
     pub(crate) fn messages_to_json(&self, messages: &[BaseMessage]) -> Vec<Value> {
+        // DeepSeek v4 thinking 模式：所有 assistant 消息必须包含 reasoning_content 字段
+        let force_reasoning_content =
+            self.thinking_enabled || self.model.to_lowercase().contains("deepseek");
+
         // 单次遍历：收集 System 消息并处理其他消息
         let mut system_parts: Vec<String> = Vec::new();
         let mut result: Vec<Value> = Vec::new();
@@ -200,8 +218,10 @@ impl ChatOpenAI {
 
                     if tool_calls.is_empty() {
                         let mut msg = json!({ "role": "assistant", "content": serialized_content });
-                        if let Some(rt) = reasoning_text {
+                        if let Some(rt) = &reasoning_text {
                             msg["reasoning_content"] = json!(rt);
+                        } else if force_reasoning_content {
+                            msg["reasoning_content"] = json!("");
                         }
                         result.push(msg);
                     } else {
@@ -223,8 +243,10 @@ impl ChatOpenAI {
                             "content": serialized_content,
                             "tool_calls": tcs
                         });
-                        if let Some(rt) = reasoning_text {
+                        if let Some(rt) = &reasoning_text {
                             msg["reasoning_content"] = json!(rt);
+                        } else if force_reasoning_content {
+                            msg["reasoning_content"] = json!("");
                         }
                         result.push(msg);
                     }
@@ -260,22 +282,70 @@ impl ChatOpenAI {
     /// 支持 `o1/o3/deepseek-r1` 格式：
     /// - `message.reasoning_content` → `ContentBlock::Reasoning`
     /// - `message.content` → `ContentBlock::Text`
+    ///
+    /// 支持 `deepseek-v4-pro` thinking 模式：
+    /// - `message.content` 数组中的 `{"type": "thinking", "thinking": "..."}` → `ContentBlock::Reasoning`
+    /// - `message.content` 数组中的 `{"type": "text", "text": "..."}` → `ContentBlock::Text`
+    /// - `message.reasoning_content` 顶层字段（如存在）→ `ContentBlock::Reasoning`
     fn parse_assistant_message(assistant_msg: &Value, stop_reason: &StopReason) -> BaseMessage {
-        let content_str = assistant_msg["content"].as_str().unwrap_or("").to_string();
+        // 检测 content 是字符串还是数组
+        let content_val = &assistant_msg["content"];
+        let is_array = content_val.is_array();
 
-        // 收集 content blocks
         let mut blocks: Vec<ContentBlock> = Vec::new();
+        let mut text_parts: Vec<String> = Vec::new();
 
-        // reasoning_content（deepseek-r1、某些 OpenAI o 系列）
+        // 1) reasoning_content 顶层字段（deepseek-r1、某些 OpenAI o 系列）
+        let mut has_top_level_reasoning = false;
         if let Some(reasoning) = assistant_msg["reasoning_content"].as_str() {
             if !reasoning.is_empty() {
                 blocks.push(ContentBlock::reasoning(reasoning));
+                has_top_level_reasoning = true;
             }
         }
 
-        // 主文本
+        if is_array {
+            // content 是数组格式（deepseek-v4-pro thinking 模式等）
+            if let Some(arr) = content_val.as_array() {
+                for item in arr {
+                    let item_type = item["type"].as_str().unwrap_or("");
+                    match item_type {
+                        "thinking"
+                            // content 数组中的 thinking 块（deepseek-v4-pro）
+                            // 如果顶层 reasoning_content 已存在，跳过避免重复
+                            if !has_top_level_reasoning => {
+                                if let Some(thinking_text) = item["thinking"].as_str() {
+                                    if !thinking_text.is_empty() {
+                                        blocks.push(ContentBlock::reasoning(thinking_text));
+                                    }
+                                }
+                            }
+                        "text" => {
+                            if let Some(t) = item["text"].as_str() {
+                                if !t.is_empty() {
+                                    text_parts.push(t.to_string());
+                                }
+                            }
+                        }
+                        // 其他类型（image_url 等）暂不处理
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            // content 是字符串格式（传统 OpenAI / deepseek-r1）
+            let content_str = content_val.as_str().unwrap_or("");
+            if !content_str.is_empty() {
+                text_parts.push(content_str.to_string());
+            }
+        }
+
+        // 合并文本
+        let content_str = text_parts.join("");
+
+        // 添加文本 block
         if !content_str.is_empty() {
-            blocks.push(ContentBlock::text(content_str.clone()));
+            blocks.push(ContentBlock::text(&content_str));
         }
 
         if *stop_reason == StopReason::ToolUse {
@@ -409,6 +479,11 @@ impl BaseModel for ChatOpenAI {
             body["reasoning_effort"] = json!(effort);
         } else if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);
+        }
+
+        // DeepSeek thinking 模式（deepseek-v4-pro 等）
+        if self.thinking_enabled {
+            body["thinking"] = json!({ "type": "enabled" });
         }
 
         let resp = self
@@ -789,6 +864,28 @@ mod tests {
     }
 
     #[test]
+    fn test_with_thinking_enabled() {
+        let llm = ChatOpenAI::new("key", "deepseek-v4-pro").with_thinking_enabled();
+        assert!(llm.thinking_enabled, "thinking_enabled 应为 true");
+        // deepseek-v4-pro 的 supports_thinking_content 由构造函数自动检测开启
+        assert!(
+            llm.supports_thinking_content,
+            "deepseek-v4-pro 应自动检测 supports_thinking_content"
+        );
+    }
+
+    #[test]
+    fn test_with_thinking_enabled_non_v4() {
+        // 非 v4 模型：thinking_enabled 开启但 supports_thinking_content 保持 false
+        let llm = ChatOpenAI::new("key", "deepseek-chat").with_thinking_enabled();
+        assert!(llm.thinking_enabled);
+        assert!(
+            !llm.supports_thinking_content,
+            "非 v4 模型不应开启 supports_thinking_content，否则 content 数组中会发送不支持的 thinking 块"
+        );
+    }
+
+    #[test]
     fn test_detect_thinking_content_deepseek_v4() {
         assert!(ChatOpenAI::detect_thinking_content_support(
             "deepseek-v4-pro"
@@ -894,5 +991,279 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 端到端验证 deepseek-v4-pro：模拟 API 响应 → parse_assistant_message → 序列化回传
+    ///
+    /// 验证 thinking 内容在完整链路中不丢失。
+    #[test]
+    fn test_deepseek_v4_pro_thinking_roundtrip() {
+        // 模拟 deepseek-v4-pro API 响应（含 reasoning_content + tool_calls）
+        let api_response = json!({
+            "role": "assistant",
+            "content": "Let me check the weather for you.",
+            "reasoning_content": "I need to first get the current date, then check the weather.",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "get_date",
+                    "arguments": "{}"
+                }
+            }]
+        });
+
+        let message = ChatOpenAI::parse_assistant_message(&api_response, &StopReason::ToolUse);
+
+        // 验证解析：message 应包含 Reasoning + Text + ToolUse blocks
+        assert!(message.has_tool_calls());
+        let blocks = message.content_blocks();
+        assert_eq!(
+            blocks.len(),
+            3,
+            "应有 Reasoning + Text + ToolUse 三个 blocks"
+        );
+
+        match &blocks[0] {
+            ContentBlock::Reasoning { text, .. } => {
+                assert_eq!(
+                    text,
+                    "I need to first get the current date, then check the weather."
+                );
+            }
+            other => panic!("第一个 block 应为 Reasoning，实际为 {:?}", other),
+        }
+        assert_eq!(
+            blocks[1].as_text(),
+            Some("Let me check the weather for you.")
+        );
+        assert!(matches!(&blocks[2], ContentBlock::ToolUse { .. }));
+
+        // 模拟第二轮序列化（deepseek-v4-pro with thinking_enabled）
+        let llm = ChatOpenAI::new("sk-test", "deepseek-v4-pro").with_thinking_enabled();
+        let tool_result = BaseMessage::tool_result("call_1", "2025-05-11");
+        let messages = vec![
+            BaseMessage::human("How's the weather tomorrow?"),
+            message,
+            tool_result,
+        ];
+
+        let vals = llm.messages_to_json(&messages);
+        let assistant = vals.iter().find(|m| m["role"] == "assistant").unwrap();
+
+        // 验证 reasoning_content 顶层字段回传（deepseek-v4-pro 要求）
+        assert_eq!(
+            assistant["reasoning_content"],
+            "I need to first get the current date, then check the weather.",
+            "reasoning_content 顶层字段必须回传，否则 deepseek 返回 400"
+        );
+
+        // 验证 content 中也包含 thinking block（deepseek-v4-pro supports_thinking_content=true）
+        let content = assistant["content"].as_array().expect("content 应为数组");
+        let thinking_block = content.iter().find(|b| b["type"] == "thinking");
+        assert!(
+            thinking_block.is_some(),
+            "deepseek-v4-pro content 中应包含 thinking block"
+        );
+        assert_eq!(
+            thinking_block.unwrap()["thinking"],
+            "I need to first get the current date, then check the weather."
+        );
+
+        // 验证 tool_calls 正确序列化
+        assert!(assistant["tool_calls"].is_array());
+        assert_eq!(assistant["tool_calls"][0]["id"], "call_1");
+        assert_eq!(assistant["tool_calls"][0]["function"]["name"], "get_date");
+    }
+
+    /// 验证 deepseek-v4-pro 多轮对话中每轮的 thinking 都被回传
+    #[test]
+    fn test_deepseek_v4_pro_multi_turn_thinking() {
+        let llm = ChatOpenAI::new("sk-test", "deepseek-v4-pro").with_thinking_enabled();
+
+        let msgs = vec![
+            BaseMessage::human("question 1"),
+            // 第一轮 assistant
+            BaseMessage::ai_from_blocks(vec![
+                ContentBlock::reasoning("thinking round 1"),
+                ContentBlock::text("answer 1"),
+                ContentBlock::tool_use("tc1", "Bash", json!({"command": "ls"})),
+            ]),
+            BaseMessage::tool_result("tc1", "result 1"),
+            // 第二轮 assistant
+            BaseMessage::ai_from_blocks(vec![
+                ContentBlock::reasoning("thinking round 2"),
+                ContentBlock::text("answer 2"),
+                ContentBlock::tool_use("tc2", "Read", json!({"path": "f.txt"})),
+            ]),
+            BaseMessage::tool_result("tc2", "result 2"),
+            BaseMessage::human("question 2"),
+        ];
+
+        let vals = llm.messages_to_json(&msgs);
+        let assistant_msgs: Vec<_> = vals.iter().filter(|m| m["role"] == "assistant").collect();
+
+        assert_eq!(assistant_msgs.len(), 2, "应有 2 条 assistant 消息");
+
+        // 第一轮
+        assert_eq!(assistant_msgs[0]["reasoning_content"], "thinking round 1");
+        assert_eq!(assistant_msgs[0]["tool_calls"][0]["id"], "tc1");
+
+        // 第二轮
+        assert_eq!(assistant_msgs[1]["reasoning_content"], "thinking round 2");
+        assert_eq!(assistant_msgs[1]["tool_calls"][0]["id"], "tc2");
+    }
+
+    /// deepseek-v4-pro 返回 content 数组格式（thinking 块在 content 内，无顶层 reasoning_content）
+    ///
+    /// 某些 API 实现将 thinking 内容放在 content 数组中而非 reasoning_content 顶层字段。
+    /// 解析器必须从 content 数组中提取 thinking 块。
+    #[test]
+    fn test_deepseek_v4_pro_content_array_thinking() {
+        let api_response = json!({
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "Let me analyze this..."},
+                {"type": "text", "text": "I'll run a command."}
+            ],
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "Bash", "arguments": "{\"command\":\"ls\"}"}
+            }]
+        });
+
+        let message = ChatOpenAI::parse_assistant_message(&api_response, &StopReason::ToolUse);
+        let blocks = message.content_blocks();
+        assert!(message.has_tool_calls());
+
+        // 应包含 Reasoning（从 content 数组提取）+ Text + ToolUse
+        assert!(blocks.iter().any(|b| matches!(b, ContentBlock::Reasoning { text, .. } if text == "Let me analyze this...")),
+            "应从 content 数组中提取 thinking 块为 Reasoning block");
+        assert!(blocks
+            .iter()
+            .any(|b| b.as_text() == Some("I'll run a command.")));
+
+        // 序列化回传时应包含 reasoning_content 顶层字段
+        let llm = ChatOpenAI::new("sk-test", "deepseek-v4-pro").with_thinking_enabled();
+        let vals = llm.messages_to_json(&[message]);
+        let assistant = &vals[0];
+        assert_eq!(
+            assistant["reasoning_content"], "Let me analyze this...",
+            "从 content 数组提取的 thinking 必须作为 reasoning_content 回传"
+        );
+    }
+
+    /// deepseek-v4-pro 同时返回顶层 reasoning_content 和 content 数组中的 thinking 块
+    ///
+    /// 应优先使用顶层 reasoning_content，跳过 content 数组中的重复 thinking 块。
+    #[test]
+    fn test_deepseek_v4_pro_both_reasoning_sources() {
+        let api_response = json!({
+            "role": "assistant",
+            "reasoning_content": "top-level reasoning",
+            "content": [
+                {"type": "thinking", "thinking": "duplicate in array"},
+                {"type": "text", "text": "answer"}
+            ],
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "Bash", "arguments": "{}"}
+            }]
+        });
+
+        let message = ChatOpenAI::parse_assistant_message(&api_response, &StopReason::ToolUse);
+        let blocks = message.content_blocks();
+
+        // 只应有一个 Reasoning block（来自顶层），不应重复
+        let reasoning_count = blocks
+            .iter()
+            .filter(|b| matches!(b, ContentBlock::Reasoning { .. }))
+            .count();
+        assert_eq!(reasoning_count, 1, "不应重复 Reasoning block");
+        assert_eq!(
+            blocks.iter().find_map(|b| b.as_reasoning()),
+            Some("top-level reasoning"),
+            "应优先使用顶层 reasoning_content"
+        );
+    }
+
+    /// content 为空数组时的退化场景
+    #[test]
+    fn test_deepseek_v4_pro_empty_content_array() {
+        let api_response = json!({
+            "role": "assistant",
+            "content": [],
+            "reasoning_content": "thinking...",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "Bash", "arguments": "{}"}
+            }]
+        });
+
+        let message = ChatOpenAI::parse_assistant_message(&api_response, &StopReason::ToolUse);
+        assert!(message.has_tool_calls());
+        let blocks = message.content_blocks();
+        assert!(blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::Reasoning { .. })));
+    }
+
+    /// DeepSeek v4 thinking 模式：assistant 消息没有 Reasoning block 时自动注入空 reasoning_content
+    ///
+    /// LLM 有时返回空的 reasoning_content（被 parse 跳过），但 API 要求必须回传该字段。
+    #[test]
+    fn test_deepseek_v4_empty_reasoning_auto_inject() {
+        let llm = ChatOpenAI::new("sk-test", "deepseek-v4-flash").with_thinking_enabled();
+
+        // 模拟 assistant 消息没有 Reasoning block（reasoning_content 为空被跳过）
+        let msgs = vec![
+            BaseMessage::human("question"),
+            BaseMessage::ai_from_blocks(vec![
+                ContentBlock::text("I'll run a command."),
+                ContentBlock::tool_use("tc1", "Bash", json!({"command": "ls"})),
+            ]),
+            BaseMessage::tool_result("tc1", "result"),
+        ];
+
+        let vals = llm.messages_to_json(&msgs);
+        let assistant = vals.iter().find(|m| m["role"] == "assistant").unwrap();
+
+        // 验证 reasoning_content 字段存在（即使为空字符串）
+        assert!(
+            assistant.get("reasoning_content").is_some(),
+            "thinking 模式下 assistant 消息必须包含 reasoning_content 字段"
+        );
+        assert_eq!(
+            assistant["reasoning_content"].as_str().unwrap(),
+            "",
+            "无 reasoning 内容时应注入空字符串"
+        );
+    }
+
+    /// 非 thinking 模式：不注入 reasoning_content
+    #[test]
+    fn test_non_thinking_no_reasoning_inject() {
+        let llm = ChatOpenAI::new("sk-test", "gpt-4o");
+
+        let msgs = vec![
+            BaseMessage::human("question"),
+            BaseMessage::ai_from_blocks(vec![
+                ContentBlock::text("answer"),
+                ContentBlock::tool_use("tc1", "Bash", json!({"command": "ls"})),
+            ]),
+            BaseMessage::tool_result("tc1", "result"),
+        ];
+
+        let vals = llm.messages_to_json(&msgs);
+        let assistant = vals.iter().find(|m| m["role"] == "assistant").unwrap();
+
+        // 非 thinking 模式不应注入 reasoning_content
+        assert!(
+            assistant.get("reasoning_content").is_none(),
+            "非 thinking 模式不应注入 reasoning_content"
+        );
     }
 }
