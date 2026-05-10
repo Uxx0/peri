@@ -153,6 +153,23 @@ impl ChatOpenAI {
         }
     }
 
+    /// 从 MessageContent 中提取所有 Reasoning block 的文本
+    ///
+    /// DeepSeek R1 要求将 reasoning_content 作为 assistant 消息的顶层字段回传。
+    fn extract_reasoning_text(content: &MessageContent) -> Option<String> {
+        match content {
+            MessageContent::Blocks(blocks) => {
+                let parts: Vec<&str> = blocks.iter().filter_map(|b| b.as_reasoning()).collect();
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(parts.join(""))
+                }
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn messages_to_json(&self, messages: &[BaseMessage]) -> Vec<Value> {
         // 单次遍历：收集 System 消息并处理其他消息
         let mut system_parts: Vec<String> = Vec::new();
@@ -176,8 +193,17 @@ impl ChatOpenAI {
                     tool_calls,
                     ..
                 } => {
+                    // 提取 reasoning 文本（DeepSeek R1 要求回传 reasoning_content 顶层字段）
+                    let reasoning_text = Self::extract_reasoning_text(content);
+                    let serialized_content =
+                        Self::content_to_openai(content, self.supports_thinking_content);
+
                     if tool_calls.is_empty() {
-                        result.push(json!({ "role": "assistant", "content": Self::content_to_openai(content, self.supports_thinking_content) }));
+                        let mut msg = json!({ "role": "assistant", "content": serialized_content });
+                        if let Some(rt) = reasoning_text {
+                            msg["reasoning_content"] = json!(rt);
+                        }
+                        result.push(msg);
                     } else {
                         let tcs: Vec<Value> = tool_calls
                             .iter()
@@ -192,11 +218,15 @@ impl ChatOpenAI {
                                 })
                             })
                             .collect();
-                        result.push(json!({
+                        let mut msg = json!({
                             "role": "assistant",
-                            "content": Self::content_to_openai(content, self.supports_thinking_content),
+                            "content": serialized_content,
                             "tool_calls": tcs
-                        }));
+                        });
+                        if let Some(rt) = reasoning_text {
+                            msg["reasoning_content"] = json!(rt);
+                        }
+                        result.push(msg);
                     }
                 }
                 BaseMessage::Tool {
@@ -599,7 +629,7 @@ mod tests {
         assert_eq!(val, json!(""));
     }
 
-    /// messages_to_json：默认模型不支持 thinking，reasoning 被过滤
+    /// messages_to_json：默认模型不支持 thinking，reasoning 从 content 过滤但回传到 reasoning_content 顶层字段
     #[test]
     fn test_messages_to_json_with_reasoning_filtered() {
         let llm = ChatOpenAI::new("sk-test", "gpt-4o");
@@ -612,13 +642,16 @@ mod tests {
         assert_eq!(vals.len(), 1);
         let assistant = &vals[0];
         assert_eq!(assistant["role"], "assistant");
+        // content 中 reasoning 被过滤，只剩 text
         let content = assistant["content"].as_array().expect("content 应为 array");
         assert_eq!(content.len(), 1);
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "t1");
+        // reasoning_content 顶层字段回传
+        assert_eq!(assistant["reasoning_content"], "r1");
     }
 
-    /// messages_to_json：deepseek-v4-pro 支持 thinking，reasoning 应保留
+    /// messages_to_json：deepseek-v4-pro 支持 thinking，content 中保留且同时回传 reasoning_content
     #[test]
     fn test_messages_to_json_with_reasoning_included_for_deepseek_v4() {
         let llm = ChatOpenAI::new("sk-test", "deepseek-v4-pro");
@@ -635,6 +668,26 @@ mod tests {
         assert_eq!(content[0]["type"], "thinking");
         assert_eq!(content[0]["thinking"], "r1");
         assert_eq!(content[1]["type"], "text");
+        // reasoning_content 顶层字段也回传
+        assert_eq!(assistant["reasoning_content"], "r1");
+    }
+
+    /// messages_to_json：DeepSeek R1 reasoning_content 回传 + tool_calls
+    #[test]
+    fn test_messages_to_json_reasoning_with_tool_calls() {
+        let llm = ChatOpenAI::new("sk-test", "deepseek-r1");
+        let msgs = vec![BaseMessage::ai_from_blocks(vec![
+            ContentBlock::reasoning("need bash"),
+            ContentBlock::text("running..."),
+            ContentBlock::tool_use("tc1", "Bash", json!({"command": "ls"})),
+        ])];
+        let vals = llm.messages_to_json(&msgs);
+        let assistant = &vals[0];
+        // reasoning_content 顶层字段
+        assert_eq!(assistant["reasoning_content"], "need bash");
+        // tool_calls 在顶层
+        assert!(assistant["tool_calls"].is_array());
+        assert_eq!(assistant["tool_calls"][0]["id"], "tc1");
     }
 
     /// 无 reasoning 的纯文本 AI 消息，content 应为字符串（保持兼容）
