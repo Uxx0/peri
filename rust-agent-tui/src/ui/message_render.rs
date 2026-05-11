@@ -409,20 +409,32 @@ pub fn render_view_model(
         MessageViewModel::SystemNote { content } => {
             let mut lines = Vec::new();
             for line in content.lines() {
-                let is_error =
-                    line.contains("❌") || line.contains("失败") || line.contains("错误");
-                let is_warn = line.contains("⚠") || line.contains("已中断");
-                let text_color = if is_error {
-                    theme::ERROR
-                } else if is_warn {
-                    theme::WARNING
+                if line.starts_with('✻') {
+                    lines.push(Line::from(Span::styled(
+                        line.to_string(),
+                        Style::default().fg(theme::DIM),
+                    )));
+                } else if line.starts_with('⎿') {
+                    lines.push(Line::from(Span::styled(
+                        line.to_string(),
+                        Style::default().fg(theme::MUTED),
+                    )));
                 } else {
-                    theme::MUTED
-                };
-                lines.push(Line::from(vec![
-                    Span::styled("· ", Style::default().fg(theme::DIM)),
-                    Span::styled(line.to_string(), Style::default().fg(text_color)),
-                ]));
+                    let is_error =
+                        line.contains("❌") || line.contains("失败") || line.contains("错误");
+                    let is_warn = line.contains("⚠") || line.contains("已中断");
+                    let text_color = if is_error {
+                        theme::ERROR
+                    } else if is_warn {
+                        theme::WARNING
+                    } else {
+                        theme::MUTED
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled("· ", Style::default().fg(theme::DIM)),
+                        Span::styled(line.to_string(), Style::default().fg(text_color)),
+                    ]));
+                }
             }
             lines
         }

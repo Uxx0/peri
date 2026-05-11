@@ -1356,14 +1356,27 @@ impl App {
                 (true, false, false)
             }
             AgentEvent::StateSnapshot(msgs) => {
+                // 去重：executor 中间快照和 agent.rs 最终快照存在重叠，
+                // 按 message ID 跳过已存在的消息，防止 agent_state_messages 膨胀
+                let existing_ids: std::collections::HashSet<_> = self.session_mgr.sessions
+                    [self.session_mgr.active]
+                    .agent
+                    .agent_state_messages
+                    .iter()
+                    .map(|m| m.id())
+                    .collect();
+                let new_msgs: Vec<_> = msgs
+                    .into_iter()
+                    .filter(|m| !existing_ids.contains(&m.id()))
+                    .collect();
                 self.session_mgr.sessions[self.session_mgr.active]
                     .agent
                     .agent_state_messages
-                    .extend(msgs.clone());
+                    .extend(new_msgs.clone());
                 let actions = self.session_mgr.sessions[self.session_mgr.active]
                     .messages
                     .pipeline
-                    .handle_event(AgentEvent::StateSnapshot(msgs));
+                    .handle_event(AgentEvent::StateSnapshot(new_msgs));
                 for action in actions {
                     self.apply_pipeline_action(action);
                 }
@@ -1412,6 +1425,21 @@ impl App {
                         })
                 });
 
+                // 从 re-inject 消息中提取文件和 skill 信息，生成 condensed summary
+                let mut file_entries = Vec::new();
+                let mut skill_names = Vec::new();
+                for msg in &re_inject_messages {
+                    let content = msg.content();
+                    if let Some(rest) = content.strip_prefix("[最近读取的文件: ") {
+                        let path = rest.lines().next().unwrap_or("");
+                        let line_count = rest.lines().count().saturating_sub(1);
+                        file_entries.push(format!("  ⎿  Read {} ({} lines)", path, line_count));
+                    } else if let Some(rest) = content.strip_prefix("[激活的 Skill 指令: ") {
+                        let name = rest.lines().next().unwrap_or("");
+                        skill_names.push(name.to_string());
+                    }
+                }
+
                 let mut new_messages = vec![BaseMessage::system(summary_text.clone())];
                 new_messages.extend(re_inject_messages);
 
@@ -1443,16 +1471,12 @@ impl App {
                     .pipeline
                     .restore_completed(state_msgs);
 
-                let inject_count = self.session_mgr.sessions[self.session_mgr.active]
-                    .agent
-                    .agent_state_messages
-                    .len()
-                    - 1;
-                let compact_label = if inject_count > 0 {
-                    format!("上下文已压缩，注入 {} 条上下文", inject_count)
-                } else {
-                    "上下文已压缩".to_string()
-                };
+                let mut label_lines = vec!["✻ 上下文已压缩".to_string()];
+                label_lines.extend(file_entries);
+                if !skill_names.is_empty() {
+                    label_lines.push(format!("  ⎿  Skill: {}", skill_names.join(", ")));
+                }
+                let compact_label = label_lines.join("\n");
                 let view_msgs = vec![MessageViewModel::system(compact_label)];
                 self.apply_pipeline_action(PipelineAction::RebuildAll {
                     prefix_len: 0,
