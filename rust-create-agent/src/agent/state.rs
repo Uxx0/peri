@@ -45,6 +45,10 @@ pub struct AgentState {
     /// 持久化目标 thread id
     #[serde(skip)]
     thread_id: Option<ThreadId>,
+    /// 有序持久化通道：保证消息按 add_message 调用顺序写入 SQLite，
+    /// 避免 tokio::spawn 的 fire-and-forget 模式因 .await 让步导致乱序。
+    #[serde(skip)]
+    persist_tx: Option<Arc<tokio::sync::mpsc::UnboundedSender<BaseMessage>>>,
 }
 
 impl std::fmt::Debug for AgentState {
@@ -83,14 +87,28 @@ impl AgentState {
         self.messages
     }
 
-    /// 绑定持久化后端，之后每次 add_message 自动写入（fire-and-forget）
+    /// 绑定持久化后端，之后每次 add_message 自动写入
+    ///
+    /// 使用有序通道 + 专用 writer 任务替代 fire-and-forget tokio::spawn，
+    /// 保证消息按 add_message 调用顺序写入 SQLite，
+    /// 避免 spawn 任务的 .await 让步导致 rowid 乱序（#history-restore-bug）。
     pub fn with_persistence(
         mut self,
         store: Arc<dyn ThreadStore>,
         thread_id: impl Into<String>,
     ) -> Self {
-        self.store = Some(store);
+        self.store = Some(store.clone());
         self.thread_id = Some(thread_id.into());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BaseMessage>();
+        self.persist_tx = Some(Arc::new(tx));
+        let tid = self.thread_id.clone().unwrap();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                if let Err(e) = store.append_message(&tid, msg).await {
+                    tracing::warn!("ordered persist failed: {e}");
+                }
+            }
+        });
         self
     }
 
@@ -122,14 +140,11 @@ impl State for AgentState {
     }
 
     fn add_message(&mut self, message: BaseMessage) {
-        // 自动持久化（非阻塞 fire-and-forget）
-        if let (Some(store), Some(tid)) = (self.store.clone(), self.thread_id.clone()) {
-            let msg = message.clone();
-            tokio::spawn(async move {
-                if let Err(e) = store.append_message(&tid, msg).await {
-                    tracing::warn!("auto-persist message failed: {e}");
-                }
-            });
+        // 有序持久化：通过通道发送到专用 writer 任务，保证写入顺序
+        if let Some(ref tx) = self.persist_tx {
+            if let Err(e) = tx.send(message.clone()) {
+                tracing::warn!("ordered persist send failed (channel closed): {e}");
+            }
         }
         self.messages.push(message);
         // 消息数量超过阈值时发出警告，提示使用 /compact 压缩上下文以降低内存占用
