@@ -3,7 +3,7 @@ use crate::config::{LspConfigFile, LspConfigSource};
 use crate::diagnostics::DiagnosticsRegistry;
 use crate::error::LspError;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,10 +16,11 @@ pub struct LspServerPool {
     root_uri: String,
     /// 诊断注册表
     diagnostics: Arc<DiagnosticsRegistry>,
-    /// 初始化状态
-    initialized: RwLock<bool>,
+    /// 已初始化的服务器名集合
+    initialized: RwLock<HashSet<String>>,
 }
 
+#[derive(Debug)]
 pub struct LspServerInfo {
     pub name: String,
     pub state: ServerState,
@@ -67,35 +68,34 @@ impl LspServerPool {
             extension_map: RwLock::new(extension_map),
             root_uri: format!("file://{}", cwd),
             diagnostics,
-            initialized: RwLock::new(false),
+            initialized: RwLock::new(HashSet::new()),
         }
     }
 
-    /// 按需初始化：首次请求时调用，启动所有非禁用服务器
+    /// 按需初始化：启动所有未初始化的服务器（用于 workspaceSymbol 等全局操作）
     pub async fn ensure_initialized(&self) -> Result<(), LspError> {
-        {
-            let init = self.initialized.read();
-            if *init {
-                return Ok(());
-            }
-        }
-
-        // 克隆 Arc 列表，在 await 前释放锁
-        let servers: Vec<(String, Arc<LspClient>)> = {
+        let to_start: Vec<(String, Arc<LspClient>)> = {
+            let initialized = self.initialized.read();
             let guard = self.servers.read();
             guard
                 .iter()
+                .filter(|(n, _)| !initialized.contains(*n))
                 .map(|(n, c)| (n.clone(), Arc::clone(c)))
                 .collect()
         };
 
-        let mut failed = Vec::new();
-        let total_count = servers.len();
+        if to_start.is_empty() {
+            return Ok(());
+        }
 
-        for (name, client) in &servers {
+        let mut failed = Vec::new();
+        let total_count = to_start.len();
+
+        for (name, client) in &to_start {
             match client.start(&self.root_uri).await {
                 Ok(()) => {
                     tracing::info!(target: "lsp", server = %name, "LSP 服务器启动成功");
+                    self.initialized.write().insert(name.clone());
                 }
                 Err(e) => {
                     tracing::warn!(target: "lsp", server = %name, error = %e, "LSP 服务器启动失败");
@@ -104,15 +104,72 @@ impl LspServerPool {
             }
         }
 
-        if failed.len() == total_count && total_count > 0 {
+        if failed.len() == total_count {
             return Err(LspError::InitFailed {
                 server: "all".to_string(),
                 reason: format!("所有 LSP 服务器启动失败: {}", failed.join(", ")),
             });
         }
 
-        *self.initialized.write() = true;
         Ok(())
+    }
+
+    /// 按文件扩展名单独初始化：只启动处理该扩展名的服务器
+    /// 如果没有匹配的服务器，返回 NoServerForFile
+    pub async fn ensure_server_for_file(&self, file_path: &str) -> Result<(), LspError> {
+        let ext = Path::new(file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e.to_lowercase()))
+            .unwrap_or_default();
+
+        let server_name = {
+            let extension_map = self.extension_map.read();
+            match extension_map.get(&ext) {
+                Some(name) => name.clone(),
+                None => {
+                    return Err(LspError::NoServerForFile {
+                        file_path: file_path.to_string(),
+                    });
+                }
+            }
+        };
+
+        // 检查是否已初始化
+        {
+            let initialized = self.initialized.read();
+            if initialized.contains(&server_name) {
+                return Ok(());
+            }
+        }
+
+        // 只启动匹配的服务器
+        let client = {
+            let servers = self.servers.read();
+            match servers.get(&server_name) {
+                Some(c) => Arc::clone(c),
+                None => {
+                    return Err(LspError::NoServerForFile {
+                        file_path: file_path.to_string(),
+                    });
+                }
+            }
+        };
+
+        match client.start(&self.root_uri).await {
+            Ok(()) => {
+                tracing::info!(target: "lsp", server = %server_name, "LSP 服务器启动成功");
+                self.initialized.write().insert(server_name);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(target: "lsp", server = %server_name, error = %e, "LSP 服务器启动失败");
+                Err(LspError::InitFailed {
+                    server: server_name,
+                    reason: e.to_string(),
+                })
+            }
+        }
     }
 
     /// 根据文件路径查找对应的 LSP 服务器（按扩展名路由）
@@ -165,7 +222,7 @@ impl LspServerPool {
             tracing::info!(target: "lsp", server = %name, "正在关闭 LSP 服务器");
             client.shutdown().await;
         }
-        *self.initialized.write() = false;
+        self.initialized.write().clear();
     }
 
     /// 动态添加一个 LSP 服务器（如果池已初始化，自动启动新服务器）
@@ -196,11 +253,12 @@ impl LspServerPool {
 
         self.servers.write().insert(name.clone(), client.clone());
 
-        // 如果池已初始化，立即启动新服务器
-        if *self.initialized.read() {
+        // 如果池已有已初始化的服务器，立即启动新服务器
+        if !self.initialized.read().is_empty() {
             match client.start(&self.root_uri).await {
                 Ok(()) => {
-                    tracing::info!(target: "lsp", server = %name, "动态添加的 LSP 服务器启动成功")
+                    tracing::info!(target: "lsp", server = %name, "动态添加的 LSP 服务器启动成功");
+                    self.initialized.write().insert(name);
                 }
                 Err(e) => {
                     tracing::warn!(target: "lsp", server = %name, error = %e, "动态添加的 LSP 服务器启动失败")
@@ -301,5 +359,27 @@ mod tests {
         let pool = LspServerPool::new("/tmp", LspConfigFile::default());
         assert!(!pool.has_servers());
         assert!(pool.server_for_file("/test/main.rs").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ensure_server_for_file_no_match() {
+        let pool = LspServerPool::new("/tmp", make_config());
+        // .md 文件没有匹配的 LSP 服务器
+        let result = pool.ensure_server_for_file("/test/readme.md").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("readme.md"));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_server_for_file_already_initialized() {
+        let pool = LspServerPool::new("/tmp", make_config());
+        // 手动标记为已初始化
+        pool.initialized.write().insert("rust-analyzer".to_string());
+        // 不应尝试启动
+        let result = pool.ensure_server_for_file("/test/main.rs").await;
+        assert!(result.is_ok());
+        // typescript 仍然未初始化
+        assert!(!pool.initialized.read().contains("typescript"));
     }
 }

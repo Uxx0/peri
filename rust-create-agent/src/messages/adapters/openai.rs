@@ -82,11 +82,20 @@ impl MessageAdapter for OpenAiAdapter {
                     tool_calls,
                     ..
                 } => {
+                    // 提取 reasoning 文本，回传为 reasoning_content 顶层字段
+                    let reasoning_text = content
+                        .content_blocks()
+                        .iter()
+                        .filter_map(|b| b.as_reasoning())
+                        .collect::<Vec<_>>()
+                        .join("");
                     if tool_calls.is_empty() {
-                        result.push(json!({
+                        let mut msg = json!({
                             "role": "assistant",
                             "content": Self::content_to_openai(content)
-                        }));
+                        });
+                        msg["reasoning_content"] = json!(reasoning_text);
+                        result.push(msg);
                     } else {
                         let tcs: Vec<Value> = tool_calls
                             .iter()
@@ -101,11 +110,13 @@ impl MessageAdapter for OpenAiAdapter {
                                 })
                             })
                             .collect();
-                        result.push(json!({
+                        let mut msg = json!({
                             "role": "assistant",
                             "content": Self::content_to_openai(content),
                             "tool_calls": tcs
-                        }));
+                        });
+                        msg["reasoning_content"] = json!(reasoning_text);
+                        result.push(msg);
                     }
                 }
                 BaseMessage::Tool {
@@ -353,9 +364,9 @@ mod tests {
         );
     }
 
-    /// Reasoning block 应被过滤掉（大多数 OpenAI 兼容 provider 不支持 thinking content type）
+    /// Reasoning block 从 content 中过滤，但回传为 reasoning_content 顶层字段
     #[test]
-    fn test_reasoning_block_filtered() {
+    fn test_reasoning_block_filtered_but_preserved() {
         let msg = BaseMessage::ai_from_blocks(vec![
             ContentBlock::reasoning("step 1: analyze first"),
             ContentBlock::text("final answer"),
@@ -363,14 +374,16 @@ mod tests {
         let val = OpenAiAdapter::from_base_messages(&[msg]);
         let arr = val.as_array().unwrap();
         let assistant = arr.iter().find(|m| m["role"] == "assistant").unwrap();
-        // reasoning 被过滤，只剩 text → content 为 array with single text part
+        // reasoning 从 content 中过滤，只剩 text
         let content = assistant["content"].as_array().expect("content 应为 array");
         assert_eq!(content.len(), 1);
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "final answer");
+        // reasoning_content 顶层字段回传
+        assert_eq!(assistant["reasoning_content"], "step 1: analyze first");
     }
 
-    /// Reasoning + tool_calls 序列化：reasoning 被过滤，tool_calls 在顶层
+    /// Reasoning + tool_calls 序列化：reasoning 回传到顶层，tool_calls 在顶层
     #[test]
     fn test_reasoning_with_tool_calls_serialization() {
         let msg = BaseMessage::ai_from_blocks(vec![
@@ -386,12 +399,14 @@ mod tests {
         assert_eq!(content.len(), 1);
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "running...");
+        // reasoning_content 顶层字段
+        assert_eq!(assistant["reasoning_content"], "need bash");
         // tool_calls 在顶层
         assert!(assistant["tool_calls"].is_array());
         assert_eq!(assistant["tool_calls"][0]["id"], "tc1");
     }
 
-    /// 仅 reasoning block（无 text）→ content 为空字符串
+    /// 仅 reasoning block（无 text）→ content 为空字符串，reasoning_content 回传
     #[test]
     fn test_reasoning_only_serialization() {
         let msg = BaseMessage::ai_from_blocks(vec![ContentBlock::reasoning("thinking only")]);
@@ -399,16 +414,19 @@ mod tests {
         let arr = val.as_array().unwrap();
         let assistant = arr.iter().find(|m| m["role"] == "assistant").unwrap();
         assert_eq!(assistant["content"], json!(""));
+        assert_eq!(assistant["reasoning_content"], "thinking only");
     }
 
-    /// 无 reasoning block 的消息不应包含 thinking
+    /// 无 reasoning block 的消息应有空 reasoning_content
     #[test]
-    fn test_no_reasoning_no_thinking_in_content() {
+    fn test_no_reasoning_empty_reasoning_content() {
         let msg = BaseMessage::ai("just text");
         let val = OpenAiAdapter::from_base_messages(&[msg]);
         let arr = val.as_array().unwrap();
         let assistant = arr.iter().find(|m| m["role"] == "assistant").unwrap();
         // content 为纯文本字符串，非 array
         assert!(assistant["content"].is_string());
+        // reasoning_content 应为空字符串
+        assert_eq!(assistant["reasoning_content"], "");
     }
 }

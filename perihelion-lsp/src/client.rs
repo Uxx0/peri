@@ -83,7 +83,7 @@ impl LspClient {
             if *state == ServerState::Running {
                 return Ok(());
             }
-            *state = ServerState::Starting;
+            // 不设置 Starting 状态，直接在 do_start 中设置 Running
         }
 
         let result = self.do_start(root_uri).await;
@@ -91,7 +91,7 @@ impl LspClient {
         {
             let mut state = self.state.write();
             match &result {
-                Ok(()) => *state = ServerState::Running,
+                Ok(()) => *state = ServerState::Running, // 已经在 do_start 中设置，这里再次确认
                 Err(e) => *state = ServerState::Error(e.to_string()),
             }
         }
@@ -130,13 +130,19 @@ impl LspClient {
 
         *self.dispatcher.lock().await = Some(dispatcher);
 
+        // 提取共享分发状态（Arc clone），不持有 tokio::sync::Mutex
+        let dispatch_state = {
+            let guard = self.dispatcher.lock().await;
+            guard.as_ref().unwrap().dispatch_state()
+        };
+
+        // 立即设置状态为 Running，这样 initialize 请求可以通过状态检查
+        *self.state.write() = ServerState::Running;
+
         // 启动消息分发循环（后台 task，消费 stdout 消息）
-        let dispatcher_ref = Arc::clone(&self.dispatcher);
+        // 使用 Arc<DispatchState> 而非持有 tokio::sync::Mutex guard，避免死锁
         tokio::spawn(async move {
-            // 从 dispatcher 中取出引用来运行 dispatch loop
-            if let Some(d) = dispatcher_ref.lock().await.as_ref() {
-                d.run_dispatch_loop(rx).await;
-            }
+            crate::jsonrpc::transport::run_dispatch_loop(dispatch_state, rx).await;
         });
 
         // root_uri 已经是 "file:///path" 格式，直接使用

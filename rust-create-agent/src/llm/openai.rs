@@ -185,10 +185,6 @@ impl ChatOpenAI {
     }
 
     pub(crate) fn messages_to_json(&self, messages: &[BaseMessage]) -> Vec<Value> {
-        // DeepSeek v4 thinking 模式：所有 assistant 消息必须包含 reasoning_content 字段
-        let force_reasoning_content =
-            self.thinking_enabled || self.model.to_lowercase().contains("deepseek");
-
         // 单次遍历：收集 System 消息并处理其他消息
         let mut system_parts: Vec<String> = Vec::new();
         let mut result: Vec<Value> = Vec::new();
@@ -216,13 +212,10 @@ impl ChatOpenAI {
                     let serialized_content =
                         Self::content_to_openai(content, self.supports_thinking_content);
 
+                    // 所有 assistant 消息都包含 reasoning_content 字段，确保 thinking 内容跨轮次不丢失
                     if tool_calls.is_empty() {
                         let mut msg = json!({ "role": "assistant", "content": serialized_content });
-                        if let Some(rt) = &reasoning_text {
-                            msg["reasoning_content"] = json!(rt);
-                        } else if force_reasoning_content {
-                            msg["reasoning_content"] = json!("");
-                        }
+                        msg["reasoning_content"] = json!(reasoning_text.as_deref().unwrap_or(""));
                         result.push(msg);
                     } else {
                         let tcs: Vec<Value> = tool_calls
@@ -243,11 +236,7 @@ impl ChatOpenAI {
                             "content": serialized_content,
                             "tool_calls": tcs
                         });
-                        if let Some(rt) = &reasoning_text {
-                            msg["reasoning_content"] = json!(rt);
-                        } else if force_reasoning_content {
-                            msg["reasoning_content"] = json!("");
-                        }
+                        msg["reasoning_content"] = json!(reasoning_text.as_deref().unwrap_or(""));
                         result.push(msg);
                     }
                 }
@@ -1236,9 +1225,9 @@ mod tests {
         );
     }
 
-    /// 非 thinking 模式：不注入 reasoning_content
+    /// 非 thinking 模式：所有 assistant 消息都包含 reasoning_content（无 reasoning 时为空字符串）
     #[test]
-    fn test_non_thinking_no_reasoning_inject() {
+    fn test_non_thinking_still_has_reasoning_content() {
         let llm = ChatOpenAI::new("sk-test", "gpt-4o");
 
         let msgs = vec![
@@ -1253,10 +1242,15 @@ mod tests {
         let vals = llm.messages_to_json(&msgs);
         let assistant = vals.iter().find(|m| m["role"] == "assistant").unwrap();
 
-        // 非 thinking 模式不应注入 reasoning_content
+        // 所有 assistant 消息都应有 reasoning_content 字段
         assert!(
-            assistant.get("reasoning_content").is_none(),
-            "非 thinking 模式不应注入 reasoning_content"
+            assistant.get("reasoning_content").is_some(),
+            "所有 assistant 消息都应包含 reasoning_content 字段"
+        );
+        assert_eq!(
+            assistant["reasoning_content"].as_str().unwrap(),
+            "",
+            "无 reasoning 内容时应为空字符串"
         );
     }
 }

@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
@@ -94,13 +95,19 @@ impl LspTransport {
     }
 }
 
+/// 分发所需共享状态（从 MessageDispatcher 中提取，供后台 task 使用）
+pub struct DispatchState {
+    pending: Mutex<HashMap<i64, oneshot::Sender<Result<Value, LspError>>>>,
+    notification_handlers: Mutex<HashMap<String, NotificationHandler>>,
+    on_error: Mutex<Option<ErrorHandler>>,
+}
+
 /// 消息分发器：后台读取 stdout，分发到 pending_requests 或 notification_handlers
 pub struct MessageDispatcher {
     /// stdin 写入端 — 使用 tokio::sync::Mutex 以支持跨 await 持有
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
-    pending: Mutex<HashMap<i64, oneshot::Sender<Result<Value, LspError>>>>,
-    notification_handlers: Mutex<HashMap<String, NotificationHandler>>,
-    on_error: Mutex<Option<ErrorHandler>>,
+    /// 共享分发状态，供后台 dispatch loop 使用
+    dispatch_state: Arc<DispatchState>,
     /// read loop 任务句柄
     read_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
@@ -157,9 +164,11 @@ impl MessageDispatcher {
 
         let dispatcher = Self {
             stdin: tokio::sync::Mutex::new(Some(stdin)),
-            pending: Mutex::new(HashMap::new()),
-            notification_handlers: Mutex::new(HashMap::new()),
-            on_error: Mutex::new(None),
+            dispatch_state: Arc::new(DispatchState {
+                pending: Mutex::new(HashMap::new()),
+                notification_handlers: Mutex::new(HashMap::new()),
+                on_error: Mutex::new(None),
+            }),
             read_task: Mutex::new(Some(read_handle)),
         };
 
@@ -168,20 +177,21 @@ impl MessageDispatcher {
 
     /// 注册通知处理器
     pub fn on_notification(&self, method: &str, handler: NotificationHandler) {
-        self.notification_handlers
+        self.dispatch_state
+            .notification_handlers
             .lock()
             .insert(method.to_string(), handler);
     }
 
     /// 注册错误回调
     pub fn set_on_error(&self, handler: ErrorHandler) {
-        *self.on_error.lock() = Some(handler);
+        *self.dispatch_state.on_error.lock() = Some(handler);
     }
 
     /// 注册 pending request（返回 oneshot receiver）
     pub fn register_request(&self, id: i64) -> oneshot::Receiver<Result<Value, LspError>> {
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().insert(id, tx);
+        self.dispatch_state.pending.lock().insert(id, tx);
         rx
     }
 
@@ -210,7 +220,21 @@ impl MessageDispatcher {
         codec::encode_message(body.as_bytes(), stdin).await
     }
 
-    /// 分发消息到 pending requests 或 notification handlers
+    /// 获取共享分发状态的 Arc（供后台 dispatch loop 使用，不持有 tokio::sync::Mutex）
+    pub fn dispatch_state(&self) -> Arc<DispatchState> {
+        Arc::clone(&self.dispatch_state)
+    }
+
+    /// 关闭 transport
+    pub async fn close(&self) {
+        *self.stdin.lock().await = None;
+        if let Some(handle) = self.read_task.lock().take() {
+            handle.abort();
+        }
+    }
+}
+
+impl DispatchState {
     fn dispatch(&self, msg: String) {
         let value: Value = match serde_json::from_str(&msg) {
             Ok(v) => v,
@@ -244,19 +268,11 @@ impl MessageDispatcher {
             }
         }
     }
+}
 
-    /// 启动消息分发循环（在当前 async 上下文中运行）
-    pub async fn run_dispatch_loop(&self, mut rx: mpsc::UnboundedReceiver<String>) {
-        while let Some(msg) = rx.recv().await {
-            self.dispatch(msg);
-        }
-    }
-
-    /// 关闭 transport
-    pub async fn close(&self) {
-        *self.stdin.lock().await = None;
-        if let Some(handle) = self.read_task.lock().take() {
-            handle.abort();
-        }
+/// 独立的消息分发循环——接收 Arc<DispatchState> + rx，不持有 tokio::sync::Mutex
+pub async fn run_dispatch_loop(state: Arc<DispatchState>, mut rx: mpsc::UnboundedReceiver<String>) {
+    while let Some(msg) = rx.recv().await {
+        state.dispatch(msg);
     }
 }

@@ -19,6 +19,11 @@ enum LspToolError {
     NotReady,
     #[error("行号和列号必须 >= 1")]
     InvalidPosition,
+    #[error("无 LSP 服务器可处理文件: {file_path} (扩展名: {extension})")]
+    NoServerForExtension {
+        file_path: String,
+        extension: String,
+    },
 }
 
 const TOOL_NAME: &str = "LSP";
@@ -96,28 +101,37 @@ impl LspTool {
         }
     }
 
-    /// 获取已就绪的服务器，必要时初始化
+    /// 获取已就绪的服务器，必要时按文件扩展名单独初始化
     async fn get_initialized_server(
         &self,
         file_path: &str,
     ) -> Result<Arc<perihelion_lsp::client::LspClient>, LspToolError> {
-        // 同步检查：guard 在表达式结束时释放
-        let needs_init = match self.pool.server_for_file(file_path) {
-            Some(server) if server.is_ready() => return Ok(server),
-            _ => true,
+        match self.pool.server_for_file(file_path) {
+            Some(s) if s.is_ready() => return Ok(s),
+            Some(_) => {
+                // 服务器存在但未就绪，按需初始化
+                self.pool
+                    .ensure_server_for_file(file_path)
+                    .await
+                    .map_err(|e| LspToolError::RequestFailed(e.to_string()))?;
+                return self
+                    .pool
+                    .server_for_file(file_path)
+                    .filter(|s| s.is_ready())
+                    .ok_or(LspToolError::NotReady);
+            }
+            None => {
+                // 没有匹配此文件扩展名的服务器
+                let ext = std::path::Path::new(file_path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("(无扩展名)");
+                return Err(LspToolError::NoServerForExtension {
+                    file_path: file_path.to_string(),
+                    extension: ext.to_string(),
+                });
+            }
         };
-
-        if needs_init {
-            self.pool
-                .ensure_initialized()
-                .await
-                .map_err(|e| LspToolError::RequestFailed(e.to_string()))?;
-        }
-
-        self.pool
-            .server_for_file(file_path)
-            .filter(|s| s.is_ready())
-            .ok_or(LspToolError::NotReady)
     }
 
     /// 获取任意一个已就绪的服务器
