@@ -122,26 +122,26 @@ impl App {
             .agent_done_pending_bg = false;
         self.session_mgr.sessions[self.session_mgr.active].background_task_count = 0;
 
-        if !self.session_mgr.sessions[self.session_mgr.active]
-            .messages
-            .pending_messages
-            .is_empty()
-        {
-            self.flush_pending_messages();
-        }
-
         // Auto-continue: compact 完成后自动用原始输入重新启动 agent
-        const MAX_AUTO_COMPACT_RESUBMITS: u32 = 3;
-        if let Some(ref original_input) = self.session_mgr.sessions[self.session_mgr.active]
+        // 优先使用 pre_compact_user_input（在 start_compact 时保存，防止被 pending_messages 覆盖）
+        let resubmit_input = self.session_mgr.sessions[self.session_mgr.active]
             .agent
-            .last_user_input
-        {
+            .pre_compact_user_input
+            .take()
+            .or_else(|| {
+                self.session_mgr.sessions[self.session_mgr.active]
+                    .agent
+                    .last_user_input
+                    .clone()
+            });
+
+        const MAX_AUTO_COMPACT_RESUBMITS: u32 = 3;
+        if let Some(original_input) = resubmit_input {
             if self.session_mgr.sessions[self.session_mgr.active]
                 .agent
                 .auto_compact_resubmit_count
                 < MAX_AUTO_COMPACT_RESUBMITS
             {
-                let input = original_input.clone();
                 let new_count = self.session_mgr.sessions[self.session_mgr.active]
                     .agent
                     .auto_compact_resubmit_count
@@ -150,7 +150,7 @@ impl App {
                     count = new_count,
                     "auto-compact: re-submitting original user input to continue agent"
                 );
-                self.submit_message(input);
+                self.submit_message(original_input);
                 // submit_message 会重置计数器为 0，恢复为递增后的值
                 self.session_mgr.sessions[self.session_mgr.active]
                     .agent
@@ -165,6 +165,26 @@ impl App {
                         .to_string(),
                 );
                 self.apply_pipeline_action(PipelineAction::AddMessage(vm));
+                // 未 resubmit 时处理待发消息
+                if !self.session_mgr.sessions[self.session_mgr.active]
+                    .messages
+                    .pending_messages
+                    .is_empty()
+                {
+                    self.flush_pending_messages();
+                }
+            }
+        } else {
+            tracing::warn!(
+                "auto-compact: no user input available for re-submit, cannot continue automatically"
+            );
+            // 未 resubmit 时处理待发消息
+            if !self.session_mgr.sessions[self.session_mgr.active]
+                .messages
+                .pending_messages
+                .is_empty()
+            {
+                self.flush_pending_messages();
             }
         }
 

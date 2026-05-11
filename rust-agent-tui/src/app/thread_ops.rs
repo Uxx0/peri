@@ -366,6 +366,14 @@ impl App {
             .push(vm);
         self.render_rebuild();
 
+        // 保存用户输入副本：compact 后 resubmit 用，防止 last_user_input 被 pending_messages 覆盖
+        self.session_mgr.sessions[self.session_mgr.active]
+            .agent
+            .pre_compact_user_input = self.session_mgr.sessions[self.session_mgr.active]
+            .agent
+            .last_user_input
+            .clone();
+
         // 保存快照：compact 失败时恢复，防止 tracker 失去对上下文大小的感知
         self.session_mgr.sessions[self.session_mgr.active]
             .agent

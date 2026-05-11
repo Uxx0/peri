@@ -72,6 +72,8 @@ pub struct AgentComm {
     pub reconcile_already_done: bool,
     /// 本轮用户原始输入（compact 后自动 re-submit 用）
     pub last_user_input: Option<String>,
+    /// compact 启动时保存的用户输入副本（防止 compact 过程中 last_user_input 被覆盖）
+    pub pre_compact_user_input: Option<String>,
     /// 连续 auto-compact re-submit 次数（防止无限循环，上限 3 次）
     pub auto_compact_resubmit_count: u32,
     /// LSP 诊断计数（由 LspDiagnostics 事件更新）
@@ -107,6 +109,7 @@ impl Default for AgentComm {
             agent_replied: false,
             reconcile_already_done: false,
             last_user_input: None,
+            pre_compact_user_input: None,
             auto_compact_resubmit_count: 0,
             lsp_errors: 0,
             lsp_warnings: 0,
