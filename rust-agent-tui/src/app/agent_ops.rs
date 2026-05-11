@@ -989,7 +989,8 @@ impl App {
                     .agent
                     .reconcile_already_done
                 {
-                    // reconcile 尾部重建：使用 pipeline 内部冻结的 SubAgentGroup 富状态，防止显示退化
+                    // 始终 RebuildAll：从 BaseMessage[] 规范状态重建 view_messages，
+                    // 保证与恢复路径一致（SubAgentGroup 富状态通过 frozen_subagent_vms 保留）
                     let (prefix_len, tail_vms) = self.session_mgr.sessions[self.session_mgr.active]
                         .messages
                         .pipeline
@@ -998,33 +999,10 @@ impl App {
                                 .messages
                                 .round_start_vm_idx,
                         );
-                    // 智能条件 RebuildAll：对比 reconcile 结果与当前 view_messages，
-                    // 如果一致则只发 StreamingDone，避免不必要的视觉跳动
-                    let current_tail = &self.session_mgr.sessions[self.session_mgr.active]
-                        .messages
-                        .view_messages[prefix_len..];
-                    let needs_rebuild = current_tail.len() != tail_vms.len()
-                        || current_tail
-                            .iter()
-                            .zip(tail_vms.iter())
-                            .any(|(a, b)| a != b);
-                    if needs_rebuild {
-                        self.apply_pipeline_action(PipelineAction::RebuildAll {
-                            prefix_len,
-                            tail_vms,
-                        });
-                    } else {
-                        // 清除 is_streaming 标志并发送全量重建
-                        if let Some(MessageViewModel::AssistantBubble { is_streaming, .. }) =
-                            self.session_mgr.sessions[self.session_mgr.active]
-                                .messages
-                                .view_messages
-                                .last_mut()
-                        {
-                            *is_streaming = false;
-                        }
-                        self.render_rebuild();
-                    }
+                    self.apply_pipeline_action(PipelineAction::RebuildAll {
+                        prefix_len,
+                        tail_vms,
+                    });
                 } else {
                     // Interrupted/Error 已完成 reconcile，清除 streaming 标志并重建
                     if let Some(MessageViewModel::AssistantBubble { is_streaming, .. }) =
@@ -1466,6 +1444,20 @@ impl App {
                 for action in actions {
                     self.apply_pipeline_action(action);
                 }
+                // 每次 LLM 调用结束后从 BaseMessage[] 规范状态重建 view_messages。
+                // set_completed() 已清空流式缓冲区，reconcile 安全。
+                let (prefix_len, tail_vms) = self.session_mgr.sessions[self.session_mgr.active]
+                    .messages
+                    .pipeline
+                    .reconcile_tail_with_subagents(
+                        self.session_mgr.sessions[self.session_mgr.active]
+                            .messages
+                            .round_start_vm_idx,
+                    );
+                self.apply_pipeline_action(PipelineAction::RebuildAll {
+                    prefix_len,
+                    tail_vms,
+                });
                 (true, false, false)
             }
             AgentEvent::CompactDone {

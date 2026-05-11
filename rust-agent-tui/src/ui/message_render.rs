@@ -165,8 +165,19 @@ pub fn render_view_model(
                             }
                         }
                     }
-                    ContentBlockView::Reasoning { .. } => {
-                        // 跳过思考内容渲染，不设置 first_text_merged
+                    ContentBlockView::Reasoning { char_count } => {
+                        // 显示思考字数摘要（不显示具体内容）
+                        if !first_text_merged {
+                            lines.push(Line::from(vec![
+                                indicator.clone(),
+                                Span::raw(" "),
+                                Span::styled(
+                                    format!("Thought for {} chars", char_count),
+                                    Style::default().fg(theme::DIM),
+                                ),
+                            ]));
+                            first_text_merged = true;
+                        }
                     }
                     ContentBlockView::ToolUse { .. } => {
                         // 跳过 ToolUse 渲染（Task 2：AI 消息不再显示工具调用行）
@@ -177,8 +188,8 @@ pub fn render_view_model(
                 }
             }
 
-            // 如果没有正文内容（仅有 Reasoning/ToolUse），不渲染任何行
-            // 正常情况下有文本时会由 first_text_merged 创建首行
+            // Reasoning 块在首个位置时由上面的分支渲染 "Thought for N chars"
+            // 如果没有任何 block（blocks 为空），则不渲染任何行
 
             lines
         }
