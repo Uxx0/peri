@@ -728,24 +728,6 @@ impl App {
                         self.session_mgr.sessions[self.session_mgr.active]
                             .agent
                             .pending_ask_user = Some(false);
-                        {
-                            let q_lines: Vec<String> = requests
-                                .iter()
-                                .flat_map(|q| {
-                                    let hint = if q.multi_select {
-                                        " [多选]"
-                                    } else {
-                                        " [单选]"
-                                    };
-                                    vec![
-                                        format!("{}{}", q.header, hint),
-                                        format!("  > {}", q.question),
-                                    ]
-                                })
-                                .collect();
-                            let vm = MessageViewModel::system(q_lines.join("\n"));
-                            self.apply_pipeline_action(PipelineAction::AddMessage(vm));
-                        }
                         let (batch_req, _) = AskUserBatchRequest::new(ask_questions);
                         let batch_req_bridged = AskUserBatchRequest {
                             questions: batch_req.questions,

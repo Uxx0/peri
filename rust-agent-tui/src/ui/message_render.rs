@@ -42,26 +42,26 @@ fn render_ask_user_block(content: &str, is_error: bool) -> Vec<Line<'static>> {
         let mut header = String::new();
         let mut answer = String::new();
         for line in block.lines() {
-            if let Some(h) = line.strip_prefix("[问: ").and_then(|s| s.strip_suffix(']')) {
-                header = h.to_string();
+            if let Some(rest) = line.strip_prefix("[问: ") {
+                header = rest.trim_end_matches(']').to_string();
             } else if let Some(a) = line.strip_prefix("回答: ") {
                 answer = a.to_string();
             }
         }
+        header = header.replace(['\n', '\r'], " ");
+        answer = answer.replace(['\n', '\r'], " ");
         let text = if !header.is_empty() {
             format!("{} → {}", header, answer)
         } else if !answer.is_empty() {
             answer
         } else {
-            // 单问题模式：整个 block 就是回答文本
-            block.to_string()
+            block.lines().collect::<Vec<_>>().join(" ")
         };
         if text.is_empty() {
             continue;
         }
         lines.push(Line::from(vec![
             Span::styled("  ⎿ ", Style::default().fg(theme::DIM)),
-            Span::styled("· ", Style::default().fg(theme::DIM)),
             Span::styled(
                 text,
                 Style::default().fg(if is_error { theme::ERROR } else { theme::MUTED }),
@@ -512,28 +512,26 @@ pub fn render_view_model(
                         let mut header = String::new();
                         let mut answer = String::new();
                         for line in block.lines() {
-                            if let Some(h) =
-                                line.strip_prefix("[问: ").and_then(|s| s.strip_suffix(']'))
-                            {
-                                header = h.to_string();
+                            if let Some(rest) = line.strip_prefix("[问: ") {
+                                header = rest.trim_end_matches(']').to_string();
                             } else if let Some(a) = line.strip_prefix("回答: ") {
                                 answer = a.to_string();
                             }
                         }
+                        header = header.replace(['\n', '\r'], " ");
+                        answer = answer.replace(['\n', '\r'], " ");
                         let text = if !header.is_empty() {
                             format!("{} → {}", header, answer)
                         } else if !answer.is_empty() {
                             answer
                         } else {
-                            // 单问题模式：整个 block 就是回答文本
-                            block.to_string()
+                            block.lines().collect::<Vec<_>>().join(" ")
                         };
                         if text.is_empty() {
                             continue;
                         }
                         lines.push(Line::from(vec![
                             Span::styled("  ⎿ ", Style::default().fg(theme::DIM)),
-                            Span::styled("· ", Style::default().fg(theme::DIM)),
                             Span::styled(text, Style::default().fg(entry_color)),
                         ]));
                     }

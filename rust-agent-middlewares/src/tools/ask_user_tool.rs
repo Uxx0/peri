@@ -94,7 +94,6 @@ impl BaseTool for AskUserTool {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let questions = parse_questions(input)?;
         let headers: Vec<String> = questions.iter().map(|q| q.header.clone()).collect();
-        let single = questions.len() == 1;
 
         let ctx = InteractionContext::Questions {
             requests: questions,
@@ -103,38 +102,21 @@ impl BaseTool for AskUserTool {
 
         match response {
             InteractionResponse::Answers(answers) => {
-                if single {
-                    let answer = answers.into_iter().next().unwrap_or_else(|| {
-                        rust_create_agent::interaction::QuestionAnswer {
-                            id: String::new(),
-                            selected: vec![],
-                            text: None,
-                        }
-                    });
-                    if let Some(text) = answer.text.filter(|t| !t.is_empty()) {
-                        Ok(text)
-                    } else if !answer.selected.is_empty() {
-                        Ok(answer.selected.join(", "))
-                    } else {
-                        Ok("(用户未提供回答)".to_string())
-                    }
-                } else {
-                    let parts: Vec<String> = headers
-                        .iter()
-                        .zip(answers.iter())
-                        .map(|(header, answer)| {
-                            let val = if let Some(ref text) =
-                                answer.text.as_ref().filter(|t| !t.is_empty())
-                            {
-                                text.to_string()
-                            } else {
-                                answer.selected.join(", ")
-                            };
-                            format!("[问: {header}]\n回答: {val}")
-                        })
-                        .collect();
-                    Ok(parts.join("\n\n"))
-                }
+                let parts: Vec<String> = headers
+                    .iter()
+                    .zip(answers.iter())
+                    .map(|(header, answer)| {
+                        let val = if let Some(ref text) =
+                            answer.text.as_ref().filter(|t| !t.is_empty())
+                        {
+                            text.to_string()
+                        } else {
+                            answer.selected.join(", ")
+                        };
+                        format!("[问: {header}]\n回答: {val}")
+                    })
+                    .collect();
+                Ok(parts.join("\n\n"))
             }
             _ => Err("ask_user_question: unexpected response type".into()),
         }
@@ -203,7 +185,7 @@ mod tests {
     async fn test_valid_single_question_parsed() {
         let tool = make_tool(make_answer(&["选项A"], None));
         let result = tool.invoke(single_question_input()).await.unwrap();
-        assert_eq!(result, "选项A");
+        assert_eq!(result, "[问: H1]\n回答: 选项A");
     }
 
     // ── 单问题返回格式 ──
@@ -212,14 +194,14 @@ mod tests {
     async fn test_single_question_selected_answer() {
         let tool = make_tool(make_answer(&["选项A"], None));
         let result = tool.invoke(single_question_input()).await.unwrap();
-        assert_eq!(result, "选项A");
+        assert_eq!(result, "[问: H1]\n回答: 选项A");
     }
 
     #[tokio::test]
     async fn test_single_question_text_input() {
         let tool = make_tool(make_answer(&[], Some("自定义输入")));
         let result = tool.invoke(single_question_input()).await.unwrap();
-        assert_eq!(result, "自定义输入");
+        assert_eq!(result, "[问: H1]\n回答: 自定义输入");
     }
 
     #[tokio::test]
@@ -227,7 +209,7 @@ mod tests {
         let tool = make_tool(make_answer(&["选项A"], Some("自定义")));
         let result = tool.invoke(single_question_input()).await.unwrap();
         assert_eq!(
-            result, "自定义",
+            result, "[问: H1]\n回答: 自定义",
             "non-empty text should take priority over selected"
         );
     }
@@ -237,8 +219,8 @@ mod tests {
         let tool = make_tool(make_answer(&[], None));
         let result = tool.invoke(single_question_input()).await.unwrap();
         assert_eq!(
-            result, "(用户未提供回答)",
-            "empty selected and no text should return meaningful message"
+            result, "[问: H1]\n回答: ",
+            "empty selected and no text should return empty answer"
         );
     }
 
@@ -291,7 +273,7 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(result, "A, B");
+        assert_eq!(result, "[问: H1]\n回答: A, B");
     }
 
     // ── 异常响应测试 ──
@@ -326,7 +308,10 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(result, "A, B", "multiSelect (camelCase) should work");
+        assert_eq!(
+            result, "[问: H1]\n回答: A, B",
+            "multiSelect (camelCase) should work"
+        );
     }
 
     #[tokio::test]
@@ -342,6 +327,9 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(result, "选项A", "preview field should not cause error");
+        assert_eq!(
+            result, "[问: H1]\n回答: 选项A",
+            "preview field should not cause error"
+        );
     }
 }
