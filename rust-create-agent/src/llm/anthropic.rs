@@ -194,8 +194,13 @@ impl ChatAnthropic {
     ///
     /// - System 消息提取到顶层 system 字段
     /// - Tool 消息合并为 user content blocks
+    ///
+    /// **缓存前缀稳定性**：含边界标记的 System 消息（来自 build_system_prompt）
+    /// 排在最前面，不含边界标记的 middleware 注入内容排在边界之后，
+    /// 确保 middleware 内容变化不会破坏 Anthropic prompt cache 前缀。
     fn messages_to_anthropic(messages: &[BaseMessage]) -> (Vec<Value>, Vec<SystemPromptBlock>) {
-        let mut system_parts: Vec<String> = Vec::new();
+        let mut system_parts_with_boundary: Vec<String> = Vec::new();
+        let mut system_parts_no_boundary: Vec<String> = Vec::new();
         let mut result: Vec<Value> = Vec::new();
 
         for msg in messages {
@@ -203,7 +208,13 @@ impl ChatAnthropic {
                 BaseMessage::System { content, .. } => {
                     let text = content.text_content();
                     if !text.trim().is_empty() {
-                        system_parts.push(text);
+                        // 含边界标记的 system prompt 排在前面（可缓存前缀），
+                        // middleware 注入的内容排在后面（动态段，不影响缓存）
+                        if text.contains(SYSTEM_PROMPT_DYNAMIC_BOUNDARY) {
+                            system_parts_with_boundary.push(text);
+                        } else {
+                            system_parts_no_boundary.push(text);
+                        }
                     }
                 }
                 BaseMessage::Human { content, .. } => {
@@ -287,7 +298,23 @@ impl ChatAnthropic {
             }
         }
 
-        let system_text = system_parts.join("\n\n");
+        // 拼接：含边界的 system prompt 在前，middleware 注入内容追加到边界之后
+        let mut system_text = system_parts_with_boundary.join("\n\n");
+        if !system_parts_no_boundary.is_empty() {
+            let middleware_text = system_parts_no_boundary.join("\n\n");
+            if system_text.contains(SYSTEM_PROMPT_DYNAMIC_BOUNDARY) {
+                // 在边界标记位置之后插入 middleware 内容
+                // split_system_blocks 会在边界处拆分，middleware 内容归入动态段
+                system_text = system_text.replacen(
+                    SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+                    &format!("{}\n\n{}", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, middleware_text),
+                    1,
+                );
+            } else {
+                // 无边界标记：全部作为动态段
+                system_text = format!("{system_text}\n\n{middleware_text}");
+            }
+        }
         let system_blocks = Self::split_system_blocks(&system_text);
         (result, system_blocks)
     }
@@ -346,16 +373,18 @@ impl ChatAnthropic {
             if let Some(content) = msg.get_mut("content") {
                 match content {
                     Value::Array(blocks) => {
-                        if let Some(last_block) = blocks.last_mut() {
-                            // 跳过空 text block
-                            let is_empty_text = last_block["type"].as_str() == Some("text")
-                                && last_block["text"]
+                        // 从后向前找到最后一个稳定的 text block 作为断点，
+                        // 跳过 tool_result/tool_use（内容跨请求不稳定）和空 text。
+                        let target = blocks.iter_mut().rfind(|b| {
+                            let btype = b["type"].as_str().unwrap_or("");
+                            btype == "text"
+                                && !b["text"]
                                     .as_str()
                                     .map(|t| t.trim().is_empty())
-                                    .unwrap_or(false);
-                            if !is_empty_text {
-                                last_block["cache_control"] = json!({ "type": "ephemeral" });
-                            }
+                                    .unwrap_or(true)
+                        });
+                        if let Some(block) = target {
+                            block["cache_control"] = json!({ "type": "ephemeral" });
                         }
                     }
                     Value::String(s) if !s.trim().is_empty() => {
@@ -870,9 +899,9 @@ mod tests {
         assert_eq!(content[0]["cache_control"]["type"], "ephemeral");
     }
 
-    /// 验证多 block 消息：cache_control 加在最后一个 block 上
+    /// 验证多 block 消息：cache_control 加在最后一个非空 text block 上
     #[test]
-    fn test_cache_control_on_last_block() {
+    fn test_cache_control_on_last_text_block() {
         let mut messages = vec![json!({
             "role": "user",
             "content": [
@@ -883,13 +912,68 @@ mod tests {
         ChatAnthropic::apply_cache_to_messages(&mut messages);
 
         let blocks = messages[0]["content"].as_array().unwrap();
-        // 第一个 block 无 cache_control
         assert!(!blocks[0].as_object().unwrap().contains_key("cache_control"));
-        // 最后一个 block 有 cache_control
+        assert_eq!(blocks[1]["cache_control"]["type"], "ephemeral");
+    }
+
+    /// H3 修复：断点跳过尾部的 tool_result，落在 text block 上
+    #[test]
+    fn test_cache_control_skips_trailing_tool_result() {
+        let mut messages = vec![json!({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "question"},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "result data"}
+            ]
+        })];
+        ChatAnthropic::apply_cache_to_messages(&mut messages);
+        let blocks = messages[0]["content"].as_array().unwrap();
         assert_eq!(
-            blocks[1]["cache_control"]["type"], "ephemeral",
-            "最后一个 block 应有 cache_control"
+            blocks[0]["cache_control"]["type"], "ephemeral",
+            "断点应在 text block"
         );
+        assert!(
+            !blocks[1].as_object().unwrap().contains_key("cache_control"),
+            "tool_result 不应有断点"
+        );
+    }
+
+    /// H3 修复：尾部有 tool_use + tool_result 时，断点跳过两者
+    #[test]
+    fn test_cache_control_skips_tool_use_and_tool_result() {
+        let mut messages = vec![json!({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "question"},
+                {"type": "tool_use", "id": "t1", "name": "Read", "input": {}},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "file contents"}
+            ]
+        })];
+        ChatAnthropic::apply_cache_to_messages(&mut messages);
+        let blocks = messages[0]["content"].as_array().unwrap();
+        assert_eq!(blocks[0]["cache_control"]["type"], "ephemeral");
+        assert!(!blocks[1].as_object().unwrap().contains_key("cache_control"));
+        assert!(!blocks[2].as_object().unwrap().contains_key("cache_control"));
+    }
+
+    /// H3 修复：全 tool block 时跳过该断点
+    #[test]
+    fn test_cache_control_skips_all_tool_blocks() {
+        let mut messages = vec![json!({
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "data1"},
+                {"type": "tool_result", "tool_use_id": "t2", "content": "data2"}
+            ]
+        })];
+        ChatAnthropic::apply_cache_to_messages(&mut messages);
+        let blocks = messages[0]["content"].as_array().unwrap();
+        for b in blocks {
+            assert!(
+                !b.as_object().unwrap().contains_key("cache_control"),
+                "tool block 不应有断点"
+            );
+        }
     }
 
     /// 验证空 text block 被跳过
@@ -1037,6 +1121,31 @@ mod tests {
         let (_msgs, blocks) = ChatAnthropic::messages_to_anthropic(&messages);
         assert_eq!(blocks.len(), 1);
         assert!(!blocks[0].cache_control);
+    }
+
+    /// middleware 注入的 System 消息（无边界标记）应放在边界之后，
+    /// 不破坏缓存前缀
+    #[test]
+    fn test_messages_to_anthropic_middleware_after_boundary() {
+        // 模拟 prepend_message 后的消息顺序：
+        // [system_prompt(含边界), tool_search_system, agents_md_system, Human]
+        let messages = vec![
+            BaseMessage::system("static\n\n__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__\n\ndynamic"),
+            BaseMessage::system("tool search index content"),
+            BaseMessage::system("CLAUDE.md content here"),
+            BaseMessage::human("hello"),
+        ];
+        let (msgs, blocks) = ChatAnthropic::messages_to_anthropic(&messages);
+        assert_eq!(msgs.len(), 1, "只有 user 消息");
+        assert_eq!(blocks.len(), 2, "应拆分为静态块和动态块");
+        // 静态块不含 middleware 内容
+        assert!(blocks[0].cache_control);
+        assert!(!blocks[0].text.contains("tool search index"));
+        assert!(!blocks[0].text.contains("CLAUDE.md"));
+        // 动态块包含 middleware 内容
+        assert!(!blocks[1].cache_control);
+        assert!(blocks[1].text.contains("tool search index"));
+        assert!(blocks[1].text.contains("CLAUDE.md"));
     }
 
     #[test]

@@ -10,9 +10,9 @@
 
 | # | 问题 | 风险 | 可修复性 |
 |---|------|------|----------|
-| H1 | `resource_summary()` HashMap 迭代顺序不确定 | 🔴 高 | 低成本（~5 行） |
-| H2 | MCP/LSP 工具数量跨进程不稳定 | 🔴 高 | 中等 |
-| H3 | `apply_cache_to_messages` 断点落在 tool_result 上 | 🔴 高 | 低成本（~10 行） |
+| H1 | `resource_summary()` HashMap 迭代顺序不确定 | ✅ 已排除 | — |
+| H2 | MCP/LSP 工具数量跨进程不稳定 | ✅ 已排除 | — |
+| H3 | `apply_cache_to_messages` 断点落在 tool_result 上 | ✅ 已修复 | — |
 | H4 | Micro-compact 修改 cache 断点之前的消息 | 🔴 高 | 中等 |
 
 > 排除项：Full Compact 完全破坏缓存是已知架构取舍（compact 后消息结构必然重建，非 bug）；LLM 摘要不确定性是模型固有特性，不可修复。
@@ -35,30 +35,7 @@
 
 **复现概率**：取决于 HashMap 内部状态，非 100% 但在多 server / 多 resource 场景下概率较高。
 
-**修复建议**：
-```rust
-// client.rs:867 — 在 .values() 前加排序
-self.clients
-    .read()
-    .values()
-    .filter(...)
-    .sorted_by_key(|c| &c.name)  // ← 加这行
-    .map(|c| {
-        format!(
-            "- server \"{}\": {} ({} resources)",
-            c.name,
-            c.resources
-                .iter()
-                .map(|r| r.raw.uri.clone())
-                .sorted()                              // ← 加这行
-                .collect::<Vec<_>>()
-                .join(", "),
-            c.resources.len()
-        )
-    })
-    .collect::<Vec<_>>()
-    .join("\n")
-```
+**排除记录**（2026-05-13）：`McpResourceTool`（名称 `mcp_read_resource`）被 `is_deferred_tool()` 过滤（`agent.rs:317` + `tool_search/core_tools.rs:57`），不参与 LLM 可见的 tools 数组。`resource_summary()` 的输出从不会序列化到 API 请求中，顺序不确定不影响缓存前缀。
 
 ---
 
@@ -79,9 +56,7 @@ self.clients
 
 **触发条件**：MCP 服务器连接失败、LSP 服务器启动慢、进程重启时网络抖动。
 
-**修复建议**：
-- 方案 A：`collect_tools()` 返回固定大小的列表，未连接的工具用 stub 占位（description 标注 "unavailable"）
-- 方案 B：工具列表在首次 `collect_tools()` 后快照，session 内不再变化；MCP 断连/重连不改变已快照的工具列表
+**排除记录**（2026-05-13）：所有 `mcp__*` 工具和 LSP 工具均被 `is_deferred_tool()` 过滤（`agent.rs:317`），从 `tool_refs` 中移除（`executor/mod.rs:214`），不参与序列化到 API 请求的 tools 数组。连接状态变化不影响缓存前缀。
 
 ---
 
@@ -101,23 +76,7 @@ self.clients
 
 **触发条件**：任何工具调用后的同轮后续 LLM 请求。在多工具并发场景（agent 一次调用 3-5 个工具）中尤其严重。
 
-**修复建议**：在 `apply_cache_to_messages` 中，对 target user 消息的 blocks 做回溯搜索，跳过 `tool_result` / `tool_use` 类型 block，将断点放在最后一个非空 `text` block 上。若该 user 消息全部是 tool blocks，则跳过该断点：
-
-```rust
-// anthropic.rs:347 — 替换现有逻辑
-Value::Array(blocks) => {
-    // 从后向前找到第一个稳定的 text block
-    let stable_block = blocks.iter().rfind(|b| {
-        let btype = b["type"].as_str().unwrap_or("");
-        btype == "text" && !b["text"].as_str().map(|t| t.trim().is_empty()).unwrap_or(true)
-    });
-    if let Some(block) = stable_block {
-        // 找到 stable_block 在 blocks 中的索引并修改
-        // ...
-    }
-    // 若全部是 tool blocks → 不设断点
-}
-```
+**修复记录**（2026-05-13）：断点选择逻辑从"取最后一个 block"改为"从后向前搜索最后一个非空 text block"（`rfind`）。若 user 消息全是 `tool_result`/`tool_use` block，跳过该断点。新增 4 个测试覆盖：跳过尾部 tool_result、跳过 tool_use+tool_result、全 tool block 跳过、多 user 消息三断点正确放置。
 
 ---
 

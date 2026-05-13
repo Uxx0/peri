@@ -117,20 +117,23 @@ pub fn build_system_prompt(
         .map(build_agent_overrides_block)
         .unwrap_or_default();
 
-    // 合成：覆盖块 + 静态段落 + 边界标记 + 动态段落
+    // 合成：静态段落 + 边界标记 + 覆盖块 + 动态段落
     // 边界标记之前的全部内容可被 Anthropic prompt cache 命中；
-    // 边界标记之后的内容（日期、cwd 等）变化不会破坏前缀缓存。
+    // 边界标记之后的内容（overrides、日期、cwd 等）变化不会破坏前缀缓存。
+    // overrides_block 放在边界之后——不同 SubAgent 的 persona/tone 不同，
+    // 若放在静态段之前会导致每个 agent 的缓存前缀完全失效。
     let mut result = String::new();
-    if !overrides_block.is_empty() {
-        result.push_str(&overrides_block);
-    }
     for (i, section) in static_sections.iter().enumerate() {
-        if i > 0 || !overrides_block.is_empty() {
+        if i > 0 {
             result.push_str("\n\n");
         }
         result.push_str(section);
     }
     result.push_str("\n\n__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__");
+    if !overrides_block.is_empty() {
+        result.push_str("\n\n");
+        result.push_str(&overrides_block);
+    }
     for section in &dynamic_sections {
         result.push_str("\n\n");
         result.push_str(section);
@@ -263,9 +266,16 @@ mod tests {
             proactiveness: None,
         };
         let result = build_system_prompt(Some(&overrides), "/tmp", PromptFeatures::none(), &[]);
+        // overrides 现在在边界标记之后，不再以 persona 开头
+        let boundary = result.find("__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__").unwrap();
         assert!(
-            result.starts_with("test persona"),
-            "有 overrides 时应以 persona 内容开头"
+            result[boundary..].contains("test persona"),
+            "有 overrides 时边界之后应包含 persona 内容"
+        );
+        // 静态段应在 persona 之前（边界标记之前）
+        assert!(
+            !result[..boundary].contains("test persona"),
+            "persona 不应在缓存段内"
         );
     }
 
@@ -429,6 +439,31 @@ mod tests {
         assert!(
             result[boundary_pos..].contains("SubAgent Delegation"),
             "SubAgent 段落应在边界标记之后"
+        );
+    }
+
+    #[test]
+    fn test_overrides_after_boundary_marker() {
+        let overrides = AgentOverrides {
+            persona: Some("test persona".into()),
+            tone: Some("concise".into()),
+            proactiveness: None,
+        };
+        let result = build_system_prompt(Some(&overrides), "/tmp", PromptFeatures::none(), &[]);
+        let boundary_pos = result.find("__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__").unwrap();
+        // overrides 应在边界之后，不破坏缓存前缀
+        assert!(
+            result[boundary_pos..].contains("test persona"),
+            "persona 应在边界标记之后"
+        );
+        assert!(
+            result[boundary_pos..].contains("concise"),
+            "tone 应在边界标记之后"
+        );
+        // 边界之前不应包含 overrides 内容
+        assert!(
+            !result[..boundary_pos].contains("test persona"),
+            "persona 不应在边界标记之前（会破坏缓存前缀）"
         );
     }
 
