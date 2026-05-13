@@ -578,6 +578,24 @@ async fn test_state_snapshot_on_final_answer() {
 
     assert!(!snapshots.is_empty(), "最终回答路径应发出 StateSnapshot");
 
+    // 验证只有一个 snapshot 包含 AI 最终回答（无重复）
+    let ai_final_count = evs
+        .iter()
+        .filter(|e| {
+            if let AgentEvent::StateSnapshot(msgs) = e {
+                msgs.iter().any(
+                    |m| matches!(m, BaseMessage::Ai { tool_calls, .. } if tool_calls.is_empty()),
+                )
+            } else {
+                false
+            }
+        })
+        .count();
+    assert_eq!(
+        ai_final_count, 1,
+        "AI 最终回答应只出现在一个 StateSnapshot 中（实际: {ai_final_count}）"
+    );
+
     // 最后一个 snapshot 应包含 AI 最终回答
     if let AgentEvent::StateSnapshot(msgs) = snapshots.last().unwrap() {
         let has_ai_text = msgs
@@ -979,4 +997,101 @@ async fn test_low_usage_no_warning_event() {
         .iter()
         .any(|e| matches!(e, AgentEvent::ContextWarning { .. }));
     assert!(!has_warning, "低 token 用量不应发出 ContextWarning");
+}
+
+/// 验证 executor 发射的 StateSnapshot 之间无消息重叠。
+/// 这是修复 agent_state_messages 消息重复的核心保障：
+/// 增量快照之间不应包含相同 message_id 的消息。
+#[tokio::test]
+async fn test_state_snapshot_no_overlap() {
+    use crate::agent::events::{AgentEvent, FnEventHandler};
+    use std::sync::{Arc, Mutex};
+
+    struct ToolThenAnswerLLM;
+    #[async_trait::async_trait]
+    impl ReactLLM for ToolThenAnswerLLM {
+        async fn generate_reasoning(
+            &self,
+            messages: &[BaseMessage],
+            _tools: &[&dyn BaseTool],
+        ) -> crate::error::AgentResult<Reasoning> {
+            let has_tool_result = messages
+                .iter()
+                .any(|m| matches!(m, BaseMessage::Tool { .. }));
+            if !has_tool_result {
+                Ok(Reasoning::with_tools(
+                    "need tool",
+                    vec![ToolCall::new("id1", "echo_tool", serde_json::json!({}))],
+                ))
+            } else {
+                Ok(Reasoning::with_answer("done", "tool result received"))
+            }
+        }
+    }
+
+    struct EchoTool;
+    #[async_trait::async_trait]
+    impl BaseTool for EchoTool {
+        fn name(&self) -> &str {
+            "echo_tool"
+        }
+        fn description(&self) -> &str {
+            "echo"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn invoke(
+            &self,
+            _input: serde_json::Value,
+        ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            Ok("echo result".to_string())
+        }
+    }
+
+    let events: Arc<Mutex<Vec<AgentEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+
+    let agent = ReActAgent::new(ToolThenAnswerLLM)
+        .max_iterations(10)
+        .register_tool(Box::new(EchoTool))
+        .with_event_handler(Arc::new(FnEventHandler(move |event| {
+            events_clone.lock().unwrap().push(event);
+        })));
+
+    let mut state = AgentState::new("/tmp");
+    agent
+        .execute(AgentInput::text("test"), &mut state, None)
+        .await
+        .unwrap();
+
+    let evs = events.lock().unwrap();
+    let snapshots: Vec<Vec<BaseMessage>> = evs
+        .iter()
+        .filter_map(|e| {
+            if let AgentEvent::StateSnapshot(msgs) = e {
+                Some(msgs.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert!(!snapshots.is_empty(), "应至少有一个 StateSnapshot");
+
+    // 将所有 snapshot 的消息展平，验证无重复的 message_id
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut dup_count = 0;
+    for snapshot in &snapshots {
+        for msg in snapshot {
+            let id = msg.id().as_uuid().to_string();
+            if !seen_ids.insert(id) {
+                dup_count += 1;
+            }
+        }
+    }
+    assert_eq!(
+        dup_count, 0,
+        "StateSnapshot 之间不应有重叠消息（重复 message_id 数量: {dup_count}）"
+    );
 }

@@ -273,12 +273,22 @@ impl<L: ReactLLM, S: State> ReActAgent<L, S> {
                     state,
                     &reasoning,
                     all_tool_calls,
-                    last_message_count,
+                    &mut last_message_count,
                     step,
                 )
                 .await?;
                 return Ok(output);
             }
+        }
+
+        // 安全网快照：仅覆盖 MaxIterationsExceeded 路径（循环自然耗尽）。
+        // 正常路径（handle_final_answer）已在内部补全所有快照，此处为空操作。
+        // 注意：call_llm/dispatch_tools 的 ? 传播会跳过此处，但这些路径中
+        // call_llm 不向 state 添加消息，dispatch_tools 的 Interrupted 路径
+        // 产生的工具结果会被 TUI 的 Interrupted handler 截断丢弃，无需额外快照。
+        let safety_msgs = state.messages()[last_message_count..].to_vec();
+        if !safety_msgs.is_empty() {
+            self.emit(AgentEvent::StateSnapshot(safety_msgs));
         }
 
         tracing::warn!(

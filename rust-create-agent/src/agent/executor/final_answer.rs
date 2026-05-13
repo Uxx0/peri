@@ -58,7 +58,7 @@ pub(crate) async fn handle_final_answer<L: ReactLLM, S: State>(
     state: &mut S,
     reasoning: &Reasoning,
     all_tool_calls: Vec<(ToolCall, ToolResult)>,
-    last_message_count: usize,
+    last_message_count: &mut usize,
     step: usize,
 ) -> AgentResult<AgentOutput> {
     let answer = reasoning
@@ -88,15 +88,19 @@ pub(crate) async fn handle_final_answer<L: ReactLLM, S: State>(
         chunk: answer.clone(),
     });
 
-    // 发送包含最终回答的 StateSnapshot，确保 TUI 侧的 agent_state_messages
-    // 包含完整对话历史（包括本次最终回答），否则下一轮对话上下文会丢失
-    let msgs_since_last = state.messages()[last_message_count..].to_vec();
+    let msgs_since_last = state.messages()[*last_message_count..].to_vec();
     if !msgs_since_last.is_empty() {
         agent.emit(AgentEvent::StateSnapshot(msgs_since_last));
+        *last_message_count = state.messages().len();
     }
 
-    // 消费后台任务完成通知（最终回答前）
     drain_notifications(agent, state).await;
+
+    let msgs_after_drain = state.messages()[*last_message_count..].to_vec();
+    if !msgs_after_drain.is_empty() {
+        agent.emit(AgentEvent::StateSnapshot(msgs_after_drain));
+        *last_message_count = state.messages().len();
+    }
 
     let output = AgentOutput {
         text: answer,
@@ -112,7 +116,13 @@ pub(crate) async fn handle_final_answer<L: ReactLLM, S: State>(
     );
 
     match agent.chain.run_after_agent(state, output).await {
-        Ok(o) => Ok(o),
+        Ok(o) => {
+            let msgs_after = state.messages()[*last_message_count..].to_vec();
+            if !msgs_after.is_empty() {
+                agent.emit(AgentEvent::StateSnapshot(msgs_after));
+            }
+            Ok(o)
+        }
         Err(e) => {
             agent.chain.run_on_error(state, &e).await?;
             Err(e)

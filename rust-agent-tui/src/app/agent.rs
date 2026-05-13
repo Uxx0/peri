@@ -422,8 +422,6 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         .with_event_handler(Arc::clone(&handler))
         .register_tool(Box::new(ask_user_tool));
 
-    // 捕获 history 长度，用于后续从全量状态中截取本轮新增消息
-    let history_len = history.len();
     let mut state =
         AgentState::with_messages(cwd, history).with_persistence(thread_store, thread_id);
     if let Some(id) = agent_id {
@@ -435,17 +433,10 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         .execute(agent_input, &mut state, Some(cancel))
         .await;
 
-    // 无论成功/中断/失败，只把本轮新增消息（非 System、跳过 history）发回 App。
-    // 避免将 history 重复追加到 agent_state_messages 并在 DB 产生重复写入。
-    let new_msgs: Vec<_> = state
-        .into_messages()
-        .into_iter()
-        .filter(|m| !matches!(m, rust_create_agent::messages::BaseMessage::System { .. }))
-        .skip(history_len)
-        .collect();
-    if tx.send(AgentEvent::StateSnapshot(new_msgs)).await.is_err() {
-        warn!("agent: failed to send StateSnapshot (channel closed)");
-    }
+    // executor 内部通过增量 StateSnapshot 完整覆盖所有新增消息（包括
+    // drain_notifications 和 run_after_agent 产生的内容），
+    // 无需在此处再发最终快照——重复快照会导致 agent_state_messages 消息重复。
+    drop(state);
 
     match result {
         Ok(_) => {
