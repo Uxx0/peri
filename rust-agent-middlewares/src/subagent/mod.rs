@@ -9,6 +9,36 @@ pub use skill_preload::SkillPreloadMiddleware;
 pub use tool::SubAgentTool;
 
 use parking_lot::RwLock;
+
+/// SubAgent 中间件链构造配置
+///
+/// 中间件链顺序固定: AgentsMd -> Skills -> [SkillPreload] -> Todo
+/// 仅 `skill_names` 在不同执行路径间变化
+pub(crate) struct SubAgentMiddlewareConfig {
+    /// 需要预加载的 skill 名称列表，为空时跳过 SkillPreloadMiddleware
+    pub skill_names: Vec<String>,
+    /// 工作目录，用于解析 skill 文件路径
+    pub cwd: String,
+}
+
+impl SubAgentMiddlewareConfig {
+    /// Fork 路径配置（无 skill 预加载）
+    pub fn for_fork(cwd: &str) -> Self {
+        Self {
+            skill_names: Vec::new(),
+            cwd: cwd.to_string(),
+        }
+    }
+    /// Agent 定义路径配置
+    ///
+    /// `skills` 来自 `agent_def.frontmatter.skills`，为空时跳过 SkillPreloadMiddleware
+    pub fn for_agent_def(skills: Vec<String>, cwd: &str) -> Self {
+        Self {
+            skill_names: skills,
+            cwd: cwd.to_string(),
+        }
+    }
+}
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

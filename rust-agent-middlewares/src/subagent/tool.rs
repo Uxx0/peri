@@ -9,6 +9,7 @@ use rust_create_agent::agent::state::AgentState;
 use rust_create_agent::agent::BackgroundTaskResult;
 use rust_create_agent::agent::{AgentCancellationToken, ReActAgent};
 use rust_create_agent::messages::BaseMessage;
+use rust_create_agent::middleware::r#trait::Middleware;
 use rust_create_agent::tools::BaseTool;
 
 use crate::agent_define::{AgentDefineMiddleware, AgentOverrides};
@@ -20,8 +21,38 @@ use crate::skills::SkillsMiddleware;
 use crate::subagent::background::{BackgroundTask, BackgroundTaskRegistry, BackgroundTaskStatus};
 use crate::subagent::built_in_agents::get_built_in_agent;
 use crate::subagent::skill_preload::SkillPreloadMiddleware;
+use crate::subagent::SubAgentMiddlewareConfig;
 use crate::tools::ArcToolWrapper;
 use tokio::sync::mpsc;
+
+/// 构造 SubAgent 标准中间件链
+///
+/// 顺序: AgentsMdMiddleware -> SkillsMiddleware -> [SkillPreloadMiddleware] -> TodoMiddleware
+///
+/// 四条执行路径（fork sync、background normal、background fork、normal sync）
+/// 的唯一差异是是否包含 SkillPreloadMiddleware
+pub(crate) fn build_subagent_middlewares(
+    config: SubAgentMiddlewareConfig,
+) -> Vec<Box<dyn Middleware<AgentState>>> {
+    let mut middlewares: Vec<Box<dyn Middleware<AgentState>>> = Vec::new();
+    // 1. AgentsMdMiddleware: 注入 AGENTS.md / CLAUDE.md 项目指南
+    middlewares.push(Box::new(AgentsMdMiddleware::new()));
+    // 2. SkillsMiddleware: 渐进式 skills 摘要注入
+    middlewares.push(Box::new(SkillsMiddleware::new().with_global_config()));
+    // 3. SkillPreloadMiddleware: 全文 skill 预加载（条件性）
+    if !config.skill_names.is_empty() {
+        middlewares.push(Box::new(SkillPreloadMiddleware::new(
+            config.skill_names,
+            &config.cwd,
+        )));
+    }
+    // 4. TodoMiddleware: 提供 todo_write 工具
+    middlewares.push(Box::new(TodoMiddleware::new({
+        let (tx, _rx) = mpsc::channel(8);
+        tx
+    })));
+    middlewares
+}
 
 /// 独立（非方法）版本的 SubagentStart/SubagentStop hook 触发逻辑。
 ///
@@ -294,14 +325,9 @@ impl SubAgentTool {
         let llm = (self.llm_factory)(None);
         let mut agent_builder = ReActAgent::new(llm).max_iterations(200);
 
-        // Middleware chain: AgentsMd -> Skills -> SkillPreload -> Todo
-        agent_builder = agent_builder
-            .add_middleware(Box::new(AgentsMdMiddleware::new()))
-            .add_middleware(Box::new(SkillsMiddleware::new().with_global_config()))
-            .add_middleware(Box::new(TodoMiddleware::new({
-                let (tx, _rx) = mpsc::channel(8);
-                tx
-            })));
+        for mw in build_subagent_middlewares(SubAgentMiddlewareConfig::for_fork(cwd)) {
+            agent_builder = agent_builder.add_middleware(mw);
+        }
 
         // 5. Inject system prompt (obtained via system_builder, consistent with Normal path)
         if let Some(ref builder) = self.system_builder {
@@ -451,21 +477,12 @@ impl SubAgentTool {
         };
 
         let mut agent_builder = ReActAgent::new(llm).max_iterations(max_iterations);
-        agent_builder = agent_builder
-            .add_middleware(Box::new(AgentsMdMiddleware::new()))
-            .add_middleware(Box::new(SkillsMiddleware::new().with_global_config()));
-
-        if !agent_def.frontmatter.skills.is_empty() {
-            agent_builder = agent_builder.add_middleware(Box::new(SkillPreloadMiddleware::new(
-                agent_def.frontmatter.skills.clone(),
-                &cwd,
-            )));
+        for mw in build_subagent_middlewares(SubAgentMiddlewareConfig::for_agent_def(
+            agent_def.frontmatter.skills.clone(),
+            &cwd,
+        )) {
+            agent_builder = agent_builder.add_middleware(mw);
         }
-
-        agent_builder = agent_builder.add_middleware(Box::new(TodoMiddleware::new({
-            let (tx, _rx) = mpsc::channel(8);
-            tx
-        })));
 
         if let Some(ref builder) = self.system_builder {
             let overrides = Self::overrides_from_agent_def(
@@ -602,13 +619,9 @@ impl SubAgentTool {
         // Assemble child ReActAgent with fork semantics
         let llm = (self.llm_factory)(None);
         let mut agent_builder = ReActAgent::new(llm).max_iterations(200);
-        agent_builder = agent_builder
-            .add_middleware(Box::new(AgentsMdMiddleware::new()))
-            .add_middleware(Box::new(SkillsMiddleware::new().with_global_config()))
-            .add_middleware(Box::new(TodoMiddleware::new({
-                let (tx, _rx) = mpsc::channel(8);
-                tx
-            })));
+        for mw in build_subagent_middlewares(SubAgentMiddlewareConfig::for_fork(&cwd)) {
+            agent_builder = agent_builder.add_middleware(mw);
+        }
 
         if let Some(ref builder) = self.system_builder {
             let system_content = builder(None, &cwd);
@@ -841,25 +854,13 @@ impl BaseTool for SubAgentTool {
 
         let mut agent_builder = ReActAgent::new(llm).max_iterations(max_iterations);
 
-        // 5. Add missing context middleware (aligned with parent agent)
-        //    Registration order: AgentsMdMiddleware -> SkillsMiddleware -> TodoMiddleware
-        //    TodoMiddleware's _rx is immediately discarded, send failures are silently ignored
-        agent_builder = agent_builder
-            .add_middleware(Box::new(AgentsMdMiddleware::new()))
-            .add_middleware(Box::new(SkillsMiddleware::new().with_global_config()));
-
-        // If agent def declares skills, inject SkillPreloadMiddleware (full text preload)
-        if !agent_def.frontmatter.skills.is_empty() {
-            agent_builder = agent_builder.add_middleware(Box::new(SkillPreloadMiddleware::new(
-                agent_def.frontmatter.skills.clone(),
-                &cwd,
-            )));
+        // 5. Add standard sub-agent middleware chain
+        for mw in build_subagent_middlewares(SubAgentMiddlewareConfig::for_agent_def(
+            agent_def.frontmatter.skills.clone(),
+            &cwd,
+        )) {
+            agent_builder = agent_builder.add_middleware(mw);
         }
-
-        agent_builder = agent_builder.add_middleware(Box::new(TodoMiddleware::new({
-            let (tx, _rx) = mpsc::channel(8);
-            tx
-        })));
 
         // 6. Inject system prompt via with_system_prompt (visible in Langfuse tracing)
         //    System prompt = build_system_prompt(agent overrides, cwd), includes tone/proactiveness
