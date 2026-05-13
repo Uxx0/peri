@@ -58,7 +58,7 @@ impl PanelComponent for StatusPanel {
     }
 
     fn desired_height(&self, _screen_height: u16, _screen_width: u16) -> u16 {
-        14
+        20
     }
 
     fn render(&mut self, f: &mut Frame, app: &mut App, area: Rect) {
