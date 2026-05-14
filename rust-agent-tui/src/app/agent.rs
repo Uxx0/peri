@@ -171,7 +171,7 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
 
     // 不使用 .with_system()，改由 with_system_prompt() 注入到 state，使 Langfuse 可见
     let model = rust_create_agent::llm::RetryableLLM::new(
-        BaseModelReactLLM::new(provider.into_model()),
+        BaseModelReactLLM::new(provider.into_model()).with_session_id(thread_id.to_string()),
         rust_create_agent::llm::RetryConfig::default(),
     )
     .with_event_handler(Arc::clone(&handler));
@@ -238,6 +238,7 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
     let mut compact_config = peri_config.config.compact.clone().unwrap_or_default();
     compact_config.apply_env_overrides();
     let config_for_factory = peri_config;
+    let session_id_for_factory = thread_id.to_string();
     #[allow(clippy::type_complexity)]
     let llm_factory: Arc<
         dyn Fn(Option<&str>) -> Box<dyn rust_create_agent::agent::react::ReactLLM + Send + Sync>
@@ -247,13 +248,14 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         if let Some(alias) = model_alias {
             if let Some(p) = LlmProvider::from_config_for_alias(&config_for_factory, alias) {
                 return Box::new(rust_create_agent::llm::RetryableLLM::new(
-                    BaseModelReactLLM::new(p.into_model()),
+                    BaseModelReactLLM::new(p.into_model()).with_session_id(&session_id_for_factory),
                     rust_create_agent::llm::RetryConfig::default(),
                 ));
             }
         }
         Box::new(rust_create_agent::llm::RetryableLLM::new(
-            BaseModelReactLLM::new(provider_clone.clone().into_model()),
+            BaseModelReactLLM::new(provider_clone.clone().into_model())
+                .with_session_id(&session_id_for_factory),
             rust_create_agent::llm::RetryConfig::default(),
         ))
     });

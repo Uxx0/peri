@@ -393,6 +393,7 @@ pub async fn handle_prompt(
             cron_scheduler: None,
             agent_overrides: mgr().agent_overrides().cloned(),
             preload_skills: Vec::new(),
+            session_id: Some(session_id_str.to_string()),
         };
         let (executor, mut todo_rx) = agent_assembler::assemble_agent(config);
 

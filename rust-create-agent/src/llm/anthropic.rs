@@ -566,6 +566,11 @@ impl BaseModel for ChatAnthropic {
             req = req.header("anthropic-beta", "prompt-caching-2024-07-31");
         }
 
+        // LiteLLM session tracking：通过 header 按 session 聚合多次请求
+        if let Some(ref sid) = request.session_id {
+            req = req.header("x-session-id", sid.as_str());
+        }
+
         tracing::debug!(
             provider = "anthropic",
             model = %self.model,
@@ -585,7 +590,8 @@ impl BaseModel for ChatAnthropic {
         })?;
 
         let status = resp.status();
-        let request_id = resp
+        // 先保存 header 中的 request_id，解析 body 后尝试用 body id 兜底
+        let header_request_id = resp
             .headers()
             .get("x-request-id")
             .and_then(|v| v.to_str().ok())
@@ -614,6 +620,10 @@ impl BaseModel for ChatAnthropic {
                 "解析响应失败: {e}\n原始响应({status}): {resp_text}"
             ))
         })?;
+
+        // request_id 优先用 x-request-id header，无则回退到 body 中的 id 字段
+        let request_id =
+            header_request_id.or_else(|| resp_json["id"].as_str().map(|s| s.to_string()));
 
         if !status.is_success() {
             let msg = resp_json["error"]["message"]

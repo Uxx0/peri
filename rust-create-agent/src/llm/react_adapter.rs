@@ -11,6 +11,8 @@ use crate::tools::BaseTool;
 pub struct BaseModelReactLLM {
     pub model: Box<dyn BaseModel>,
     pub system: Option<String>,
+    /// 会话级 ID，透传到 LlmRequest，供代理（如 LiteLLM）按 session 聚合请求
+    pub session_id: Option<String>,
 }
 
 impl BaseModelReactLLM {
@@ -18,11 +20,17 @@ impl BaseModelReactLLM {
         Self {
             model,
             system: None,
+            session_id: None,
         }
     }
 
     pub fn with_system(mut self, system: impl Into<String>) -> Self {
         self.system = Some(system.into());
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
         self
     }
 }
@@ -40,6 +48,10 @@ impl ReactLLM for BaseModelReactLLM {
 
         if let Some(system) = &self.system {
             request = request.with_system(system.clone());
+        }
+
+        if let Some(ref sid) = self.session_id {
+            request = request.with_session_id(sid.clone());
         }
 
         let model_name = self.model.model_id().to_string();

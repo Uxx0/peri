@@ -9,6 +9,8 @@ pub struct LlmRequest {
     pub system: Option<String>,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    /// 会话级 ID，用于 LiteLLM 等代理按 session 聚合多次 LLM 请求
+    pub session_id: Option<String>,
 }
 
 impl LlmRequest {
@@ -19,6 +21,7 @@ impl LlmRequest {
             system: None,
             max_tokens: None,
             temperature: None,
+            session_id: None,
         }
     }
 
@@ -34,6 +37,11 @@ impl LlmRequest {
 
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
         self
     }
 }

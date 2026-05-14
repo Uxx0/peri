@@ -30,6 +30,8 @@ pub struct AgentAssembleConfig {
     pub agent_overrides: Option<AgentOverrides>,
     /// 需要预加载全文的 skill 名称列表（从用户消息中 /skill-name 模式提取）
     pub preload_skills: Vec<String>,
+    /// 会话级 ID，透传到 LLM 请求，供代理（如 LiteLLM）按 session 聚合请求
+    pub session_id: Option<String>,
 }
 
 pub fn assemble_agent(
@@ -47,6 +49,7 @@ pub fn assemble_agent(
         cron_scheduler,
         agent_overrides,
         preload_skills,
+        session_id,
     } = config;
 
     // Apply agent overrides to system prompt
@@ -65,11 +68,12 @@ pub fn assemble_agent(
     let provider_for_factory = provider.clone();
 
     // LLM
-    let model = RetryableLLM::new(
-        BaseModelReactLLM::new(provider.into_model()),
-        RetryConfig::default(),
-    )
-    .with_event_handler(Arc::clone(&event_handler));
+    let mut base_llm = BaseModelReactLLM::new(provider.into_model());
+    if let Some(ref sid) = session_id {
+        base_llm = base_llm.with_session_id(sid);
+    }
+    let model = RetryableLLM::new(base_llm, RetryConfig::default())
+        .with_event_handler(Arc::clone(&event_handler));
 
     // Todo channel
     let (todo_tx, todo_rx) = tokio::sync::mpsc::channel::<Vec<TodoItem>>(8);
@@ -97,24 +101,28 @@ pub fn assemble_agent(
     // 子 agent LLM 工厂
     let provider_clone = provider_for_factory;
     let config_for_factory = peri_config;
+    let session_id_for_factory = session_id;
     #[allow(clippy::type_complexity)]
     let llm_factory: Arc<
         dyn Fn(Option<&str>) -> Box<dyn rust_create_agent::agent::react::ReactLLM + Send + Sync>
             + Send
             + Sync,
     > = Arc::new(move |model_alias: Option<&str>| {
+        let sid = session_id_for_factory.as_deref();
         if let Some(alias) = model_alias {
             if let Some(p) = LlmProvider::from_config_for_alias(&config_for_factory, alias) {
-                return Box::new(RetryableLLM::new(
-                    BaseModelReactLLM::new(p.into_model()),
-                    RetryConfig::default(),
-                ));
+                let mut llm = BaseModelReactLLM::new(p.into_model());
+                if let Some(s) = sid {
+                    llm = llm.with_session_id(s);
+                }
+                return Box::new(RetryableLLM::new(llm, RetryConfig::default()));
             }
         }
-        Box::new(RetryableLLM::new(
-            BaseModelReactLLM::new(provider_clone.clone().into_model()),
-            RetryConfig::default(),
-        ))
+        let mut llm = BaseModelReactLLM::new(provider_clone.clone().into_model());
+        if let Some(s) = sid {
+            llm = llm.with_session_id(s);
+        }
+        Box::new(RetryableLLM::new(llm, RetryConfig::default()))
     });
 
     // 系统提示词构建器

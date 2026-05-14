@@ -157,7 +157,7 @@ export async function proxyRequest(
   proxyHeaders.set("host", new URL(baseUrl).host);
 
   logRequest(config.logLevel, route, req.method, url, proxyHeaders, reqJson);
-  writeReqFile(config.logDir, id, "request.json", JSON.stringify(reqJson, null, 2));
+  writeReqFile(config.logDir, id, "request.json", JSON.stringify({ headers: sanitizeHeaders(proxyHeaders), body: reqJson }, null, 2));
 
   const start = performance.now();
   let upstreamRes: Response;

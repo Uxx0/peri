@@ -500,6 +500,11 @@ impl BaseModel for ChatOpenAI {
             body["thinking"] = json!({ "type": "enabled" });
         }
 
+        // LiteLLM session tracking：通过 metadata.session_id 按 session 聚合多次请求
+        if let Some(ref sid) = request.session_id {
+            body["metadata"] = json!({ "session_id": sid });
+        }
+
         let resp = self
             .client
             .post(&chat_url)
