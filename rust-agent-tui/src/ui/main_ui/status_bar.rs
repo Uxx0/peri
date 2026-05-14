@@ -128,7 +128,7 @@ fn render_first_row(f: &mut Frame, app: &App, area: Rect) {
                 format!("{:.0}k", total as f64 / 1000.0)
             };
             spans.push(Span::styled(
-                format!("{} {:.0}%", total_display, pct),
+                format!("{:.0}% {}", pct, total_display),
                 Style::default().fg(color),
             ));
         }

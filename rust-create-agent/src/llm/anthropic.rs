@@ -322,16 +322,17 @@ impl ChatAnthropic {
     /// 对 messages 列表中的 user 消息追加 cache_control 断点
     ///
     /// Anthropic Prompt Caching 要求在需要缓存的边界位置加 `cache_control: { type: "ephemeral" }`。
-    /// 最多允许 4 个断点（system 占 1 个，messages 中最多 3 个）。
+    /// 最多允许 4 个断点（system 占 1-2 个，messages 中占剩余名额）。
     ///
-    /// **缓存策略**（3 断点）：
+    /// **缓存策略**（最多 3 断点）：
     /// 1. **第一条 user 消息**：system + 首条 user 构成稳定缓存段，后续轮次不会失效。
     /// 2. **倒数第二条 user 消息**：多轮对话中，上一轮的 user+assistant+tool 整段可被缓存。
+    ///    当目标消息仅含 tool_result 无 text block 时，沿 user_indices 向前回退搜索。
     /// 3. **最后一条 user 消息**：当前轮次的完整前缀可被缓存（同一轮内多次工具调用间复用）。
+    ///    同样支持回退搜索。
     ///
     /// 当 user 消息不足 3 条时，按实际数量设置断点（不会重复）。
     fn apply_cache_to_messages(messages: &mut [Value]) {
-        // 收集所有 user 消息的索引
         let user_indices: Vec<usize> = messages
             .iter()
             .enumerate()
@@ -343,21 +344,32 @@ impl ChatAnthropic {
             return;
         }
 
+        // 检查 user 消息是否包含可附加 cache_control 的 text block
+        let has_text_block = |msg: &Value| -> bool {
+            match msg.get("content") {
+                Some(Value::Array(blocks)) => blocks.iter().any(|b| {
+                    b["type"].as_str() == Some("text")
+                        && !b["text"]
+                            .as_str()
+                            .map(|t| t.trim().is_empty())
+                            .unwrap_or(true)
+                }),
+                Some(Value::String(s)) => !s.trim().is_empty(),
+                _ => false,
+            }
+        };
+
         // 确定要加断点的位置：第一条 + 倒数第二条 + 最后一条（去重）
         let mut target_indices: Vec<usize> = Vec::new();
-        // 第一条
         target_indices.push(user_indices[0]);
-        // 最后一条（如果不同于第一条）
         if let Some(&last) = user_indices.last() {
             if last != user_indices[0] {
                 target_indices.push(last);
             }
         }
-        // 倒数第二条（如果存在且不同于已选的）
         if user_indices.len() >= 3 {
             let second_to_last = user_indices[user_indices.len() - 2];
             if !target_indices.contains(&second_to_last) {
-                // 插入到正确位置以保持顺序（第一条 < 倒数第二条 < 最后一条）
                 if second_to_last < target_indices[0] {
                     target_indices.insert(0, second_to_last);
                 } else if second_to_last > target_indices[target_indices.len() - 1] {
@@ -368,35 +380,47 @@ impl ChatAnthropic {
             }
         }
 
-        for idx in target_indices {
-            let msg = &mut messages[idx];
-            if let Some(content) = msg.get_mut("content") {
-                match content {
-                    Value::Array(blocks) => {
-                        // 从后向前找到最后一个稳定的 text block 作为断点，
-                        // 跳过 tool_result/tool_use（内容跨请求不稳定）和空 text。
-                        let target = blocks.iter_mut().rfind(|b| {
-                            let btype = b["type"].as_str().unwrap_or("");
-                            btype == "text"
-                                && !b["text"]
-                                    .as_str()
-                                    .map(|t| t.trim().is_empty())
-                                    .unwrap_or(true)
-                        });
-                        if let Some(block) = target {
-                            block["cache_control"] = json!({ "type": "ephemeral" });
+        for idx in &target_indices {
+            // 如果目标消息无 text block，沿 user_indices 向前回退搜索
+            let effective_idx = if has_text_block(&messages[*idx]) {
+                Some(*idx)
+            } else {
+                user_indices
+                    .iter()
+                    .rev()
+                    .find(|&&ui| {
+                        ui < *idx && has_text_block(&messages[ui]) && !target_indices.contains(&ui)
+                    })
+                    .copied()
+            };
+
+            if let Some(ei) = effective_idx {
+                let msg = &mut messages[ei];
+                if let Some(content) = msg.get_mut("content") {
+                    match content {
+                        Value::Array(blocks) => {
+                            let target = blocks.iter_mut().rfind(|b| {
+                                let btype = b["type"].as_str().unwrap_or("");
+                                btype == "text"
+                                    && !b["text"]
+                                        .as_str()
+                                        .map(|t| t.trim().is_empty())
+                                        .unwrap_or(true)
+                            });
+                            if let Some(block) = target {
+                                block["cache_control"] = json!({ "type": "ephemeral" });
+                            }
                         }
+                        Value::String(s) if !s.trim().is_empty() => {
+                            let text = s.clone();
+                            *content = json!([{
+                                "type": "text",
+                                "text": text,
+                                "cache_control": { "type": "ephemeral" }
+                            }]);
+                        }
+                        _ => {}
                     }
-                    Value::String(s) if !s.trim().is_empty() => {
-                        // 将纯文本 content 升级为 blocks，以便加 cache_control
-                        let text = s.clone();
-                        *content = json!([{
-                            "type": "text",
-                            "text": text,
-                            "cache_control": { "type": "ephemeral" }
-                        }]);
-                    }
-                    _ => {}
                 }
             }
         }
@@ -457,7 +481,7 @@ impl BaseModel for ChatAnthropic {
             None => "https://api.anthropic.com/v1/messages".to_string(),
         };
 
-        let mut tools_json: Vec<Value> = request
+        let tools_json: Vec<Value> = request
             .tools
             .iter()
             .map(|t| {
@@ -469,13 +493,9 @@ impl BaseModel for ChatAnthropic {
             })
             .collect();
 
-        // Anthropic 推荐：对最后一个 tool 加 cache_control，使 system + tools 整段被缓存为稳定前缀。
-        // 这样 tools 数组（通常 10000+ tokens）不会在每次调用时重新处理。
-        if self.enable_cache {
-            if let Some(last_tool) = tools_json.last_mut() {
-                last_tool["cache_control"] = json!({ "type": "ephemeral" });
-            }
-        }
+        // tools 不再单独设 cache_control 断点。
+        // tools 已被 msg[first] 断点的缓存前缀覆盖（system + tools + first user），
+        // 省下的断点名额用于 system[last]，使整个 system prompt 可缓存。
 
         let (mut messages, system_from_msgs) = Self::messages_to_anthropic(&request.messages);
 
@@ -509,13 +529,17 @@ impl BaseModel for ChatAnthropic {
         });
 
         if self.enable_cache {
-            // system 多块格式：静态块标记 cache_control，动态块不标记
+            // system 多块格式：静态块 + 最后一块标记 cache_control
+            // 静态块（split_system_blocks 产出）已有 cache_control=true，
+            // 最后一块（通常含 middleware 内容）额外标记以缓存整个 system prompt。
             if !system_blocks.is_empty() {
+                let last_idx = system_blocks.len() - 1;
                 let blocks_json: Vec<Value> = system_blocks
                     .iter()
-                    .map(|b| {
+                    .enumerate()
+                    .map(|(i, b)| {
                         let mut block = json!({"type": "text", "text": &b.text});
-                        if b.cache_control {
+                        if b.cache_control || i == last_idx {
                             block["cache_control"] = json!({"type": "ephemeral"});
                         }
                         block
@@ -1012,6 +1036,70 @@ mod tests {
         let before = messages.clone();
         ChatAnthropic::apply_cache_to_messages(&mut messages);
         assert_eq!(messages, before, "无 user 消息时应不变");
+    }
+
+    /// 回退搜索：second-to-last 为 tool_result-only 时，回退到更早的 user message
+    #[test]
+    fn test_cache_control_fallback_second_to_last_tool_result() {
+        let mut messages = vec![
+            json!({"role": "user", "content": [{"type": "text", "text": "first question"}]}),
+            json!({"role": "assistant", "content": "answer"}),
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "data"}]}),
+            json!({"role": "assistant", "content": "more"}),
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "data2"}]}),
+        ];
+        ChatAnthropic::apply_cache_to_messages(&mut messages);
+        // first user (index 0) → 有断点
+        assert_eq!(
+            messages[0]["content"].as_array().unwrap()[0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        // last user (index 4, tool_result-only) → 回退到 index 0（已去重，不再添加）
+        // second-to-last (index 2, tool_result-only) → 回退到 index 0（已去重，不再添加）
+        // 所以只有 index 0 有断点
+        assert!(
+            !messages[2]["content"].as_array().unwrap()[0]
+                .as_object()
+                .unwrap()
+                .contains_key("cache_control"),
+            "tool_result-only 消息不应有断点"
+        );
+        assert!(
+            !messages[4]["content"].as_array().unwrap()[0]
+                .as_object()
+                .unwrap()
+                .contains_key("cache_control"),
+            "tool_result-only 消息不应有断点"
+        );
+    }
+
+    /// 回退搜索：second-to-last 为 tool_result-only，但有更早的含 text user message
+    #[test]
+    fn test_cache_control_fallback_finds_earlier_text_user() {
+        let mut messages = vec![
+            json!({"role": "user", "content": [{"type": "text", "text": "question 1"}]}),
+            json!({"role": "assistant", "content": "answer 1"}),
+            json!({"role": "user", "content": [{"type": "text", "text": "question 2"}]}),
+            json!({"role": "assistant", "content": "answer 2"}),
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "data"}]}),
+            json!({"role": "assistant", "content": "answer 3"}),
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "data2"}]}),
+        ];
+        ChatAnthropic::apply_cache_to_messages(&mut messages);
+        // first (index 0) → 有断点
+        assert_eq!(
+            messages[0]["content"].as_array().unwrap()[0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        // second-to-last (index 5→实际 user index 5 不存在, user indices = [0,2,4,6])
+        // second-to-last user = index 4 (tool_result-only) → 回退到 index 2 (含 text)
+        assert_eq!(
+            messages[2]["content"].as_array().unwrap()[0]["cache_control"]["type"],
+            "ephemeral",
+            "回退应找到 index 2 的 text block"
+        );
+        // last user (index 6, tool_result-only) → 回退搜索，但 index 0 和 2 已被占用
+        // 不会再添加新的断点
     }
 
     // ── Builder method tests ──

@@ -8,7 +8,7 @@ Rust Agent 框架，6 个 Workspace Crate + 1 个独立 Node.js CLI（`peri-cli/
 |-------|------|
 | `rust-create-agent` | 核心：ReAct 循环、Middleware trait、LLM 适配器、工具系统、持久化（SQLite）、遥测 |
 | `rust-agent-middlewares` | 中间件：文件系统、终端、HITL、SubAgent、Skills、Todo、Cron、MCP、Hooks、Plugin、LSP |
-| `perihelion-widgets` | Widget 组件库（11 组件），仅依赖 ratatui + pulldown-cmark |
+| `perihelion-widgets` | Widget 组件库（14 组件），仅依赖 ratatui + pulldown-cmark |
 | `rust-agent-tui` | TUI 应用，依赖 widgets + middlewares |
 | `langfuse-client` | Langfuse 遥测客户端（独立） |
 | `perihelion-lsp` | LSP 客户端库（独立，被 middlewares 使用） |
@@ -44,7 +44,7 @@ scripts/start-relay.sh               # 启动 Relay Server（端口 8080）
 
 ## 架构要点
 
-**ReAct 循环**（`rust-create-agent`）：AgentInput → collect_tools → before_agent → loop(50) { LLM → [工具调用] before_tool → 并发执行 → after_tool → emit | [回答] → emit TextChunk + StateSnapshot → after_agent }。
+**ReAct 循环**（`rust-create-agent`）：AgentInput → collect_tools → before_agent → loop(500) { LLM → [工具调用] before_tool → 并发执行 → after_tool → emit | [回答] → emit TextChunk + StateSnapshot → after_agent }。TUI 覆盖 `max_iterations(500)`（核心默认 10）。
 
 **[TRAP]** 新增/修改事件类型语义（如工具前文本从 AiReasoning 改为 TextChunk）时，必须同步检查 TUI 侧事件映射层（`map_executor_event`）。（详见 spec/global/domains/agent.md#issue_2026-05-11-streaming-text-invisible-with-tools）
 
@@ -56,7 +56,7 @@ scripts/start-relay.sh               # 启动 Relay Server（端口 8080）
 
 **[TRAP]** Ephemeral VM（SystemNote/CacheWarning）依赖锚点机制：`ephemeral_notes` 记录插入位置，RebuildAll 时根据锚点与 `prefix_len` 关系决定保留/重插入。新增 ephemeral VM 类型必须同步更新过滤逻辑。（详见 spec/global/domains/message-pipeline.md#issue_2026-05-12-systemnote-position-drift-on-rebuild）
 
-**系统提示词**：`build_system_prompt(overrides, cwd, features)` 合成，段落文件位于 `rust-agent-tui/prompts/sections/`。`PromptFeatures` 控制条件段落注入。静态段落（01-06）与动态段落（07_env + feature-gated）通过 `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` 边界标记分隔——标记前的内容被 Anthropic prompt cache 命中，标记后的内容变化不影响前缀缓存。`messages_to_anthropic()` 中 `split_system_blocks()` 负责拆分。
+**系统提示词**：`build_system_prompt(overrides, cwd, features)` 合成，段落文件位于 `rust-agent-tui/prompts/sections/`（共 11 个：01-07 + 10-13）。`PromptFeatures` 控制条件段落注入。静态段落（01-06）与动态段落（07_env + feature-gated 10-13）通过 `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` 边界标记分隔——标记前的内容被 Anthropic prompt cache 命中，标记后的内容变化不影响前缀缓存。`messages_to_anthropic()` 中 `split_system_blocks()` 负责拆分。
 
 ## Thinking/推理模式
 
@@ -85,25 +85,25 @@ scripts/start-relay.sh               # 启动 Relay Server（端口 8080）
 ## 中间件链执行顺序
 
 ```
-1. AgentDefineMiddleware    ← agent 定义，model/maxTurns 覆盖
-2. AgentsMdMiddleware       ← CLAUDE.md/AGENTS.md 注入
-3. SkillsMiddleware         ← Skills 摘要注入
-4. SkillPreloadMiddleware   ← #skill-name 全文注入
-5. PluginMiddleware         ← 插件命令注入
-6. HookMiddleware           ← hooks 事件拦截
-7. FilesystemMiddleware     ← 6 个文件系统工具
-8. TerminalMiddleware       ← Bash
-9. WebMiddleware            ← WebFetch/WebSearch
-10. TodoMiddleware          ← after_tool 解析 TodoWrite
-11. CronMiddleware          ← Cron 调度
-12. LspMiddleware           ← LSP 工具 + after_tool 文件变更同步
-13. HumanInTheLoopMiddleware← before_tool 拦截
-14. SubAgentMiddleware      ← Agent 工具
-15. McpMiddleware           ← MCP 工具和资源（pool 成功时注册）
+1.  AgentsMdMiddleware       ← CLAUDE.md/AGENTS.md 注入
+2.  AgentDefineMiddleware    ← agent 定义，model/maxTurns 覆盖
+3.  SkillsMiddleware         ← Skills 摘要注入（含插件 extra_dirs）
+4.  SkillPreloadMiddleware   ← #skill-name 全文注入
+5.  FilesystemMiddleware     ← 6 个文件系统工具
+6.  TerminalMiddleware       ← Bash
+7.  WebMiddleware            ← WebFetch/WebSearch
+8.  TodoMiddleware           ← after_tool 解析 TodoWrite
+9.  CronMiddleware           ← Cron 调度
+10. HookMiddleware           ← hooks 事件拦截（多组实例）
+11. HumanInTheLoopMiddleware ← before_tool 拦截
+12. SubAgentMiddleware       ← Agent 工具
+13. McpMiddleware            ← MCP 工具和资源（pool 成功时注册）
+14. ToolSearchMiddleware     ← SearchExtraTools/ExecuteExtraTool 代理
+15. LspMiddleware            ← LSP 工具 + after_tool 文件变更同步
 [ReActAgent.with_system_prompt()] ← prepend
 ```
 
-`register_tool` 优先级最高，覆盖同名中间件工具。
+插件通过 `plugin_skill_dirs` → `SkillsMiddleware.with_extra_dirs()`、`plugin_hooks` → `HookMiddleware` 注入，无独立 PluginMiddleware。
 
 ## HITL 审批
 
