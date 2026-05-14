@@ -1,6 +1,6 @@
 # Claude Code vs Peri 兼容性对比
 
-> 最后更新：2026-05-10
+> 最后更新：2026-05-14
 
 ## 全景对比表
 
@@ -8,7 +8,7 @@
 |---|------|------|------------|------------|------|--------|
 | | **基础** | 语言/运行时 | TypeScript / Bun | Rust / Tokio | N/A（重写） | |
 | | **核心架构** | Agent 循环 | ReAct（query.ts / QueryEngine.ts） | ReAct（rust-create-agent） | ✅ | |
-| | | 最大迭代 | 可配置 | 50（可配置） | ✅ | |
+| | | 最大迭代 | 可配置 | 500（TUI 主 agent）/ 200（子 agent）/ 50（hooks）/ 10（core 默认） | ✅ | |
 | | | 流式输出 | Anthropic SSE / OpenAI stream | SSE streaming | ✅ | |
 | | | Prompt Caching | Anthropic prompt-caching-2024-07-31（首条用户消息 cache_control） | 同左（Anthropic 默认启用） | ✅ | |
 | | | 重试 | 指数退避 + jitter（max 5 次，429/503/网络错误可重试） | RetryableLLM（指数退避 + 25% jitter，max 5 次） | ✅ | |
@@ -32,11 +32,12 @@
 | | | Prompt Cache Break Detection | PROMPT_CACHE_BREAK_DETECTION | -- | ❌ | |
 | | | **消息** | 消息类型 | Human / Ai / System / Tool | Human / Ai / System / Tool | ✅ | |
 | | | 内容块 | Text / Image / ToolUse / ToolResult / Thinking | Text / Image / Document / ToolUse / ToolResult / Reasoning / Unknown | 🟢 | |
-| | **核心工具** | 文件系统（Read/Write/Edit/Glob/Grep/folder_operations） | FileRead/Write/Edit + Glob/Grep | 同名工具 + folder_operations 独立 | ✅ | |
+| | **核心工具** | 文件系统操作 | FileRead/Write/Edit + Glob/Grep | 同名工具 + folder_operations 独立 | ✅ | |
 | | | Shell（Bash） | BashTool + PowerShellTool | Bash（缺 PowerShell） | ⚠️（缺 PowerShell） | |
 | | | Web（WebFetch/WebSearch） | WebFetchTool + WebSearchTool | WebFetch + WebSearch | ✅ | |
 | | | Jupyter | NotebookEditTool | -- | ❌ | |
-| | | 辅助（Snip/LSP/Sleep/CtxInspect） | SnipTool + LSPTool + SleepTool + CtxInspectTool | -- | ❌ | |
+| | | LSP 支持 | LSPTool | LspMiddleware + perihelion-lsp crate（after_tool 自动同步文件变更） | ✅ | |
+| | | 辅助（Snip/Sleep/CtxInspect） | SnipTool + SleepTool + CtxInspectTool | -- | ❌ | |
 | | **Agent 工具** | Agent (SubAgent) | AgentTool | Agent | ✅ | |
 | | | AskUserQuestion | AskUserQuestionTool | AskUserQuestion | ✅ | |
 | | | TodoWrite | TodoWriteTool | TodoWrite | ✅ | |
@@ -95,7 +96,7 @@
 | | | 后台通知 | 事件通道 | 独立通知通道 + continuation | ✅ | |
 | | | Agent Memory | agentMemory.ts（子 agent 持久记忆） | -- | ❌ | |
 | | | 插件 Agent | loadPluginAgents | scan_agents_with_extra_dirs | ✅ | |
-| | | 返回值格式 | 结构化工具调用结果 | `[子 agent 执行了 N 个工具调用]\nFinal response` | 🔄 | |
+| | | 返回值格式 | 结构化工具调用结果 | `[Sub-agent executed N tool calls: Tool1 X times, Tool2 Y times]\n\n{响应文本}` | ✅ | |
 | | **Agent Teams** | Coordinator Mode | coordinatorMode（自动分发任务给多个并行 worker） | -- | ❌ | |
 | | | Agent Swarms | swarm/（多 agent 团队协调，in-process / terminal / iTerm2 后端） | -- | ❌ | |
 | | | Background Agent (InProcess) | LocalAgentTask（进程内后台 agent） | 支持（max 3 并发） | ✅ | |
@@ -392,7 +393,7 @@
 | | | Terminal Output Streaming | ✅（`_meta.terminal_output`） | -- | ❌ | |
 | | | CLI 入口 | `claude --acp` | `peri acp [--cwd] [--model] [--agent]` | ✅ | |
 | | | Agent 覆盖 | -- | `--agent`（.claude/agents/ 定义） | 🟢 | |
-| | | **Peri 独有** | Widget 库 | -- | perihelion-widgets（11 组件） | 🟢 | |
+| | | **Peri 独有** | Widget 库 | -- | perihelion-widgets（14 组件） | 🟢 | |
 | | | 5 级权限快捷切换 | -- | Shift+Tab 循环 | 🟢 | |
 | | | Tool Search 延迟加载 | -- | SearchExtraTools / ExecuteExtraTool 元工具 | 🟢 | |
 
@@ -402,13 +403,13 @@
 
 | 状态 | 数量 | 占比 |
 |------|------|------|
-| ✅ 兼容 | 122 | 30% |
-| 🔄 对等 | 12 | 3% |
-| 🟢 Peri 更好 | 45 | 11% |
+| ✅ 兼容 | 124 | 32% |
+| 🔄 对等 | 11 | 3% |
+| 🟢 Peri 更好 | 32 | 8% |
 | ⚠️ 部分兼容 | 31 | 8% |
-| ❌ 缺失 | 183 | 46% |
+| ❌ 缺失 | 183 | 48% |
 | N/A | 4 | 1% |
-| **总计** | **397** | 100% |
+| **总计** | **385** | 100% |
 
 ## 缺失特性优先级建议
 
@@ -422,7 +423,6 @@
 | **P1 中** | rules/ 目录 + paths: frontmatter | 模块化 CLAUDE.md 规则，大型项目必需 |
 | **P1 中** | mcp_tool Hook 类型 | Hook 调用 MCP 工具，扩展 hook 能力 |
 | **P1 中** | Computer Use | 桌面自动化，差异化场景 |
-| **P1 中** | LSP 集成 | 代码智能，开发效率 |
 | **P1 中** | Bedrock/Vertex/Gemini/Grok | 更多 Provider，用户覆盖 |
 | **P1 中** | Voice Mode | 语音交互，新兴交互方式 |
 | **P1 中** | 会话分支/导出 | 会话管理完善 |
