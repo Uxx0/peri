@@ -19,5 +19,6 @@ pub mod event;
 pub mod i18n;
 pub mod langfuse;
 pub mod prompt;
+pub mod self_update;
 pub mod thread;
 pub mod ui;

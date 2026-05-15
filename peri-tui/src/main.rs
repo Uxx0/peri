@@ -46,6 +46,8 @@ enum Commands {
         #[arg(short = 'g', long)]
         agent: Option<String>,
     },
+    /// 自更新：从 GitHub Releases 下载并安装最新版本
+    SelfUpdate,
 }
 
 // ─── 环境变量注入 ──────────────────────────────────────────────────────────
@@ -105,6 +107,22 @@ fn main() -> Result<()> {
                 .enable_all()
                 .build()?;
             rt.block_on(peri_tui::acp::run_acp_mode(cwd, model, agent))
+        }
+        Some(Commands::SelfUpdate) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(async {
+                match peri_tui::self_update::run_self_update().await {
+                    Ok(Some(tag)) => println!("Updated to {tag}"),
+                    Ok(None) => {} // already latest, message printed
+                    Err(e) => {
+                        eprintln!("Self-update failed: {e:#}");
+                        std::process::exit(1);
+                    }
+                }
+                Ok(())
+            })
         }
     }
 }

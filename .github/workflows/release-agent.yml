@@ -85,15 +85,19 @@ jobs:
               if: matrix.ext == ''
               run: |
                   mkdir -p dist
-                  cp target/${{ matrix.target }}/release/peri dist/agent-tui-${{ matrix.platform }}
-                  chmod +x dist/agent-tui-${{ matrix.platform }}
+                  cp target/${{ matrix.target }}/release/peri dist/peri-${{ matrix.platform }}
+                  chmod +x dist/peri-${{ matrix.platform }}
+                  tar -czf dist/peri-${{ matrix.platform }}.tar.gz -C dist peri-${{ matrix.platform }}
+                  rm dist/peri-${{ matrix.platform }}
 
             - name: Package binaries (Windows)
               if: matrix.ext == '.exe'
               shell: pwsh
               run: |
                   New-Item -ItemType Directory -Force -Path dist
-                  Copy-Item "target/${{ matrix.target }}/release/peri.exe" "dist/agent-tui-${{ matrix.platform }}.exe"
+                  Copy-Item "target/${{ matrix.target }}/release/peri.exe" "dist/peri-${{ matrix.platform }}.exe"
+                  Compress-Archive -Path "dist/peri-${{ matrix.platform }}.exe" -DestinationPath "dist/peri-${{ matrix.platform }}.zip"
+                  Remove-Item "dist/peri-${{ matrix.platform }}.exe"
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v4

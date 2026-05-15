@@ -8,11 +8,15 @@ set -euo pipefail
 #   PERI_INSTALL_VERSION   Specific version tag (e.g. agent-v1.17), empty = latest
 #   PERI_INSTALL_DIR       Install directory (default: $HOME/.peri)
 #   GITHUB_PROXY           GitHub download proxy prefix (replaces https://github.com in download URL)
+#   GITHUB_TOKEN           GitHub personal access token (bypasses API rate limiting)
 #   PERI_NO_PATH_HINT      Set to 1 to skip PATH hint
+#   PERI_INSTALL_PLATFORM  Override platform detection (e.g. linux-x86_64, macos-aarch64)
+#   PERI_SKIP_CHECKSUM     Set to 1 to skip SHA256 verification
 #
 # Example:
 #   PERI_INSTALL_VERSION=agent-v1.17 bash install.sh
 #   GITHUB_PROXY=https://ghproxy.com/https://github.com curl ... | bash
+#   GITHUB_TOKEN=ghp_xxx curl ... | bash
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -28,6 +32,19 @@ step()    { echo -e "${CYAN}[STEP]${NC}  $*"; }
 # --- Platform Detection ---
 detect_platform() {
     local os arch platform
+
+    # Allow manual override
+    if [[ -n "${PERI_INSTALL_PLATFORM:-}" ]]; then
+        # Validate format: os-arch
+        if [[ ! "${PERI_INSTALL_PLATFORM}" =~ ^(macos|linux|windows)-(x86_64|aarch64|riscv64)$ ]]; then
+            error "Invalid PERI_INSTALL_PLATFORM: ${PERI_INSTALL_PLATFORM}"
+            echo "  Expected: macos-x86_64 | macos-aarch64 | linux-x86_64 | linux-aarch64 | linux-riscv64 | windows-x86_64"
+            exit 1
+        fi
+        info "Platform (manual): ${PERI_INSTALL_PLATFORM}"
+        echo "${PERI_INSTALL_PLATFORM}"
+        return
+    fi
 
     case "$(uname -s)" in
         Darwin)  os="macos" ;;
@@ -58,6 +75,16 @@ get_download_url() {
     fi
 }
 
+# --- GitHub API request (with optional token) ---
+github_api() {
+    local url="$1"
+    local auth_header=""
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        auth_header="-H Authorization: Bearer ${GITHUB_TOKEN}"
+    fi
+    curl -fsSL ${auth_header:-} "${url}" 2>/dev/null
+}
+
 # --- Main ---
 main() {
     INSTALL_DIR="${PERI_INSTALL_DIR:-${HOME}/.peri}"
@@ -68,18 +95,19 @@ main() {
     info "-------------------------------"
 
     PLATFORM=$(detect_platform)
+    ASSET_NAME="peri-${PLATFORM}.tar.gz"
 
     # Fetch release info
     if [[ -n "${PERI_INSTALL_VERSION:-}" ]]; then
         VERSION_TAG="${PERI_INSTALL_VERSION}"
         step "Fetching release: ${VERSION_TAG}..."
-        RELEASE_JSON=$(curl -fsSL "${GITHUB_API}/releases/tags/${VERSION_TAG}" 2>/dev/null) || {
+        RELEASE_JSON=$(github_api "${GITHUB_API}/releases/tags/${VERSION_TAG}") || {
             error "Failed to fetch release '${VERSION_TAG}'. Does this tag exist?"
             exit 1
         }
     else
         step "Fetching latest agent release..."
-        RELEASES_JSON=$(curl -fsSL "${GITHUB_API}/releases?per_page=30" 2>/dev/null) || {
+        RELEASES_JSON=$(github_api "${GITHUB_API}/releases?per_page=30") || {
             error "Failed to fetch releases from GitHub."
             exit 1
         }
@@ -91,7 +119,7 @@ main() {
         fi
 
         # Fetch the specific release for asset list
-        RELEASE_JSON=$(curl -fsSL "${GITHUB_API}/releases/tags/${VERSION_TAG}" 2>/dev/null) || {
+        RELEASE_JSON=$(github_api "${GITHUB_API}/releases/tags/${VERSION_TAG}") || {
             error "Failed to fetch release '${VERSION_TAG}'."
             exit 1
         }
@@ -100,12 +128,9 @@ main() {
     info "Found release: ${VERSION_TAG}"
 
     # Find matching asset
-    # asset names: agent-tui-{platform} (e.g. agent-tui-macos-aarch64, agent-tui-windows-x86_64.exe)
-    ASSET_NAME="agent-tui-${PLATFORM}"
+    ASSET_DOWNLOAD_URL=$(echo "${RELEASE_JSON}" | grep -oE "\"browser_download_url\": *\"[^\"]*${ASSET_NAME}[^\"]*\"" | head -1 | cut -d'"' -f4)
 
-    DOWNLOAD_URL=$(echo "${RELEASE_JSON}" | grep -oE "\"browser_download_url\": *\"[^\"]*${ASSET_NAME}[^\"]*\"" | head -1 | cut -d'"' -f4)
-
-    if [[ -z "${DOWNLOAD_URL}" ]]; then
+    if [[ -z "${ASSET_DOWNLOAD_URL}" ]]; then
         error "No binary found for platform '${PLATFORM}'."
         echo ""
         echo "Available assets:"
@@ -119,19 +144,64 @@ main() {
     VERSION_DIR="${INSTALL_DIR}/${VERSION_TAG}"
     mkdir -p "${VERSION_DIR}"
 
-    TARGET="${VERSION_DIR}/agent"
+    TARGET="${VERSION_DIR}/peri"
+    TARBALL="${VERSION_DIR}/${ASSET_NAME}"
 
-    # Download
-    FINAL_URL=$(get_download_url "${DOWNLOAD_URL}")
-    if [[ "${FINAL_URL}" != "${DOWNLOAD_URL}" ]]; then
+    # Download tarball
+    FINAL_URL=$(get_download_url "${ASSET_DOWNLOAD_URL}")
+    if [[ "${FINAL_URL}" != "${ASSET_DOWNLOAD_URL}" ]]; then
         info "Using proxy: ${FINAL_URL}"
     fi
 
     step "Downloading..."
-    curl -fSL --progress-bar "${FINAL_URL}" -o "${TARGET}" || {
+    curl -fSL --progress-bar "${FINAL_URL}" -o "${TARBALL}" || {
         error "Download failed."
         exit 1
     }
+
+    # --- SHA256 Verification ---
+    if [[ "${PERI_SKIP_CHECKSUM:-}" != "1" ]]; then
+        step "Verifying checksum..."
+
+        # Find checksums.txt download URL from the same release
+        CHECKSUMS_URL=$(echo "${RELEASE_JSON}" | grep -oE "\"browser_download_url\": *\"[^\"]*checksums\.txt[^\"]*\"" | head -1 | cut -d'"' -f4)
+        CHECKSUMS_FILE="${VERSION_DIR}/checksums.txt"
+
+        if [[ -n "${CHECKSUMS_URL}" ]]; then
+            CHECKSUMS_FINAL=$(get_download_url "${CHECKSUMS_URL}")
+            curl -fsSL "${CHECKSUMS_FINAL}" -o "${CHECKSUMS_FILE}" 2>/dev/null || {
+                warn "Failed to download checksums.txt, skipping verification."
+            }
+
+            if [[ -f "${CHECKSUMS_FILE}" ]]; then
+                # Extract just the line for our tarball and verify
+                pushd "${VERSION_DIR}" > /dev/null
+                if grep -F "${ASSET_NAME}" "${CHECKSUMS_FILE}" | sha256sum -c --quiet 2>/dev/null; then
+                    info "Checksum verified OK"
+                else
+                    error "Checksum verification FAILED! The downloaded file may be corrupted."
+                    error "Expected:"
+                    grep -F "${ASSET_NAME}" "${CHECKSUMS_FILE}" || echo "  (no checksum entry found for ${ASSET_NAME})"
+                    error "Got:"
+                    sha256sum "${ASSET_NAME}" 2>/dev/null || shasum -a 256 "${ASSET_NAME}" 2>/dev/null
+                    rm -f "${TARBALL}"
+                    exit 1
+                fi
+                popd > /dev/null
+                rm -f "${CHECKSUMS_FILE}"
+            fi
+        else
+            warn "No checksums.txt found in release, skipping verification."
+        fi
+    fi
+
+    # Extract tarball
+    step "Extracting..."
+    tar -xzf "${TARBALL}" -C "${VERSION_DIR}" || {
+        error "Extraction failed."
+        exit 1
+    }
+    rm -f "${TARBALL}"
 
     # Make executable
     chmod +x "${TARGET}"
