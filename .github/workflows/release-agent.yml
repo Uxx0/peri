@@ -32,6 +32,10 @@ jobs:
                       target: aarch64-apple-darwin
                       platform: macos-aarch64
                       ext: ""
+                    - os: ubuntu-latest
+                      target: riscv64gc-unknown-linux-gnu
+                      platform: linux-riscv64
+                      ext: ""
                     - os: windows-latest
                       target: x86_64-pc-windows-msvc
                       platform: windows-x86_64
