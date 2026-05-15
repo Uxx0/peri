@@ -11,7 +11,7 @@ use crate::tools::BaseTool;
 
 use super::ReActAgent;
 
-/// 工具审批 → 并发执行 → 结果处理
+/// 工具审批 → 并发执行 → 结果收集（不写 state）→ 统一写入
 pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
     agent: &ReActAgent<L, S>,
     state: &mut S,
@@ -19,24 +19,18 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
     all_tools: &HashMap<String, &dyn BaseTool>,
     cancel: &CancellationToken,
 ) -> AgentResult<Vec<(ToolCall, ToolResult)>> {
-    let mut all_tool_calls: Vec<(ToolCall, ToolResult)> = Vec::new();
-
     let tc_reqs: Vec<ToolCallRequest> = reasoning
         .tool_calls
         .iter()
         .map(|tc| ToolCallRequest::new(tc.id.clone(), tc.name.clone(), tc.input.clone()))
         .collect();
-    // 优先使用带 Reasoning block 的原始消息，保留 thinking 内容
-    // source_message 的 tool_calls 字段在 LLM 解析阶段已填好
     let ai_msg = reasoning
         .source_message
         .clone()
         .unwrap_or_else(|| BaseMessage::ai_with_tool_calls(reasoning.thought.clone(), tc_reqs));
-    let ai_msg_id = ai_msg.id(); // 捕获 message_id（Copy，供后续 ToolStart/ToolEnd 使用）
-    let ai_msg_clone = ai_msg.clone();
-    state.add_message(ai_msg);
-    agent.emit(AgentEvent::MessageAdded(ai_msg_clone));
-    // emit AI 工具前文本（作为 TextChunk 而非 AiReasoning，确保 TUI 正确显示为文本而非推理提示）
+    let ai_msg_id = ai_msg.id();
+
+    // emit AI 工具前文本（非流式；流式模式下 LLM 适配器已通过 StreamingContext emit）
     if !reasoning.streamed && !reasoning.thought.trim().is_empty() {
         agent.emit(AgentEvent::TextChunk {
             message_id: ai_msg_id,
@@ -44,42 +38,105 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
         });
     }
 
-    // 阶段一：批量 before_tool（利用中间件的 batch 方法，如 HITL 批量审批）
-    let original_calls: Vec<ToolCall> = reasoning.tool_calls.clone();
+    // 阶段 A：收集所有工具调用结果（不写 state）
+    // 返回 Err 仅在 before_tool 错误路径（此时 state 干净，无 AI 消息）
+    let (results, was_cancelled, deferred_error) = collect_tool_results(
+        agent,
+        state,
+        reasoning.tool_calls.clone(),
+        all_tools,
+        cancel,
+        ai_msg_id,
+    )
+    .await?;
+
+    // 阶段 B：一次性写入 state（Cancel / deferred_error 路径也写入，保证 state 一致）
+    agent.emit(AgentEvent::MessageAdded(ai_msg.clone()));
+    state.add_message(ai_msg);
+
+    for (_, result) in &results {
+        let tool_msg = if result.is_error {
+            BaseMessage::tool_error(&result.tool_call_id, result.output.as_str())
+        } else {
+            BaseMessage::tool_result(&result.tool_call_id, result.output.as_str())
+        };
+        let tool_msg_clone = tool_msg.clone();
+        state.add_message(tool_msg);
+        agent.emit(AgentEvent::MessageAdded(tool_msg_clone));
+    }
+
+    // 写入完成后再返回错误
+    if was_cancelled {
+        return Err(AgentError::Interrupted);
+    }
+    if let Some(msg) = deferred_error {
+        return Err(AgentError::MiddlewareError {
+            middleware: "chain".to_string(),
+            reason: msg,
+        });
+    }
+
+    Ok(results)
+}
+
+/// 执行 before_tool 审批 + 并发工具调用，收集所有结果。
+///
+/// **不变量**：调用期间 state 中不包含本轮 AI 消息。所有 `run_on_error` /
+/// `run_after_tool` 实现均不依赖 `state.messages()` 包含本轮新增内容
+/// （已验证：全部 17 个中间件的这些钩子均使用 `_state: &mut S` 模式）。
+/// 新增中间件时必须遵守此约束。
+///
+/// 不写入 state，由 `dispatch_tools` 统一写入。
+///
+/// 返回 `(results, was_cancelled, deferred_error)`。
+/// - 正常路径：`(results, false, None)`
+/// - Cancel 路径：`(results, true, None)`
+/// - after_tool 错误：`(results, false, Some(msg))`
+/// - before_tool 错误 / Cancel in before_tool：返回 `Err`（state 未修改）
+async fn collect_tool_results<L: ReactLLM, S: State>(
+    agent: &ReActAgent<L, S>,
+    state: &mut S,
+    original_calls: Vec<ToolCall>,
+    all_tools: &HashMap<String, &dyn BaseTool>,
+    cancel: &CancellationToken,
+    ai_msg_id: MessageId,
+) -> AgentResult<(Vec<(ToolCall, ToolResult)>, bool, Option<String>)> {
+    let mut ready_calls: Vec<ToolCall> = Vec::with_capacity(original_calls.len());
+    let mut settled_results: Vec<(ToolCall, ToolResult)> = Vec::new();
+
+    // 阶段一：批量 before_tool
     let before_results = agent
         .chain
         .run_before_tools_batch(state, original_calls.clone())
         .await;
-    let mut modified_calls: Vec<ToolCall> = Vec::with_capacity(original_calls.len());
 
-    for (i, (tool_call, before_result)) in original_calls.iter().zip(before_results).enumerate() {
+    for (tool_call, before_result) in original_calls.iter().zip(before_results) {
         // before_tool 阶段也检查取消
         if cancel.is_cancelled() {
-            // modified_calls 中的调用已通过 before_tool 但尚未执行，
-            // 必须补全 error tool_result，否则 AI 消息中的 tool_use 无配对 tool_result，
-            // 导致 Anthropic API 400 (orphaned tool_use without tool_result)。
-            flush_modified_tool_errors(
-                agent,
-                state,
-                &modified_calls,
-                ai_msg_id,
-                &mut all_tool_calls,
-                "interrupted by user",
-            );
-            flush_pending_tool_errors(
-                agent,
-                state,
-                &original_calls[i..],
-                ai_msg_id,
-                &mut all_tool_calls,
-                "interrupted by user",
-            );
+            // 为已 emit ToolStart 的 ready_calls 补发 ToolEnd，
+            // 避免 TUI 的 pending_tools 短暂残留
+            for tc in &ready_calls {
+                agent.emit(AgentEvent::ToolEnd {
+                    message_id: ai_msg_id,
+                    tool_call_id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    output: "interrupted by user".to_string(),
+                    is_error: true,
+                });
+            }
             return Err(AgentError::Interrupted);
         }
-        let modified_call = match before_result {
-            Ok(c) => c,
+        match before_result {
+            Ok(modified_call) => {
+                agent.emit(AgentEvent::ToolStart {
+                    message_id: ai_msg_id,
+                    tool_call_id: modified_call.id.clone(),
+                    name: modified_call.name.clone(),
+                    input: modified_call.input.clone(),
+                });
+                ready_calls.push(modified_call);
+            }
             Err(AgentError::ToolRejected { ref reason, .. }) => {
-                // 拒绝不终止 Agent，将拒绝原因作为工具错误反馈给 LLM
                 let rejection_result =
                     ToolResult::error(&tool_call.id, &tool_call.name, reason.clone());
                 agent.emit(AgentEvent::ToolStart {
@@ -95,55 +152,28 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
                     output: rejection_result.output.clone(),
                     is_error: true,
                 });
-                let tool_msg = BaseMessage::tool_error(
-                    &rejection_result.tool_call_id,
-                    rejection_result.output.as_str(),
-                );
-                let tool_msg_clone = tool_msg.clone();
-                state.add_message(tool_msg);
-                agent.emit(AgentEvent::MessageAdded(tool_msg_clone));
-                all_tool_calls.push((tool_call.clone(), rejection_result));
-                continue;
+                settled_results.push((tool_call.clone(), rejection_result));
             }
             Err(e) => {
-                // run_on_error 副作用已执行；吞掉传播，先补全当前及剩余工具的错误结果。
-                // 注意：P1（取消）路径用 &original_calls[i..]（含当前索引），此处必须一致，
-                // 否则当前工具的 tool_use 已在第 37 行写入 state 但 tool_result 永远缺失，
-                // 导致 Anthropic API 400 (orphaned tool_use without tool_result)。
                 let _ = agent.chain.run_on_error(state, &e).await;
-                // modified_calls 中的调用已通过 before_tool 但尚未执行/写入 tool_result，
-                // 必须补全 error tool_result 以闭合 AI 消息中的 tool_use 配对。
-                flush_modified_tool_errors(
-                    agent,
-                    state,
-                    &modified_calls,
-                    ai_msg_id,
-                    &mut all_tool_calls,
-                    &e.to_string(),
-                );
-                flush_pending_tool_errors(
-                    agent,
-                    state,
-                    &original_calls[i..],
-                    ai_msg_id,
-                    &mut all_tool_calls,
-                    &e.to_string(),
-                );
+                // 为已 emit ToolStart 的 ready_calls 补发 ToolEnd
+                for tc in &ready_calls {
+                    agent.emit(AgentEvent::ToolEnd {
+                        message_id: ai_msg_id,
+                        tool_call_id: tc.id.clone(),
+                        name: tc.name.clone(),
+                        output: e.to_string(),
+                        is_error: true,
+                    });
+                }
                 return Err(e);
             }
-        };
-        agent.emit(AgentEvent::ToolStart {
-            message_id: ai_msg_id,
-            tool_call_id: modified_call.id.clone(),
-            name: modified_call.name.clone(),
-            input: modified_call.input.clone(),
-        });
-        modified_calls.push(modified_call);
+        }
     }
 
     // 阶段二：并发执行所有工具；取消时每个工具以 error 收尾
     let tool_results: Vec<Result<String, AgentError>> = {
-        let futures: Vec<_> = modified_calls
+        let futures: Vec<_> = ready_calls
             .iter()
             .map(|call| {
                 let tool_name = call.name.clone();
@@ -186,22 +216,19 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
         futures::future::join_all(futures).await
     };
 
-    // 检查是否已取消（工具全部结束后再决定是否继续）
     let was_cancelled = cancel.is_cancelled();
 
-    // 阶段三：串行处理结果——尽最大努力写入所有 tool_result，
-    // 使并发工具调用的结果在一条 user 消息中完整闭合，满足 Anthropic API 的
-    // "每个 tool_use 必须在紧随其后的消息中有对应 tool_result" 的约束。
-    // 工具执行错误（ToolExecutionFailed/ToolNotFound）不会终止循环——
-    // 错误 ToolResult 已写入 state，LLM 在下一轮可看到错误并自行修正。
-    // after_tool 中间件错误收集到 deferred_error，所有结果写入后才统一报错。
+    // 阶段三：串行处理结果——所有 tool_result 收集到 results 中，
+    // 不写 state，由 dispatch_tools 统一写入。
+    // 工具执行错误不终止循环——错误 ToolResult 收集后由 LLM 下一轮修正。
+    // after_tool 中间件错误收集到 deferred_error。
     let mut deferred_error: Option<String> = None;
+    let mut exec_results: Vec<(ToolCall, ToolResult)> = Vec::with_capacity(ready_calls.len());
 
-    for (modified_call, tool_result) in modified_calls.into_iter().zip(tool_results) {
+    for (modified_call, tool_result) in ready_calls.into_iter().zip(tool_results) {
         let result = match tool_result {
             Ok(output) => ToolResult::success(&modified_call.id, &modified_call.name, output),
             Err(AgentError::ToolNotFound(ref name)) => {
-                // 工具未找到仅作为错误结果写回，不终止循环——LLM 可尝试其他工具
                 tracing::warn!(tool.name = %name, "工具未找到，作为错误结果返回");
                 ToolResult::error(
                     &modified_call.id,
@@ -210,7 +237,6 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
                 )
             }
             Err(ref e) => {
-                // 工具执行失败仅作为错误结果写回，不终止循环——LLM 看到错误后可修正参数重试
                 let _ = agent.chain.run_on_error(state, e).await;
                 ToolResult::error(&modified_call.id, &modified_call.name, e.to_string())
             }
@@ -237,103 +263,18 @@ pub(crate) async fn dispatch_tools<L: ReactLLM, S: State>(
             .run_after_tool(state, &modified_call, &result)
             .await
         {
-            // after_tool 中间件错误：副作用已执行，仅记录不终止循环
             let _ = agent.chain.run_on_error(state, &e).await;
             deferred_error = deferred_error.or(Some(e.to_string()));
         }
 
-        // 无论中间件是否报错，tool_result 始终写入 state——
-        // 这是 Anthropic API 闭合跟随要求的核心保障。
-        let tool_msg = if result.is_error {
-            BaseMessage::tool_error(&result.tool_call_id, result.output.as_str())
-        } else {
-            BaseMessage::tool_result(&result.tool_call_id, result.output.as_str())
-        };
-        let tool_msg_clone = tool_msg.clone();
-        state.add_message(tool_msg);
-        agent.emit(AgentEvent::MessageAdded(tool_msg_clone));
-
-        all_tool_calls.push((modified_call, result));
+        exec_results.push((modified_call, result));
     }
 
-    // 工具结果全部写入状态后，若已取消则以 Interrupted 退出
-    // （调用方可保存此刻的 state.messages 实现断点续跑）
-    if was_cancelled {
-        return Err(AgentError::Interrupted);
-    }
+    // 合并 settled（rejected）+ executed 结果
+    settled_results.extend(exec_results);
 
-    // 若循环中收集到 after_tool 中间件错误，在结果全部写入后统一报错
-    if let Some(msg) = deferred_error {
-        return Err(AgentError::MiddlewareError {
-            middleware: "chain".to_string(),
-            reason: msg,
-        });
-    }
-
-    Ok(all_tool_calls)
-}
-
-/// 将已通过 before_tool 但尚未执行/写入 tool_result 的 modified_calls
-/// 以 error tool_result 写入 state，确保 AI 消息中所有 tool_use 都有配对。
-/// 与 flush_pending_tool_errors 配合使用：先 flush modified，再 flush pending。
-fn flush_modified_tool_errors<L: ReactLLM, S: State>(
-    agent: &ReActAgent<L, S>,
-    state: &mut S,
-    modified_calls: &[ToolCall],
-    ai_msg_id: MessageId,
-    all_tool_calls: &mut Vec<(ToolCall, ToolResult)>,
-    reason: &str,
-) {
-    for tc in modified_calls {
-        let result = ToolResult::error(&tc.id, &tc.name, reason);
-        // ToolStart 已在 before_tool Ok 路径中 emit，此处只 emit ToolEnd
-        agent.emit(AgentEvent::ToolEnd {
-            message_id: ai_msg_id,
-            tool_call_id: tc.id.clone(),
-            name: tc.name.clone(),
-            output: result.output.clone(),
-            is_error: true,
-        });
-        let tool_msg = BaseMessage::tool_error(&result.tool_call_id, result.output.as_str());
-        let tool_msg_clone = tool_msg.clone();
-        state.add_message(tool_msg);
-        agent.emit(AgentEvent::MessageAdded(tool_msg_clone));
-        all_tool_calls.push((tc.clone(), result));
-    }
-}
-
-/// 将未处理的 tool_calls 以 error tool_result 写入 state，
-/// 确保每个 tool_use block 都有闭合的 tool_result 消息，
-/// 满足 Anthropic API 的配对约束。
-fn flush_pending_tool_errors<L: ReactLLM, S: State>(
-    agent: &ReActAgent<L, S>,
-    state: &mut S,
-    pending: &[ToolCall],
-    ai_msg_id: MessageId,
-    all_tool_calls: &mut Vec<(ToolCall, ToolResult)>,
-    reason: &str,
-) {
-    for tc in pending {
-        let result = ToolResult::error(&tc.id, &tc.name, reason);
-        let tool_msg = BaseMessage::tool_error(&result.tool_call_id, result.output.as_str());
-        agent.emit(AgentEvent::ToolStart {
-            message_id: ai_msg_id,
-            tool_call_id: tc.id.clone(),
-            name: tc.name.clone(),
-            input: tc.input.clone(),
-        });
-        agent.emit(AgentEvent::ToolEnd {
-            message_id: ai_msg_id,
-            tool_call_id: tc.id.clone(),
-            name: tc.name.clone(),
-            output: result.output.clone(),
-            is_error: true,
-        });
-        let tool_msg_clone = tool_msg.clone();
-        state.add_message(tool_msg);
-        agent.emit(AgentEvent::MessageAdded(tool_msg_clone));
-        all_tool_calls.push((tc.clone(), result));
-    }
+    // Cancel / deferred_error 不在此返回 Err，由 dispatch_tools 在写入 state 后再检查
+    Ok((settled_results, was_cancelled, deferred_error))
 }
 
 #[cfg(test)]

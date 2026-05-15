@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -8,6 +7,128 @@ use crate::agent::react::{AgentInput, Reasoning};
 use crate::agent::state::AgentState;
 use crate::middleware::r#trait::Middleware;
 use crate::tools::BaseTool;
+
+/// 通用不变量：state 中每个 tool_use 必须有对应 tool_result。
+fn assert_no_orphaned_tool_uses(state: &AgentState) {
+    let mut ai_tool_ids: Vec<String> = Vec::new();
+    let mut tool_result_ids: Vec<String> = Vec::new();
+    for msg in state.messages() {
+        if let BaseMessage::Ai { tool_calls, .. } = msg {
+            for tc in tool_calls {
+                ai_tool_ids.push(tc.id.clone());
+            }
+        }
+        if let BaseMessage::Tool { tool_call_id, .. } = msg {
+            tool_result_ids.push(tool_call_id.clone());
+        }
+    }
+    assert_eq!(
+        ai_tool_ids.len(),
+        tool_result_ids.len(),
+        "tool_use 数量 ({}) != tool_result 数量 ({})\n\
+         tool_use IDs: {:?}\n\
+         tool_result IDs: {:?}",
+        ai_tool_ids.len(),
+        tool_result_ids.len(),
+        ai_tool_ids,
+        tool_result_ids
+    );
+    for id in &ai_tool_ids {
+        assert!(
+            tool_result_ids.contains(id),
+            "tool_use id={} 缺少配对 tool_result（孤儿 tool_use → Anthropic API 400）",
+            id
+        );
+    }
+}
+
+/// 并发工具执行中部分失败：3 个工具并发，tool_b 执行失败。
+/// 验证所有 tool_use 都有配对 tool_result，Agent 继续（不停止）。
+#[tokio::test]
+async fn test_concurrent_partial_failure_all_results_written() {
+    struct FailToolB;
+    #[async_trait::async_trait]
+    impl BaseTool for FailToolB {
+        fn name(&self) -> &str {
+            "tool_b"
+        }
+        fn description(&self) -> &str {
+            "fails"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn invoke(
+            &self,
+            _: serde_json::Value,
+        ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            Err("tool_b 执行失败".into())
+        }
+    }
+
+    struct EchoTool {
+        name_str: &'static str,
+    }
+    #[async_trait::async_trait]
+    impl BaseTool for EchoTool {
+        fn name(&self) -> &str {
+            self.name_str
+        }
+        fn description(&self) -> &str {
+            "echo"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        async fn invoke(
+            &self,
+            _: serde_json::Value,
+        ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(format!("{} done", self.name_str))
+        }
+    }
+
+    struct ThreeToolLLM;
+    #[async_trait::async_trait]
+    impl ReactLLM for ThreeToolLLM {
+        async fn generate_reasoning(
+            &self,
+            messages: &[BaseMessage],
+            _tools: &[&dyn BaseTool],
+            _streaming: Option<crate::llm::types::StreamingContext>,
+        ) -> AgentResult<Reasoning> {
+            let has_tool_result = messages
+                .iter()
+                .any(|m| matches!(m, BaseMessage::Tool { .. }));
+            if !has_tool_result {
+                Ok(Reasoning::with_tools(
+                    "call three tools",
+                    vec![
+                        ToolCall::new("id1", "tool_a", serde_json::json!({})),
+                        ToolCall::new("id2", "tool_b", serde_json::json!({})),
+                        ToolCall::new("id3", "tool_c", serde_json::json!({})),
+                    ],
+                ))
+            } else {
+                Ok(Reasoning::with_answer("done", "all results processed"))
+            }
+        }
+    }
+
+    let agent = ReActAgent::new(ThreeToolLLM)
+        .max_iterations(5)
+        .register_tool(Box::new(EchoTool { name_str: "tool_a" }))
+        .register_tool(Box::new(FailToolB))
+        .register_tool(Box::new(EchoTool { name_str: "tool_c" }));
+
+    let mut state = AgentState::new("/tmp");
+    let result = agent
+        .execute(AgentInput::text("go"), &mut state, None)
+        .await;
+
+    assert!(result.is_ok(), "Agent 应正常完成，实际: {:?}", result);
+    assert_no_orphaned_tool_uses(&state);
+}
 
 /// 验证 before_tool 非拒绝错误（P4 路径）在 i>0 时，
 /// 已通过 before_tool 的 modified_calls 也获得 error tool_result，
@@ -110,37 +231,15 @@ async fn test_p3_error_flushes_modified_calls_no_orphaned_tool_use() {
     // P3 路径返回错误，execute 应传播该错误
     assert!(result.is_err(), "P3 路径应返回错误，实际: {:?}", result);
 
-    // 核心断言：state 中每个 tool_use 必须有配对的 tool_result
-    // 收集所有 AI 消息中的 tool_call_id
-    let mut ai_tool_ids: Vec<String> = Vec::new();
-    let mut tool_result_ids: Vec<String> = Vec::new();
-    for msg in state.messages() {
-        if let BaseMessage::Ai { tool_calls, .. } = msg {
-            for tc in tool_calls {
-                ai_tool_ids.push(tc.id.clone());
-            }
-        }
-        if let BaseMessage::Tool { tool_call_id, .. } = msg {
-            tool_result_ids.push(tool_call_id.clone());
-        }
-    }
-
-    // 每个 tool_use 必须有对应 tool_result
-    for id in &ai_tool_ids {
-        assert!(
-            tool_result_ids.contains(id),
-            "tool_use id={} 缺少配对的 tool_result（孤儿 tool_use 会导致 Anthropic API 400）",
-            id
-        );
-    }
-
-    // 3 个 tool_use 都应有 tool_result
-    assert_eq!(ai_tool_ids.len(), 3, "应有 3 个 tool_use");
-    assert_eq!(
-        tool_result_ids.len(),
-        3,
-        "应有 3 个 tool_result（含 error）"
-    );
+    // 延迟写入：before_tool 错误路径不写入 AI 消息到 state
+    assert_no_orphaned_tool_uses(&state);
+    // AI 消息未写入，state 中无 tool_use 也无 tool_result
+    let ai_count = state
+        .messages()
+        .iter()
+        .filter(|m| matches!(m, BaseMessage::Ai { .. }))
+        .count();
+    assert_eq!(ai_count, 0, "before_tool 错误路径不应写入 AI 消息到 state");
 }
 
 /// 验证取消信号在 i>0 时，modified_calls 也获得 error tool_result。
@@ -367,37 +466,12 @@ async fn test_mixed_ok_rejected_error_all_tool_results_written() {
 
     assert!(result.is_err(), "混合路径应返回错误，实际: {:?}", result);
 
-    // 收集 tool_use 和 tool_result ID
-    let mut ai_tool_ids: Vec<String> = Vec::new();
-    let mut tool_result_ids: Vec<String> = Vec::new();
-    for msg in state.messages() {
-        if let BaseMessage::Ai { tool_calls, .. } = msg {
-            for tc in tool_calls {
-                ai_tool_ids.push(tc.id.clone());
-            }
-        }
-        if let BaseMessage::Tool { tool_call_id, .. } = msg {
-            tool_result_ids.push(tool_call_id.clone());
-        }
-    }
-
-    // 所有 tool_use 都有配对 tool_result
-    assert_eq!(ai_tool_ids.len(), 3, "应有 3 个 tool_use");
-    assert_eq!(tool_result_ids.len(), 3, "应有 3 个 tool_result");
-    for id in &ai_tool_ids {
-        assert!(
-            tool_result_ids.contains(id),
-            "tool_use id={} 缺少配对的 tool_result",
-            id
-        );
-    }
-
-    // 无重复写入
-    let unique_ids: HashSet<&str> = tool_result_ids.iter().map(|s| s.as_str()).collect();
-    assert_eq!(
-        unique_ids.len(),
-        tool_result_ids.len(),
-        "tool_result 不应有重复 ID: {:?}",
-        tool_result_ids
-    );
+    // 延迟写入：before_tool P4 错误路径不写入 AI 消息到 state
+    assert_no_orphaned_tool_uses(&state);
+    let ai_count = state
+        .messages()
+        .iter()
+        .filter(|m| matches!(m, BaseMessage::Ai { .. }))
+        .count();
+    assert_eq!(ai_count, 0, "before_tool P4 错误路径不应写入 AI 消息");
 }
