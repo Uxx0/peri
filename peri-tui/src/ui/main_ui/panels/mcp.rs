@@ -8,6 +8,7 @@ use ratatui::{
 use peri_widgets::{BorderedPanel, ScrollState, ScrollableArea};
 
 use crate::app::{App, DetailAction, McpPanel, McpPanelView};
+use crate::i18n::LcRegistry;
 use crate::ui::main_ui::highlight_line_spans;
 use crate::ui::theme;
 
@@ -23,6 +24,7 @@ pub(crate) fn render_mcp_panel(f: &mut Frame, panel: &McpPanel, app: &mut App, a
 }
 
 fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect) {
+    let lc = &app.services.lc;
     // Phase 1: 读取面板数据并构建所有行（不可变借用 panel）
     let (mut lines, scroll_offset) = {
         let scroll_offset = panel.scroll_offset();
@@ -33,7 +35,13 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
         // 服务器计数
         let count = servers.len();
         lines.push(Line::from(Span::styled(
-            format!("  {} servers", count),
+            format!(
+                "  {}",
+                lc.tr_args(
+                    "mcp-server-count",
+                    &[("count".into(), (count as u64).into())]
+                )
+            ),
             Style::default().fg(theme::MUTED),
         )));
         lines.push(Line::from(""));
@@ -43,11 +51,14 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
 
         if !project_servers.is_empty() {
             let header_text = match &project_servers[0].source {
-                Some(ConfigSource::Project(path)) => format!("  Project MCPs ({})", path.display()),
-                _ => "  Project MCPs".to_string(),
+                Some(ConfigSource::Project(path)) => lc.tr_args(
+                    "mcp-section-project-path",
+                    &[("path".into(), path.display().to_string().into())],
+                ),
+                _ => lc.tr("mcp-section-project"),
             };
             lines.push(Line::from(Span::styled(
-                header_text,
+                format!("  {}", header_text),
                 Style::default().fg(theme::MUTED),
             )));
             render_server_group(
@@ -55,18 +66,22 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
                 &project_servers,
                 cursor,
                 &project_start_offset(servers),
+                lc,
             );
             lines.push(Line::from(""));
         }
 
         if !user_servers.is_empty() {
             let header_text = match &user_servers[0].source {
-                Some(ConfigSource::Global(path)) => format!("  User MCPs ({})", path.display()),
-                Some(ConfigSource::Plugin) => "  Plugin MCPs".to_string(),
-                _ => "  User MCPs".to_string(),
+                Some(ConfigSource::Global(path)) => lc.tr_args(
+                    "mcp-section-user-path",
+                    &[("path".into(), path.display().to_string().into())],
+                ),
+                Some(ConfigSource::Plugin) => lc.tr("mcp-section-plugin"),
+                _ => lc.tr("mcp-section-user"),
             };
             lines.push(Line::from(Span::styled(
-                header_text,
+                format!("  {}", header_text),
                 Style::default().fg(theme::MUTED),
             )));
             render_server_group(
@@ -74,6 +89,7 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
                 &user_servers,
                 cursor,
                 &user_start_offset(servers),
+                lc,
             );
             lines.push(Line::from(""));
         }
@@ -81,7 +97,7 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
         if servers.is_empty() {
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  No MCP servers configured. Edit .mcp.json or settings.json",
+                format!("  {}", lc.tr("mcp-no-servers")),
                 Style::default().fg(theme::MUTED),
             )));
         }
@@ -91,7 +107,7 @@ fn render_server_list(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect
 
     // Phase 2: 渲染 BorderedPanel 边框（标题在边框线上）
     let inner = BorderedPanel::new(Span::styled(
-        " Manage MCP servers ",
+        format!(" {} ", lc.tr("mcp-panel-title")),
         Style::default()
             .fg(theme::THINKING)
             .add_modifier(Modifier::BOLD),
@@ -126,6 +142,7 @@ fn render_server_group(
     servers: &[&peri_middlewares::mcp::ServerInfo],
     global_cursor: usize,
     start_offset: &usize,
+    lc: &LcRegistry,
 ) {
     for (i, server) in servers.iter().enumerate() {
         let flat_idx = *start_offset + i;
@@ -133,18 +150,36 @@ fn render_server_group(
         let cursor_char = if is_cursor { "❯ " } else { "  " };
 
         let (icon, icon_style, status_text) = match (&server.status, &server.oauth_status) {
-            (ClientStatus::Connected, _) => ("✔", Style::default().fg(theme::SAGE), "connected"),
+            (ClientStatus::Connected, _) => (
+                "✔",
+                Style::default().fg(theme::SAGE),
+                lc.tr("mcp-status-connected"),
+            ),
             (_, OAuthStatus::NeedsAuthorization) => (
                 "△",
                 Style::default().fg(theme::WARNING),
-                "needs authentication",
+                lc.tr("mcp-status-needs-auth"),
             ),
-            (ClientStatus::Failed(_), _) => ("✗", Style::default().fg(theme::ERROR), "error"),
-            (ClientStatus::Disabled, _) => ("◯", Style::default().fg(theme::MUTED), "disabled"),
-            (ClientStatus::Uninitialized, _) => {
-                ("◯", Style::default().fg(theme::MUTED), "not initialized")
-            }
-            (ClientStatus::Disconnected, _) => ("◯", Style::default().fg(theme::MUTED), "offline"),
+            (ClientStatus::Failed(_), _) => (
+                "✗",
+                Style::default().fg(theme::ERROR),
+                lc.tr("mcp-status-error"),
+            ),
+            (ClientStatus::Disabled, _) => (
+                "◯",
+                Style::default().fg(theme::MUTED),
+                lc.tr("mcp-status-disabled"),
+            ),
+            (ClientStatus::Uninitialized, _) => (
+                "◯",
+                Style::default().fg(theme::MUTED),
+                lc.tr("mcp-status-uninitialized"),
+            ),
+            (ClientStatus::Disconnected, _) => (
+                "◯",
+                Style::default().fg(theme::MUTED),
+                lc.tr("mcp-status-offline"),
+            ),
         };
 
         let name_style = if is_cursor {
@@ -169,6 +204,7 @@ fn render_server_group(
 }
 
 fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Rect) {
+    let lc = &app.services.lc;
     let (server_name, tools, resources, actions, show_tools, cursor, scroll_offset) = {
         let McpPanelView::ServerDetail {
             server_name,
@@ -219,16 +255,16 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
             _ => ("◯", Style::default().fg(theme::MUTED)),
         };
         let status_label = match (&info.status, &info.oauth_status) {
-            (ClientStatus::Connected, _) => "connected",
-            (ClientStatus::Disabled, _) => "disabled",
-            (_, OAuthStatus::NeedsAuthorization) => "needs authentication",
-            (ClientStatus::Failed(_), _) => "error",
-            (ClientStatus::Uninitialized, _) => "not initialized",
-            (ClientStatus::Disconnected, _) => "offline",
+            (ClientStatus::Connected, _) => lc.tr("mcp-status-connected"),
+            (ClientStatus::Disabled, _) => lc.tr("mcp-status-disabled"),
+            (_, OAuthStatus::NeedsAuthorization) => lc.tr("mcp-status-needs-auth"),
+            (ClientStatus::Failed(_), _) => lc.tr("mcp-status-error"),
+            (ClientStatus::Uninitialized, _) => lc.tr("mcp-status-uninitialized"),
+            (ClientStatus::Disconnected, _) => lc.tr("mcp-status-offline"),
         };
         lines.push(detail_line(
             label_width,
-            "Status:",
+            &lc.tr("mcp-label-status"),
             &format!("{} {}", status_icon, status_label),
             status_style,
         ));
@@ -237,17 +273,25 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
     // Auth 行
     if let Some(info) = server_info {
         let (auth_icon, auth_label, auth_style) = match &info.oauth_status {
-            OAuthStatus::Authorized => ("✔", "authenticated", Style::default().fg(theme::SAGE)),
+            OAuthStatus::Authorized => (
+                "✔",
+                lc.tr("mcp-auth-authenticated"),
+                Style::default().fg(theme::SAGE),
+            ),
             OAuthStatus::NeedsAuthorization => (
                 "△",
-                "needs authentication",
+                lc.tr("mcp-status-needs-auth"),
                 Style::default().fg(theme::WARNING),
             ),
-            OAuthStatus::None => ("—", "none", Style::default().fg(theme::MUTED)),
+            OAuthStatus::None => (
+                "—",
+                lc.tr("mcp-auth-none"),
+                Style::default().fg(theme::MUTED),
+            ),
         };
         lines.push(detail_line(
             label_width,
-            "Auth:",
+            &lc.tr("mcp-label-auth"),
             &format!("{} {}", auth_icon, auth_label),
             auth_style,
         ));
@@ -258,7 +302,7 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
         if let Some(url) = &info.url {
             lines.push(detail_line(
                 label_width,
-                "URL:",
+                &lc.tr("mcp-label-url"),
                 url,
                 Style::default().fg(theme::TEXT),
             ));
@@ -272,15 +316,18 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
                 ConfigSource::Project(p) | ConfigSource::Global(p) => p.display().to_string(),
                 ConfigSource::Plugin => {
                     if let Some(ps) = &info.plugin_source {
-                        format!("Plugin — {}", ps)
+                        lc.tr_args(
+                            "mcp-label-plugin-source",
+                            &[("source".into(), ps.clone().into())],
+                        )
                     } else {
-                        "Plugin".to_string()
+                        lc.tr("mcp-label-plugin")
                     }
                 }
             };
             lines.push(detail_line(
                 label_width,
-                "Config location:",
+                &lc.tr("mcp-label-config-location"),
                 &path_str,
                 Style::default().fg(theme::TEXT),
             ));
@@ -290,14 +337,14 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
     // Capabilities 行
     let mut capabilities = Vec::new();
     if !tools.is_empty() {
-        capabilities.push("tools");
+        capabilities.push(lc.tr("mcp-capability-tools"));
     }
     if !resources.is_empty() {
-        capabilities.push("resources");
+        capabilities.push(lc.tr("mcp-capability-resources"));
     }
     lines.push(detail_line(
         label_width,
-        "Capabilities:",
+        &lc.tr("mcp-label-capabilities"),
         &capabilities.join(", "),
         Style::default().fg(theme::TEXT),
     ));
@@ -305,8 +352,11 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
     // Tools 行
     lines.push(detail_line(
         label_width,
-        "Tools:",
-        &format!("{} tools", tools.len()),
+        &lc.tr("mcp-label-tools"),
+        &lc.tr_args(
+            "mcp-label-tools-count",
+            &[("count".into(), (tools.len() as i64).into())],
+        ),
         Style::default().fg(theme::TEXT),
     ));
 
@@ -330,16 +380,16 @@ fn render_server_detail(f: &mut Frame, panel: &McpPanel, app: &mut App, area: Re
         let label = match action {
             DetailAction::ViewTools => {
                 if show_tools {
-                    "Hide tools"
+                    lc.tr("mcp-action-hide-tools")
                 } else {
-                    "View tools"
+                    lc.tr("mcp-action-view-tools")
                 }
             }
-            DetailAction::ReAuthenticate => "Re-authenticate",
-            DetailAction::ClearAuth => "Clear authentication",
-            DetailAction::Reconnect => "Reconnect",
-            DetailAction::Disable => "Disable",
-            DetailAction::Enable => "Enable",
+            DetailAction::ReAuthenticate => lc.tr("mcp-action-reauthenticate"),
+            DetailAction::ClearAuth => lc.tr("mcp-action-clear-auth"),
+            DetailAction::Reconnect => lc.tr("mcp-action-reconnect"),
+            DetailAction::Disable => lc.tr("mcp-action-disable"),
+            DetailAction::Enable => lc.tr("mcp-action-enable"),
         };
         let style = if is_cursor {
             Style::default()

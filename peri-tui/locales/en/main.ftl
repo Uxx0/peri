@@ -114,6 +114,14 @@ key-switch = :Switch
 key-move = :Move
 key-select = :Select
 key-confirm = :Confirm
+key-delete = :Delete
+key-reconnect = :Reconnect
+key-detail = :Detail
+key-execute = :Execute
+key-back = :Back
+key-install = :Install
+key-tab = :Tab
+key-effort = :Effort
 
 # ---- Welcome Page ----
 
@@ -304,6 +312,55 @@ hint-mcp-delete = :Delete
 hint-mcp-execute = :Execute
 hint-mcp-back = :Back
 hint-mcp-close = :Close
+
+# ---- MCP Panel Content ----
+
+mcp-server-count = { $count } servers
+mcp-section-project = Project MCPs
+mcp-section-project-path = Project MCPs ({ $path })
+mcp-section-user = User MCPs
+mcp-section-user-path = User MCPs ({ $path })
+mcp-section-plugin = Plugin MCPs
+mcp-no-servers = No MCP servers configured. Edit .mcp.json or settings.json
+mcp-panel-title = Manage MCP servers
+# Status
+mcp-status-connected = connected
+mcp-status-needs-auth = needs authentication
+mcp-status-error = error
+mcp-status-disabled = disabled
+mcp-status-uninitialized = not initialized
+mcp-status-offline = offline
+# Auth
+mcp-auth-authenticated = authenticated
+mcp-auth-none = none
+# Labels
+mcp-label-status = Status:
+mcp-label-auth = Auth:
+mcp-label-url = URL:
+mcp-label-config-location = Config location:
+mcp-label-plugin = Plugin
+mcp-label-plugin-source = Plugin - { $source }
+mcp-label-capabilities = Capabilities:
+mcp-label-tools = Tools:
+mcp-label-tools-count = { $count } tools
+# Capabilities
+mcp-capability-tools = tools
+mcp-capability-resources = resources
+# Actions
+mcp-action-hide-tools = Hide tools
+mcp-action-view-tools = View tools
+mcp-action-reauthenticate = Re-authenticate
+mcp-action-clear-auth = Clear authentication
+mcp-action-reconnect = Reconnect
+mcp-action-disable = Disable
+mcp-action-enable = Enable
+# OAuth Messages
+mcp-oauth-completed = [i] OAuth authorization completed: { $server }
+mcp-oauth-failed = [i] OAuth authorization failed: { $server } - { $error }
+mcp-clear-auth-ok = [i] OAuth credentials cleared: { $server }
+mcp-clear-auth-failed = [i] Failed to clear OAuth credentials: { $server }
+mcp-action-ok = [i] Action completed: { $server }
+mcp-action-failed = [i] Action failed: { $server }
 
 # Plugin panel
 hint-plugin-uninstall = :Confirm uninstall

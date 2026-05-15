@@ -30,7 +30,10 @@ impl App {
                 .map(|p| p.all_server_infos())
                 .unwrap_or_default();
         }
-        let vm = MessageViewModel::system(format!("[i] OAuth 授权完成: {}", server_name));
+        let vm = MessageViewModel::system(self.services.lc.tr_args(
+            "mcp-oauth-completed",
+            &[("server".into(), server_name.into())],
+        ));
         self.apply_pipeline_action(PipelineAction::AddMessage(vm));
         (true, false, false)
     }
@@ -50,8 +53,13 @@ impl App {
                 .map(|p| p.all_server_infos())
                 .unwrap_or_default();
         }
-        let vm =
-            MessageViewModel::system(format!("[i] OAuth 授权失败: {} - {}", server_name, error));
+        let vm = MessageViewModel::system(self.services.lc.tr_args(
+            "mcp-oauth-failed",
+            &[
+                ("server".into(), server_name.into()),
+                ("error".into(), error.into()),
+            ],
+        ));
         self.apply_pipeline_action(PipelineAction::AddMessage(vm));
         (true, false, false)
     }
@@ -71,14 +79,22 @@ impl App {
                 .unwrap_or_default();
         }
         let msg = match (action.as_str(), success) {
-            ("clear_auth", true) => {
-                format!("[i] OAuth credentials cleared: {}", server_name)
-            }
-            ("clear_auth", false) => {
-                format!("[i] Failed to clear credentials: {}", server_name)
-            }
-            (_, true) => format!("[i] Action completed: {}", server_name),
-            (_, false) => format!("[i] Action failed: {}", server_name),
+            ("clear_auth", true) => self.services.lc.tr_args(
+                "mcp-clear-auth-ok",
+                &[("server".into(), server_name.clone().into())],
+            ),
+            ("clear_auth", false) => self.services.lc.tr_args(
+                "mcp-clear-auth-failed",
+                &[("server".into(), server_name.clone().into())],
+            ),
+            (_, true) => self.services.lc.tr_args(
+                "mcp-action-ok",
+                &[("server".into(), server_name.clone().into())],
+            ),
+            (_, false) => self.services.lc.tr_args(
+                "mcp-action-failed",
+                &[("server".into(), server_name.clone().into())],
+            ),
         };
         let vm = MessageViewModel::system(msg);
         self.apply_pipeline_action(PipelineAction::AddMessage(vm));

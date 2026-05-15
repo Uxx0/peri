@@ -113,6 +113,14 @@ key-switch = :切换
 key-move = :移动
 key-select = :选择
 key-confirm = :确认
+key-delete = :删除
+key-reconnect = :重连
+key-detail = :详情
+key-execute = :执行
+key-back = :返回
+key-install = :安装
+key-tab = :切换
+key-effort = :力度
 
 # ---- Welcome Page ----
 
@@ -303,6 +311,55 @@ hint-mcp-delete = :删除
 hint-mcp-execute = :执行
 hint-mcp-back = :返回
 hint-mcp-close = :关闭
+
+# ---- MCP Panel Content ----
+
+mcp-server-count = { $count } 个服务器
+mcp-section-project = 项目 MCP
+mcp-section-project-path = 项目 MCP ({ $path })
+mcp-section-user = 用户 MCP
+mcp-section-user-path = 用户 MCP ({ $path })
+mcp-section-plugin = 插件 MCP
+mcp-no-servers = 未配置 MCP 服务器。编辑 .mcp.json 或 settings.json
+mcp-panel-title = 管理 MCP 服务器
+# Status
+mcp-status-connected = 已连接
+mcp-status-needs-auth = 需要认证
+mcp-status-error = 错误
+mcp-status-disabled = 已禁用
+mcp-status-uninitialized = 未初始化
+mcp-status-offline = 离线
+# Auth
+mcp-auth-authenticated = 已认证
+mcp-auth-none = 无
+# Labels
+mcp-label-status = 状态:
+mcp-label-auth = 认证:
+mcp-label-url = URL:
+mcp-label-config-location = 配置位置:
+mcp-label-plugin = 插件
+mcp-label-plugin-source = 插件 - { $source }
+mcp-label-capabilities = 能力:
+mcp-label-tools = 工具:
+mcp-label-tools-count = { $count } 个工具
+# Capabilities
+mcp-capability-tools = 工具
+mcp-capability-resources = 资源
+# Actions
+mcp-action-hide-tools = 隐藏工具
+mcp-action-view-tools = 查看工具
+mcp-action-reauthenticate = 重新认证
+mcp-action-clear-auth = 清除认证
+mcp-action-reconnect = 重新连接
+mcp-action-disable = 禁用
+mcp-action-enable = 启用
+# OAuth Messages
+mcp-oauth-completed = [i] OAuth 授权完成: { $server }
+mcp-oauth-failed = [i] OAuth 授权失败: { $server } - { $error }
+mcp-clear-auth-ok = [i] OAuth 凭证已清除: { $server }
+mcp-clear-auth-failed = [i] 清除 OAuth 凭证失败: { $server }
+mcp-action-ok = [i] 操作完成: { $server }
+mcp-action-failed = [i] 操作失败: { $server }
 
 # Plugin panel
 hint-plugin-uninstall = :确认卸载
