@@ -1,9 +1,12 @@
 pub mod auth_store;
 pub mod callback_server;
 pub mod client;
+pub mod client_oauth;
 pub mod config;
+pub mod initialize;
 pub mod middleware;
 pub mod oauth_flow;
+pub mod reconnect;
 pub mod resource_tool;
 pub mod tool_bridge;
 pub mod transport;
