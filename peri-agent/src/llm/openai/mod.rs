@@ -7,6 +7,7 @@ use serde_json::Value;
 /// ChatOpenAI - OpenAI 兼容 API 的 LLM 实现
 pub struct ChatOpenAI {
     pub api_key: String,
+    /// OpenAI Base URL，需要 `/v1` 后缀。
     pub base_url: String,
     pub model: String,
     /// o1/o3 系列推理强度："low" | "medium" | "high"
@@ -37,6 +38,7 @@ impl ChatOpenAI {
         }
     }
 
+    /// 设置 API Base URL。OpenAI Base URL 需要 `/v1` 后缀。
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self

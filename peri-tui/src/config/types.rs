@@ -157,6 +157,7 @@ pub struct ProviderConfig {
     pub provider_type: String,
     #[serde(rename = "apiKey", default)]
     pub api_key: String,
+    /// OpenAI Base URL，需要 `/v1` 后缀。
     #[serde(rename = "baseUrl", default)]
     pub base_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]

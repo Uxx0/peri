@@ -352,6 +352,12 @@ fn render_form_edit(
         wizard.form_focus,
     ));
 
+    // /v1 suffix hint
+    lines.push(Line::from(Span::styled(
+        format!("  ({})", lc.tr("setup-hint-base-url-v1")),
+        Style::default().fg(theme::DIM),
+    )));
+
     // 测试联通性按钮 + 结果
     let test_active = wizard.form_focus == FormField::TestConnectivity;
     let test_cursor = if test_active { "❯ " } else { "  " };

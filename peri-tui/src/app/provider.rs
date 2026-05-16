@@ -3,6 +3,7 @@ use peri_agent::llm::{BaseModel, ChatAnthropic, ChatOpenAI};
 
 #[derive(Clone)]
 pub enum LlmProvider {
+    /// OpenAI 兼容 Provider。`base_url` 需要 `/v1` 后缀。
     OpenAi {
         api_key: String,
         base_url: String,

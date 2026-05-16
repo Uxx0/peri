@@ -182,6 +182,7 @@ setup-edit-title =  ── Setup ── Edit: { $type } ({ $id })
 setup-field-type = Type
 setup-field-id = ID
 setup-field-base-url = Base URL
+setup-hint-base-url-v1 = OpenAI base URL needs /v1 suffix
 setup-field-api-key = API Key
 setup-field-opus = Opus
 setup-field-sonnet = Sonnet

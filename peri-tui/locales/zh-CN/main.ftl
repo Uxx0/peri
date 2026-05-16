@@ -181,6 +181,7 @@ setup-edit-title =  ── 设置 ── 编辑: { $type } ({ $id })
 setup-field-type = 类型
 setup-field-id = ID
 setup-field-base-url = 基础URL
+setup-hint-base-url-v1 = OpenAI Base URL 需要 /v1 后缀
 setup-field-api-key = API密钥
 setup-field-opus = 旗舰
 setup-field-sonnet = 标准
