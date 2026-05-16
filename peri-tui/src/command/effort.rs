@@ -30,6 +30,7 @@ impl Command for EffortCommand {
                         .as_ref()
                         .map_or(8000, |t| t.budget_tokens),
                     effort: arg.clone(),
+                    max_tokens: cfg.config.thinking.as_ref().map_or(32000, |t| t.max_tokens),
                 });
                 if let Err(e) = App::save_config(cfg, app.services.config_path_override.as_deref())
                 {

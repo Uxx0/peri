@@ -202,12 +202,14 @@ impl LlmProvider {
                 thinking,
             } => {
                 let mut m = ChatOpenAI::new(api_key, model).with_base_url(base_url);
-                if let Some(t) = &thinking {
+                if let Some(ref t) = thinking {
                     m = m.with_reasoning_effort(t.openai_effort());
                     if t.enabled {
                         m = m.with_thinking_enabled();
                     }
                 }
+                let max_tokens = thinking.as_ref().map_or(32000, |t| t.max_tokens);
+                m = m.with_max_tokens(max_tokens);
                 Box::new(m)
             }
             Self::Anthropic {
@@ -220,9 +222,11 @@ impl LlmProvider {
                 if let Some(url) = base_url {
                     m = m.with_base_url(url);
                 }
-                if let Some(t) = thinking {
+                if let Some(ref t) = thinking {
                     m = m.with_extended_thinking(t.budget_tokens, &t.effort);
                 }
+                let max_tokens = thinking.as_ref().map_or(32000, |t| t.max_tokens);
+                m = m.with_max_tokens(max_tokens);
                 Box::new(m)
             }
         }

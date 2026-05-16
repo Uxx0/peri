@@ -2484,6 +2484,7 @@ async fn test_model_panel_space_selects_model() {
                 enabled: false,
                 budget_tokens: 8000,
                 effort: "medium".to_string(),
+                max_tokens: 32000,
             }),
             ..Default::default()
         },
@@ -2491,7 +2492,7 @@ async fn test_model_panel_space_selects_model() {
 
     let mut panel = ModelPanel::from_config(&cfg);
     // 光标移到 Sonnet 行
-    panel.list.move_cursor_to(ROW_SONNET);
+    panel.cursor = ROW_SONNET;
     assert_eq!(panel.active_tab, AliasTab::Opus);
 
     // 直接验证 Space 的实际处理逻辑：应设置 active_tab
@@ -2630,6 +2631,7 @@ async fn test_model_panel_confirm_shows_feedback() {
                 enabled: false,
                 budget_tokens: 8000,
                 effort: "medium".to_string(),
+                max_tokens: 32000,
             }),
             ..Default::default()
         },

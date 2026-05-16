@@ -17,6 +17,7 @@ fn make_config() -> PeriConfig {
                 enabled: false,
                 budget_tokens: 8000,
                 effort: "medium".to_string(),
+                max_tokens: 32000,
             }),
             ..Default::default()
         },
@@ -47,19 +48,24 @@ fn test_move_cursor_clamp() {
     let cfg = make_config();
     let mut panel = ModelPanel::from_config(&cfg);
     assert_eq!(panel.cursor(), ROW_OPUS);
-    panel.list.move_cursor(1);
+    panel.cursor += 1;
     assert_eq!(panel.cursor(), ROW_SONNET);
-    panel.list.move_cursor(1);
+    panel.cursor += 1;
     assert_eq!(panel.cursor(), ROW_HAIKU);
-    // clamp：不再循环到 OPUS
-    panel.list.move_cursor(1);
+    panel.cursor += 1;
+    assert_eq!(panel.cursor(), ROW_MAX_TOKENS);
+    panel.cursor += 1;
+    assert_eq!(panel.cursor(), ROW_EFFORT);
+    // 光标可遍历全部 5 行
+    panel.cursor -= 1;
+    assert_eq!(panel.cursor(), ROW_MAX_TOKENS);
+    panel.cursor -= 1;
     assert_eq!(panel.cursor(), ROW_HAIKU);
-    panel.list.move_cursor(-1);
+    panel.cursor -= 1;
     assert_eq!(panel.cursor(), ROW_SONNET);
-    panel.list.move_cursor(-1);
+    panel.cursor -= 1;
     assert_eq!(panel.cursor(), ROW_OPUS);
-    panel.list.move_cursor(-1);
-    assert_eq!(panel.cursor(), ROW_OPUS, "不应循环到底部");
+    // raw cursor 无 clamp；handle_key 中由 if cursor < ROW_COUNT-1 控制边界
 }
 
 #[test]

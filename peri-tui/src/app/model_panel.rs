@@ -10,7 +10,6 @@ use tui_textarea::Input;
 use crate::config::{PeriConfig, ThinkingConfig};
 
 use super::panel_component::PanelComponent;
-use super::panel_list::PanelList;
 use super::panel_manager::{EventResult, PanelContext, PanelKind};
 use super::App;
 
@@ -54,8 +53,9 @@ impl AliasTab {
 pub const ROW_OPUS: usize = 0;
 pub const ROW_SONNET: usize = 1;
 pub const ROW_HAIKU: usize = 2;
-pub const ROW_EFFORT: usize = 3;
-pub const ROW_COUNT: usize = 4;
+pub const ROW_MAX_TOKENS: usize = 3;
+pub const ROW_EFFORT: usize = 4;
+pub const ROW_COUNT: usize = 5;
 
 // ─── ModelPanel ─────────────────────────────────────────────────────────────────
 
@@ -67,8 +67,10 @@ pub struct ModelPanel {
     pub active_tab: AliasTab,
     /// Thinking effort 缓冲 "low" / "medium" / "high"
     pub buf_thinking_effort: String,
-    /// 光标/滚动状态管理
-    pub(crate) list: PanelList<AliasTab>,
+    /// max_tokens 值
+    pub buf_max_tokens: u32,
+    /// 光标所在行（0..ROW_COUNT-1）
+    pub(crate) cursor: usize,
 }
 
 impl ModelPanel {
@@ -100,25 +102,25 @@ impl ModelPanel {
             .map(|t| t.effort.clone())
             .unwrap_or_else(|| "high".to_string());
 
-        let mut list = PanelList::new();
-        list.set_items(vec![AliasTab::Opus, AliasTab::Sonnet, AliasTab::Haiku]);
-        // PanelList 管理 3 个 AliasTab，但实际有 4 行（含 Effort）
-        // cursor 直接用 list 管理，第 4 行（Effort）通过 cursor == 3 处理
-        for _ in 0..cursor {
-            list.move_cursor(1);
-        }
+        let max_tokens = cfg
+            .config
+            .thinking
+            .as_ref()
+            .map(|t| t.max_tokens)
+            .unwrap_or(32000);
 
         Self {
             provider_name,
             active_tab,
             buf_thinking_effort: effort,
-            list,
+            buf_max_tokens: max_tokens,
+            cursor,
         }
     }
 
     /// 光标位置
     pub fn cursor(&self) -> usize {
-        self.list.cursor()
+        self.cursor
     }
 
     /// 循环切换 effort：low → medium → high → xhigh → max → low（任意光标位置可切换）
@@ -142,16 +144,46 @@ impl ModelPanel {
         }
     }
 
-    /// 将面板状态写入 PeriConfig（alias + thinking）
+    /// max_tokens 预设值：8000 → 16000 → 32000 → 64000 → 128000 → 8000
+    const MAX_TOKENS_PRESETS: &[u32] = &[8000, 16000, 32000, 64000, 128000];
+
+    /// 循环切换 max_tokens 预设值
+    pub fn cycle_max_tokens(&mut self, reverse: bool) {
+        let current = self.buf_max_tokens;
+        let presets = Self::MAX_TOKENS_PRESETS;
+        if let Some(pos) = presets.iter().position(|&v| v == current) {
+            if reverse {
+                let next = if pos == 0 { presets.len() - 1 } else { pos - 1 };
+                self.buf_max_tokens = presets[next];
+            } else {
+                let next = (pos + 1) % presets.len();
+                self.buf_max_tokens = presets[next];
+            }
+        } else {
+            // 非预设值回退到最近的预设值
+            let pos = presets
+                .partition_point(|&v| v < current)
+                .min(presets.len() - 1);
+            if reverse {
+                self.buf_max_tokens = presets[pos.saturating_sub(1)];
+            } else {
+                self.buf_max_tokens = presets[pos];
+            }
+        }
+    }
+
+    /// 将面板状态写入 PeriConfig（alias + thinking + max_tokens）
     pub fn apply_to_config(&self, cfg: &mut PeriConfig) {
         cfg.config.active_alias = self.active_tab.to_key().to_string();
         let t = cfg.config.thinking.get_or_insert_with(|| ThinkingConfig {
             enabled: true,
             budget_tokens: 8000,
             effort: self.buf_thinking_effort.clone(),
+            max_tokens: self.buf_max_tokens,
         });
         t.enabled = true;
         t.effort = self.buf_thinking_effort.clone();
+        t.max_tokens = self.buf_max_tokens;
     }
 }
 
@@ -167,12 +199,15 @@ impl PanelComponent for ModelPanel {
         match input {
             Input { key: Key::Esc, .. } => EventResult::ClosePanel,
             Input { key: Key::Up, .. } => {
-                // clamp 模式，不循环
-                self.list.move_cursor(-1);
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                }
                 EventResult::Consumed
             }
             Input { key: Key::Down, .. } => {
-                self.list.move_cursor(1);
+                if self.cursor < ROW_COUNT - 1 {
+                    self.cursor += 1;
+                }
                 EventResult::Consumed
             }
             Input {
@@ -197,25 +232,41 @@ impl PanelComponent for ModelPanel {
                     self.cycle_effort(false);
                     EventResult::Consumed
                 }
+                ROW_MAX_TOKENS => {
+                    self.cycle_max_tokens(false);
+                    EventResult::Consumed
+                }
                 _ => EventResult::Consumed,
             },
-            // Space: 切换 effort 等级（无需选中 effort 行）
+            // Space: 切换 effort 等级（无需选中 effort 行）或 max_tokens
             Input {
                 key: Key::Char(' '),
                 ..
             } => {
-                self.cycle_effort(false);
+                if self.cursor() == ROW_MAX_TOKENS {
+                    self.cycle_max_tokens(false);
+                } else {
+                    self.cycle_effort(false);
+                }
                 EventResult::Consumed
             }
-            // ←/→: 随时切换 effort 等级
+            // ←/→: 随时切换 effort 等级或 max_tokens
             Input { key: Key::Left, .. } => {
-                self.cycle_effort(true);
+                if self.cursor() == ROW_MAX_TOKENS {
+                    self.cycle_max_tokens(true);
+                } else {
+                    self.cycle_effort(true);
+                }
                 EventResult::Consumed
             }
             Input {
                 key: Key::Right, ..
             } => {
-                self.cycle_effort(false);
+                if self.cursor() == ROW_MAX_TOKENS {
+                    self.cycle_max_tokens(false);
+                } else {
+                    self.cycle_effort(false);
+                }
                 EventResult::Consumed
             }
             _ => EventResult::Consumed,
@@ -234,14 +285,7 @@ impl PanelComponent for ModelPanel {
             if relative_y >= 1 {
                 let clicked = (relative_y - 1) as usize;
                 if clicked < ROW_COUNT {
-                    // 直接设置 cursor（绕过 PanelList 的 items 长度限制）
-                    // PanelList 只有 3 个 items，但实际有 4 行
-                    for _ in 0..clicked.saturating_sub(self.cursor()) {
-                        self.list.move_cursor(1);
-                    }
-                    for _ in 0..self.cursor().saturating_sub(clicked) {
-                        self.list.move_cursor(-1);
-                    }
+                    self.cursor = clicked;
                     return self.handle_key(
                         Input::from(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
                         ctx,

@@ -655,6 +655,7 @@ pub async fn handle_set_config_option(
                             enabled: true,
                             budget_tokens: 8000,
                             effort: "high".to_string(),
+                            max_tokens: 32000,
                         });
                 thinking.effort = value_id.to_string();
                 tracing::info!(session_id, effort = value_id, "Thinking effort changed");

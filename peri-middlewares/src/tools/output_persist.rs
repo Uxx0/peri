@@ -13,10 +13,13 @@ pub fn persist_truncated_output(full_content: &str) -> String {
 
     match fs::write(&file_path, full_content) {
         Ok(_) => format!(
-            "\n\n[完整输出已保存至 {} —— 使用 Read 工具查看完整内容]",
+            "\n\n[Full output saved to {} — use Read tool to view complete content]",
             file_path.display()
         ),
-        Err(e) => format!("\n\n[保存完整输出至 {} 失败：{e}]", file_path.display()),
+        Err(e) => format!(
+            "\n\n[Failed to save full output to {}: {e}]",
+            file_path.display()
+        ),
     }
 }
 
@@ -53,10 +56,20 @@ mod tests {
     #[test]
     fn test_persist_empty_string() {
         let hint = persist_truncated_output("");
-        // 空内容也应生成提示
+        // 空内容也应生成包含路径的提示
         assert!(
             hint.contains("Read"),
             "empty content should also produce hint: {hint}"
         );
+        // 验证空文件确实被写入，并清理
+        let path_start = hint.find('/').expect("hint should contain path");
+        let path_end = hint[path_start..]
+            .find(' ')
+            .map(|i| path_start + i)
+            .unwrap_or(hint.len());
+        let path = &hint[path_start..path_end];
+        let saved = fs::read_to_string(path).unwrap();
+        assert_eq!(saved, "");
+        fs::remove_file(path).ok();
     }
 }

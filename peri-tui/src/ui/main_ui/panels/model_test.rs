@@ -1,12 +1,11 @@
     async fn render_headless_model_no_provider() -> (App, crate::ui::headless::HeadlessHandle) {
         let (mut app, mut handle) = App::new_headless(120, 30).await;
-        let mut list = crate::app::panel_list::PanelList::new();
-        list.set_items(vec![AliasTab::Opus, AliasTab::Sonnet, AliasTab::Haiku]);
         let panel = ModelPanel {
             provider_name: String::new(),
             active_tab: AliasTab::Opus,
             buf_thinking_effort: "medium".to_string(),
-            list,
+            buf_max_tokens: 32000,
+            cursor: ROW_OPUS,
         };
         app.session_mgr.sessions[app.session_mgr.active]
             .session_panels

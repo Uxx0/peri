@@ -17,6 +17,8 @@ pub struct ChatOpenAI {
     /// 是否在 content 中回传 `thinking` 类型的 Reasoning 块。
     /// 仅 deepseek-v4-pro 等明确支持的模型开启，其他 provider 不支持会报 400。
     pub supports_thinking_content: bool,
+    /// 最大输出 token 数，默认 32000
+    pub max_tokens: u32,
     client: reqwest::Client,
 }
 
@@ -29,6 +31,7 @@ impl ChatOpenAI {
             reasoning_effort: None,
             thinking_enabled: false,
             supports_thinking_content: Self::detect_thinking_content_support(&model),
+            max_tokens: 32000,
             model,
             client: reqwest::Client::new(),
         }
@@ -60,6 +63,12 @@ impl ChatOpenAI {
     /// 手动控制是否在 content 中回传 `thinking` 类型的 Reasoning 块
     pub fn with_thinking_content(mut self, enabled: bool) -> Self {
         self.supports_thinking_content = enabled;
+        self
+    }
+
+    /// 设置最大输出 token 数
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
         self
     }
 

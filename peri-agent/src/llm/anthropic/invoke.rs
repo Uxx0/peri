@@ -304,7 +304,7 @@ pub(super) fn build_request_body(
             });
         }
     }
-    let max_tokens = request.max_tokens.unwrap_or(4096);
+    let max_tokens = request.max_tokens.unwrap_or(adapter.max_tokens);
 
     // 开启缓存时：对最后一条消息的最后一个 block 加 cache_control
     if adapter.enable_cache {

@@ -8,7 +8,9 @@ use ratatui::{
 
 use peri_widgets::BorderedPanel;
 
-use crate::app::model_panel::{AliasTab, ModelPanel, ROW_HAIKU, ROW_OPUS, ROW_SONNET};
+use crate::app::model_panel::{
+    AliasTab, ModelPanel, ROW_EFFORT, ROW_HAIKU, ROW_MAX_TOKENS, ROW_OPUS, ROW_SONNET,
+};
 use crate::app::App;
 use crate::ui::theme;
 
@@ -107,6 +109,36 @@ pub(crate) fn render_model_panel(f: &mut Frame, panel: &ModelPanel, app: &mut Ap
 
     lines.push(Line::from(""));
 
+    // MaxTokens row
+    {
+        let is_cursor = panel.cursor() == ROW_MAX_TOKENS;
+        let radio_color = if is_cursor {
+            theme::THINKING
+        } else {
+            theme::ACCENT
+        };
+        let label_style = if is_cursor {
+            Style::default()
+                .fg(theme::THINKING)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(theme::MUTED)
+                .add_modifier(Modifier::BOLD)
+        };
+        let cursor_char = if is_cursor { "\u{276f}" } else { " " };
+
+        let spans = vec![
+            Span::styled(
+                format!(" {} \u{25cf} ", cursor_char),
+                Style::default().fg(radio_color),
+            ),
+            Span::styled(format!("Max Token: {}", panel.buf_max_tokens), label_style),
+        ];
+
+        lines.push(Line::from(spans));
+    }
+
     // Effort row
     {
         let effort_label = match panel.buf_thinking_effort.as_str() {
@@ -117,14 +149,29 @@ pub(crate) fn render_model_panel(f: &mut Frame, panel: &ModelPanel, app: &mut Ap
             _ => "Medium",
         };
 
-        let radio_color = theme::ACCENT;
-        let effort_style = Style::default()
-            .fg(theme::MUTED)
-            .add_modifier(Modifier::BOLD);
+        let is_cursor = panel.cursor() == ROW_EFFORT;
+        let radio_color = if is_cursor {
+            theme::THINKING
+        } else {
+            theme::ACCENT
+        };
+        let effort_style = if is_cursor {
+            Style::default()
+                .fg(theme::THINKING)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(theme::MUTED)
+                .add_modifier(Modifier::BOLD)
+        };
+        let cursor_char = if is_cursor { "\u{276f}" } else { " " };
 
         let spans = vec![
-            Span::styled("    \u{25cf} ", Style::default().fg(radio_color)),
-            Span::styled(format!("{} effort", effort_label), effort_style),
+            Span::styled(
+                format!(" {} \u{25cf} ", cursor_char),
+                Style::default().fg(radio_color),
+            ),
+            Span::styled(format!("Effort: {}", effort_label), effort_style),
         ];
 
         lines.push(Line::from(spans));

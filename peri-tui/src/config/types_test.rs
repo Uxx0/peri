@@ -8,6 +8,7 @@ fn test_thinking_effort_direct() {
         enabled: true,
         budget_tokens: 0,
         effort: "low".to_string(),
+        max_tokens: 32000,
     };
     assert_eq!(c.openai_effort(), "low");
 }
@@ -18,6 +19,7 @@ fn test_thinking_effort_next_prev() {
         enabled: true,
         budget_tokens: 8000,
         effort: "medium".to_string(),
+        max_tokens: 32000,
     };
     assert_eq!(c.next_effort(), "high");
     assert_eq!(c.prev_effort(), "low");
@@ -30,6 +32,7 @@ fn test_thinking_effort_full_cycle() {
         enabled: true,
         budget_tokens: 8000,
         effort: "low".to_string(),
+        max_tokens: 32000,
     };
     assert_eq!(c.next_effort(), "medium");
     let c = ThinkingConfig {
@@ -89,12 +92,14 @@ fn test_thinking_config_serde_roundtrip() {
         enabled: true,
         budget_tokens: 5000,
         effort: "medium".to_string(),
+        max_tokens: 32000,
     };
     let json = serde_json::to_string(&cfg).unwrap();
     let back: ThinkingConfig = serde_json::from_str(&json).unwrap();
     assert!(back.enabled);
     assert_eq!(back.budget_tokens, 5000);
     assert_eq!(back.effort, "medium");
+    assert_eq!(back.max_tokens, 32000);
 }
 
 #[test]
@@ -103,6 +108,7 @@ fn test_thinking_config_default_budget() {
     let json = r#"{"enabled": false}"#;
     let cfg: ThinkingConfig = serde_json::from_str(json).unwrap();
     assert_eq!(cfg.budget_tokens, 8000);
+    assert_eq!(cfg.max_tokens, 32000);
 }
 
 #[test]

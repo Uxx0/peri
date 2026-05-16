@@ -58,6 +58,9 @@ pub struct ThinkingConfig {
     /// - OpenAI → `reasoning_effort`
     #[serde(default = "default_effort")]
     pub effort: String,
+    /// 最大输出 token 数（对应 API 的 max_tokens 参数）
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
 }
 
 fn default_budget_tokens() -> u32 {
@@ -66,6 +69,10 @@ fn default_budget_tokens() -> u32 {
 
 fn default_effort() -> String {
     "high".to_string()
+}
+
+fn default_max_tokens() -> u32 {
+    32000
 }
 
 impl ThinkingConfig {

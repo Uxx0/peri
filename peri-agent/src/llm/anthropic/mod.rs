@@ -14,6 +14,8 @@ pub struct ChatAnthropic {
     pub enable_cache: bool,
     /// 自定义 base URL（代理场景），不含末尾 /
     pub base_url: Option<String>,
+    /// 最大输出 token 数，默认 32000
+    pub max_tokens: u32,
     client: reqwest::Client,
 }
 
@@ -27,6 +29,7 @@ impl ChatAnthropic {
             thinking_effort: "medium".to_string(),
             enable_cache: true,
             base_url: None,
+            max_tokens: 32000,
             client: reqwest::Client::new(),
         }
     }
@@ -49,6 +52,12 @@ impl ChatAnthropic {
     /// 关闭 Prompt Caching
     pub fn without_cache(mut self) -> Self {
         self.enable_cache = false;
+        self
+    }
+
+    /// 设置最大输出 token 数
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
         self
     }
 

@@ -370,9 +370,8 @@ pub(super) fn build_request_body(
         body["tool_choice"] = json!("auto");
     }
 
-    if let Some(max_tokens) = request.max_tokens {
-        body["max_tokens"] = json!(max_tokens);
-    }
+    let max_tokens = request.max_tokens.unwrap_or(adapter.max_tokens);
+    body["max_tokens"] = json!(max_tokens);
 
     if let Some(ref effort) = adapter.reasoning_effort {
         // o1/o3 reasoning effort 模式：加 reasoning_effort，不设 temperature
