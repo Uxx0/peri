@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use super::resolve_path;
+use crate::tools::output_persist::persist_truncated_output;
 
 /// Glob tool - 与 TypeScript glob_tool 对齐
 pub struct GlobFilesTool {
@@ -154,12 +155,15 @@ impl BaseTool for GlobFilesTool {
         if results.is_empty() {
             Ok("No files found.".to_string())
         } else if results.len() > MAX_RESULTS {
+            let full = results.join("\n");
             let truncated = &results[..MAX_RESULTS];
+            let persist_hint = persist_truncated_output(&full);
             Ok(format!(
-                "{}\n\n[Output truncated: {} files total, showing first {}]",
+                "{}\n\n[Output truncated: {} files total, showing first {}]{}",
                 truncated.join("\n"),
                 results.len(),
-                MAX_RESULTS
+                MAX_RESULTS,
+                persist_hint
             ))
         } else {
             Ok(results.join("\n"))

@@ -95,6 +95,25 @@
         assert!(result.contains("truncated"), "应显示截断提示: {result}");
     }
 
+    #[tokio::test]
+    async fn test_folder_list_truncation_persists_full_output() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..510 {
+            std::fs::write(dir.path().join(format!("file_{}.txt", i)), "").unwrap();
+        }
+        let tool = FolderOperationsTool::new(dir.path().to_str().unwrap());
+        let result = tool
+            .invoke(serde_json::json!({
+                "operation": "list",
+                "folder_path": dir.path().to_str().unwrap()
+            }))
+            .await
+            .unwrap();
+        assert!(result.contains("Output truncated"), "应显示截断信息: {result}");
+        assert!(result.contains("Read tool"), "应包含 Read tool 提示: {result}");
+        assert!(result.contains("peri-tool-output-"), "应包含文件路径: {result}");
+    }
+
     #[test]
     fn test_description_extended() {
         let tool = FolderOperationsTool::new("/tmp");

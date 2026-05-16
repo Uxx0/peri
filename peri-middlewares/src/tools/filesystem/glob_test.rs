@@ -71,3 +71,28 @@
         let tool = GlobFilesTool::new("/tmp");
         assert_eq!(tool.name(), "Glob");
     }
+
+    #[tokio::test]
+    async fn test_glob_truncation_persists_full_output() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..1001 {
+            std::fs::write(dir.path().join(format!("file_{:04}.rs", i)), "").unwrap();
+        }
+        let tool = GlobFilesTool::new(dir.path().to_str().unwrap());
+        let result = tool
+            .invoke(serde_json::json!({"pattern": "*.rs"}))
+            .await
+            .unwrap();
+        assert!(
+            result.contains("Output truncated"),
+            "应显示截断信息: {result}"
+        );
+        assert!(
+            result.contains("Read tool"),
+            "应包含 Read tool 提示: {result}"
+        );
+        assert!(
+            result.contains("peri-tool-output-"),
+            "应包含文件路径: {result}"
+        );
+    }

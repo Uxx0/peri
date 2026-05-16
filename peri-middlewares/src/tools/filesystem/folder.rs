@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use super::resolve_path;
+use crate::tools::output_persist::persist_truncated_output;
 use chrono::{TimeZone, Utc};
 
 /// folder_operations tool - 与 TypeScript folder_tool 对齐
@@ -70,9 +71,24 @@ fn list_folder(resolved: &Path) -> Result<String, Box<dyn std::error::Error + Se
     let total_files = files.len();
     let total = total_folders + total_files;
     let truncated = total > MAX_LIST_ENTRIES;
+    let mut persist_hint = String::new();
 
     if truncated {
-        // 公平分配：folders 和 files 各占一半配额
+        // 在截断前保存完整列表用于持久化（必须在 truncate 之前）
+        let full_list: String = folders
+            .iter()
+            .chain(files.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let total_summary = format!(
+            "Total: {} directories, {} files",
+            total_folders, total_files
+        );
+        let full_text = format!("{}\n{}", full_list, total_summary);
+        persist_hint = persist_truncated_output(&full_text);
+
+        // 公平分配截断
         let half = MAX_LIST_ENTRIES / 2;
         folders.truncate(half.min(folders.len()));
         files.truncate((MAX_LIST_ENTRIES - folders.len()).min(files.len()));
@@ -99,8 +115,8 @@ fn list_folder(resolved: &Path) -> Result<String, Box<dyn std::error::Error + Se
 
     if truncated {
         result.push_str(&format!(
-            "\n[Output truncated: {} total entries, showing first {}]",
-            total, MAX_LIST_ENTRIES
+            "\n[Output truncated: {} total entries, showing first {}]{}",
+            total, MAX_LIST_ENTRIES, persist_hint
         ));
     }
 

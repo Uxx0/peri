@@ -42,9 +42,11 @@ mod tests {
             "hint should guide to use Read tool: {hint}"
         );
         // 从提示中提取文件路径并验证内容
-        let path_start = hint.find('/').expect("hint should contain path");
+        let prefix = "saved to ";
+        let suffix = " — use Read";
+        let path_start = hint.find(prefix).unwrap() + prefix.len();
         let path_end = hint[path_start..]
-            .find(' ')
+            .find(suffix)
             .map(|i| path_start + i)
             .unwrap_or(hint.len());
         let path = &hint[path_start..path_end];
@@ -62,9 +64,11 @@ mod tests {
             "empty content should also produce hint: {hint}"
         );
         // 验证空文件确实被写入，并清理
-        let path_start = hint.find('/').expect("hint should contain path");
+        let prefix = "saved to ";
+        let suffix = " — use Read";
+        let path_start = hint.find(prefix).unwrap() + prefix.len();
         let path_end = hint[path_start..]
-            .find(' ')
+            .find(suffix)
             .map(|i| path_start + i)
             .unwrap_or(hint.len());
         let path = &hint[path_start..path_end];

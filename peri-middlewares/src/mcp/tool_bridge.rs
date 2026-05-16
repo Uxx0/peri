@@ -6,6 +6,7 @@ use rmcp::model::{Content, Tool};
 use thiserror::Error;
 
 use super::client::{McpClientHandle, McpClientPool};
+use crate::tools::output_persist::persist_truncated_output;
 
 /// MCP 工具调用错误
 #[derive(Debug, Error)]
@@ -37,6 +38,7 @@ pub struct McpToolBridge {
 }
 
 const TOOL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const MAX_MCP_LINES: usize = 2000;
 
 /// Sanitize name components to match API tool name pattern: ^[a-zA-Z0-9_-]+$
 fn sanitize_name_component(name: &str) -> String {
@@ -130,15 +132,38 @@ impl BaseTool for McpToolBridge {
         // 4. 处理 is_error 标志
         if result.is_error.unwrap_or(false) {
             let error_text = format_contents(&result.content);
+            let lines: Vec<&str> = error_text.lines().collect();
+            let reason = if lines.len() > MAX_MCP_LINES {
+                let persist_hint = persist_truncated_output(&error_text);
+                let truncated: String = lines[..MAX_MCP_LINES].join("\n");
+                format!(
+                    "{truncated}\n\n[MCP error output truncated: {} total lines]{persist_hint}",
+                    lines.len()
+                )
+            } else {
+                error_text
+            };
             return Err(Box::new(ToolCallError::CallFailed {
                 server: self.server_name.clone(),
                 tool: self.tool_name.clone(),
-                reason: error_text,
+                reason,
             }));
         }
 
-        // 5. 格式化返回
-        Ok(format_contents(&result.content))
+        // 5. 格式化返回（截断超大输出）
+        let formatted = format_contents(&result.content);
+        let lines: Vec<&str> = formatted.lines().collect();
+        let output = if lines.len() > MAX_MCP_LINES {
+            let persist_hint = persist_truncated_output(&formatted);
+            let truncated: String = lines[..MAX_MCP_LINES].join("\n");
+            format!(
+                "{truncated}\n\n[MCP output truncated: {} total lines]{persist_hint}",
+                lines.len()
+            )
+        } else {
+            formatted
+        };
+        Ok(output)
     }
 }
 

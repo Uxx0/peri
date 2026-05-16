@@ -53,6 +53,8 @@ When to use:
 - Use Glob for file name search, Grep for content search
 - For open-ended searches, start with the most specific query and broaden if needed"#;
 
+use crate::tools::output_persist::persist_truncated_output;
+
 use super::grep_args::{GrepInput, OutputMode, ParsedArgs};
 use super::grep_format::SearchSink;
 
@@ -233,7 +235,9 @@ fn execute_search(
     let mut output = results.join("\n");
     let total = total_lines.load(Ordering::Relaxed);
     if total >= head_limit && head_limit > 0 {
+        let persist_hint = persist_truncated_output(&output);
         output.push_str(&format!("\n... (truncated at {} lines)", head_limit));
+        output.push_str(&persist_hint);
     }
 
     Ok(output)

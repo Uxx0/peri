@@ -7,6 +7,8 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 
+use crate::tools::output_persist::persist_truncated_output;
+
 /// BashTool - 终端命令执行工具，与 TypeScript TerminalMiddleware 对齐
 const BASH_DESCRIPTION: &str = r#"Executes a given shell command and returns its output.
 
@@ -64,6 +66,8 @@ fn truncate_output(output: &str) -> String {
     let lines: Vec<&str> = output.split('\n').collect();
     if lines.len() > MAX_OUTPUT_LINES {
         let total_lines = lines.len();
+        // Persist full content before truncating
+        let persist_hint = persist_truncated_output(output);
         let head_count = MAX_OUTPUT_LINES / 2;
         let tail_count = MAX_OUTPUT_LINES - head_count;
         let head: Vec<&str> = lines.iter().take(head_count).copied().collect();
@@ -81,21 +85,23 @@ fn truncate_output(output: &str) -> String {
             total_lines
         ));
         result.push_str(&tail.join("\n"));
-        // 再检查字节数（使用字节截断，保留 UTF-8 字符边界）
+        result.push_str(&persist_hint);
+        // Check byte limit after adding hint
         if result.len() > MAX_OUTPUT_CHARS {
             let truncated = truncate_bytes(&result, MAX_OUTPUT_CHARS);
             return format!(
-                "{}\n\n[Output truncated: exceeds {} byte limit]",
-                truncated, MAX_OUTPUT_CHARS
+                "{}\n\n[Output truncated: exceeds {} byte limit]{}",
+                truncated, MAX_OUTPUT_CHARS, persist_hint
             );
         }
         return result;
     }
     if output.len() > MAX_OUTPUT_CHARS {
+        let persist_hint = persist_truncated_output(output);
         let truncated = truncate_bytes(output, MAX_OUTPUT_CHARS);
         return format!(
-            "{}\n\n[Output truncated: exceeds {} byte limit]",
-            truncated, MAX_OUTPUT_CHARS
+            "{}\n\n[Output truncated: exceeds {} byte limit]{}",
+            truncated, MAX_OUTPUT_CHARS, persist_hint
         );
     }
     output.to_string()

@@ -234,3 +234,29 @@ fn test_truncate_bytes_empty_string() {
 fn test_truncate_bytes_zero_max() {
     assert_eq!(truncate_bytes("hello", 0), "");
 }
+
+#[test]
+fn test_truncate_output_persists_full_content_on_lines_truncation() {
+    let lines: Vec<String> = (0..3000).map(|i| format!("line {}", i)).collect();
+    let input = lines.join("\n");
+    let result = truncate_output(&input);
+    assert!(
+        result.contains("Read tool"),
+        "应包含 Read tool 提示: {result}"
+    );
+    assert!(
+        result.contains("peri-tool-output-"),
+        "应包含临时文件路径: {result}"
+    );
+}
+
+#[test]
+fn test_truncate_output_persists_full_content_on_byte_truncation() {
+    let long_line = "x".repeat(200_000);
+    let result = truncate_output(&long_line);
+    assert!(result.contains("Read tool"), "字节截断也应持久化: {result}");
+    assert!(
+        result.contains("peri-tool-output-"),
+        "字节截断应包含文件路径: {result}"
+    );
+}

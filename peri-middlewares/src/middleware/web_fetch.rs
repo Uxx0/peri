@@ -6,6 +6,7 @@ use tokio::time::{timeout, Duration};
 use super::web_common::{
     html_to_text, truncate_content, validate_url, MAX_RESPONSE_BYTES, WEB_CREDIBILITY_WARNING,
 };
+use crate::tools::output_persist::persist_truncated_output;
 
 /// WebFetch 工具 — 抓取 URL 并返回文本内容
 pub struct WebFetchTool;
@@ -128,10 +129,16 @@ impl BaseTool for WebFetchTool {
         };
 
         let truncated = truncate_content(&processed, 2000);
+        let full_line_count = processed.lines().count();
+        let persist_hint = if full_line_count > 2000 {
+            persist_truncated_output(&processed)
+        } else {
+            String::new()
+        };
 
         let result = match prompt {
-            Some(p) => format!("{WEB_CREDIBILITY_WARNING}提示: {p}\n\n{truncated}"),
-            None => format!("{WEB_CREDIBILITY_WARNING}{truncated}"),
+            Some(p) => format!("{WEB_CREDIBILITY_WARNING}提示: {p}\n\n{truncated}{persist_hint}"),
+            None => format!("{WEB_CREDIBILITY_WARNING}{truncated}{persist_hint}"),
         };
 
         Ok(result)

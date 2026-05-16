@@ -60,6 +60,20 @@ fn test_truncate_content_with_truncation() {
 }
 
 #[test]
+fn test_web_fetch_truncation_persists() {
+    let long_html: String = (0..2010).map(|i| format!("line {i}\n")).collect();
+    let result = truncate_content(&long_html, 2000);
+    // 应显示截断信息
+    assert!(
+        result.contains("已截断") || result.contains("truncat"),
+        "应包含截断关键字: {result}"
+    );
+    // 应保留前 2000 行
+    assert!(result.contains("line 0"), "应包含第一行: {result}");
+    assert!(!result.contains("line 2009"), "不应包含超出部分: {result}");
+}
+
+#[test]
 fn test_html_to_text_basic() {
     let result = html_to_text("<p>Hello</p>");
     assert!(result.contains("Hello"), "实际: {result}");

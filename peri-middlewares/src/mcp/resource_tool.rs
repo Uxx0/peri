@@ -6,6 +6,7 @@ use rmcp::model::ReadResourceRequestParams;
 use thiserror::Error;
 
 use super::client::{ClientStatus, McpClientPool};
+use crate::tools::output_persist::persist_truncated_output;
 
 /// 资源读取工具错误
 #[derive(Debug, Error)]
@@ -25,6 +26,7 @@ pub enum ResourceError {
 
 const TOOL_NAME: &str = "mcp_read_resource";
 const RESOURCE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const MAX_MCP_LINES: usize = 2000;
 
 /// MCP 资源读取工具——统一资源读取入口
 pub struct McpResourceTool {
@@ -122,7 +124,7 @@ impl BaseTool for McpResourceTool {
 
         match result {
             Ok(Ok(resource_result)) => {
-                // 5. 格式化资源内容
+                // 5. 格式化资源内容（截断超大输出）
                 let mut output = Vec::new();
                 for content in &resource_result.contents {
                     match content {
@@ -146,7 +148,19 @@ impl BaseTool for McpResourceTool {
                         }
                     }
                 }
-                Ok(output.join("\n"))
+                let formatted = output.join("\n");
+                let lines: Vec<&str> = formatted.lines().collect();
+                let result = if lines.len() > MAX_MCP_LINES {
+                    let persist_hint = persist_truncated_output(&formatted);
+                    let truncated: String = lines[..MAX_MCP_LINES].join("\n");
+                    format!(
+                        "{truncated}\n\n[MCP output truncated: {} total lines]{persist_hint}",
+                        lines.len()
+                    )
+                } else {
+                    formatted
+                };
+                Ok(result)
             }
             Ok(Err(e)) => Err(Box::new(ResourceError::ReadFailed {
                 server: server_name.to_string(),

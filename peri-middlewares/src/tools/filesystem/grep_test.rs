@@ -486,3 +486,32 @@ async fn test_grep_max_depth() {
         "max_depth=1 不应找到子目录文件: {result}"
     );
 }
+
+#[tokio::test]
+async fn test_grep_truncation_persists_full_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let lines: Vec<String> = (0..10).map(|i| format!("line {} needle", i)).collect();
+    std::fs::write(dir.path().join("test.txt"), lines.join("\n")).unwrap();
+    let tool = GrepTool::new(dir.path().to_str().unwrap());
+    let result = tool
+        .invoke(serde_json::json!({
+            "pattern": "needle",
+            "output_mode": "content",
+            "path": "./",
+            "head_limit": 3
+        }))
+        .await
+        .unwrap();
+    assert!(
+        result.contains("truncated at 3 lines"),
+        "应显示截断信息: {result}"
+    );
+    assert!(
+        result.contains("Read tool"),
+        "应包含 Read tool 提示: {result}"
+    );
+    assert!(
+        result.contains("peri-tool-output-"),
+        "应包含文件路径: {result}"
+    );
+}
