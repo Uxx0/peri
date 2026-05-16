@@ -174,6 +174,18 @@ impl SessionManager {
     pub fn cancel_session(&self, session_id: &str) {
         if let Some(session) = self.inner.sessions.get(session_id) {
             session.cancel_token.cancel();
+            // Also cancel all pending per-request operations so the
+            // tokio::select! in the permission forwarding loop unblocks.
+            let keys: Vec<RequestId> = session
+                .pending_requests
+                .iter()
+                .map(|e| e.key().clone())
+                .collect();
+            for key in keys {
+                if let Some((_, entry)) = session.pending_requests.remove(&key) {
+                    let _ = entry.cancel_tx.send(());
+                }
+            }
         }
     }
 
