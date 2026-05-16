@@ -978,6 +978,14 @@ impl App {
             .session_panels
             .close_if(PanelKind::Hooks);
     }
+
+    // ─── Setup 向导 ─────────────────────────────────────────────────────────
+
+    /// 打开 setup 向导（全屏覆盖）
+    pub fn open_setup_wizard(&mut self) {
+        self.global_ui.setup_wizard =
+            Some(super::setup_wizard::SetupWizardPanel::new_from_command());
+    }
 }
 
 // ─── 测试辅助方法（仅在 cfg(any(test, feature = "headless")) 下编译）──────────

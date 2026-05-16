@@ -17,6 +17,7 @@ pub struct GlobalUiState {
     pub model_highlight_until: Option<Instant>,
     pub mcp_ready_shown_until: Cell<Option<Instant>>,
     pub quit_pending_since: Option<Instant>,
+    pub quit_requested: bool,
     pub mouse_available: Option<bool>,
 }
 
@@ -34,6 +35,7 @@ impl GlobalUiState {
             model_highlight_until: None,
             mcp_ready_shown_until: Cell::new(None),
             quit_pending_since: None,
+            quit_requested: false,
             mouse_available: None,
         }
     }

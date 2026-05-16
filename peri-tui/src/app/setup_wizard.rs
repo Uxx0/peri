@@ -233,6 +233,8 @@ pub struct SetupWizardPanel {
     pub browse_cursor: usize,
     /// Edit 模式下的聚焦字段
     pub form_focus: FormField,
+    /// 是否由 /setup 命令打开（false = 启动时无 Provider 自动触发）
+    pub from_command: bool,
 }
 
 impl Default for SetupWizardPanel {
@@ -252,6 +254,15 @@ impl SetupWizardPanel {
             form_mode: FormMode::Browse,
             browse_cursor: 0,
             form_focus: FormField::ProviderType,
+            from_command: false,
+        }
+    }
+
+    /// 由 /setup 命令打开的 wizard（Esc 仅关闭向导，不退出应用）
+    pub fn new_from_command() -> Self {
+        Self {
+            from_command: true,
+            ..Self::new()
         }
     }
 

@@ -13,6 +13,7 @@ ui-empty = (none)
 
 command-help-description = List all available commands
 command-clear-description = Clear message list
+command-exit-description = Exit the application
 command-compact-description = Compact conversation context (structured summary + re-inject recent files/Skills)
 command-model-description = Open model selection panel (Provider + Level + Thinking); with args, switch alias directly (opus/sonnet/haiku)
 command-login-description = Manage Provider configuration (create/edit/delete)
@@ -32,6 +33,7 @@ command-doctor-description = Diagnose configuration completeness
 command-rename-description = View or modify current session title
 command-split-description = Create a new split session
 command-lang-description = Switch interface language (e.g. /lang zh-CN)
+command-setup-description = Open setup wizard to configure providers
 command-agent-description = Set Agent definition, switch different Agent roles
 
 # ---- Command Execution Messages ----

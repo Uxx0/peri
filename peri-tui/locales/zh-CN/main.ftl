@@ -12,6 +12,7 @@ ui-empty = 无
 
 command-help-description = 列出所有可用命令
 command-clear-description = 清空消息列表
+command-exit-description = 退出应用
 command-compact-description = 压缩对话上下文（结构化摘要 + 重新注入最近文件/Skills）
 command-model-description = 打开模型选择面板（Provider + 级别 + Thinking）；带参数时直接切换别名（opus/sonnet/haiku）
 command-login-description = 管理 Provider 配置（新建/编辑/删除）
@@ -31,6 +32,7 @@ command-doctor-description = 诊断配置完整性
 command-rename-description = 查看或修改当前会话标题
 command-split-description = 新建分栏会话
 command-lang-description = 切换界面语言（如 /lang zh-CN）
+command-setup-description = 打开配置向导，设置 Provider
 command-agent-description = 设置 Agent 定义，切换不同的 Agent 角色
 
 # ---- Command Execution Messages ----

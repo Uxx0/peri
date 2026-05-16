@@ -346,8 +346,16 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                                 }
                             }
                             crate::app::setup_wizard::SetupWizardAction::Skip => {
+                                let from_command = app
+                                    .global_ui
+                                    .setup_wizard
+                                    .as_ref()
+                                    .map(|w| w.from_command)
+                                    .unwrap_or(false);
                                 app.global_ui.setup_wizard = None;
-                                return Ok(Some(Action::Quit));
+                                if !from_command {
+                                    return Ok(Some(Action::Quit));
+                                }
                             }
                             crate::app::setup_wizard::SetupWizardAction::Redraw => {}
                         }
