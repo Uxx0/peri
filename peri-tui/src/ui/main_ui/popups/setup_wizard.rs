@@ -8,7 +8,9 @@ use ratatui::{
 
 use peri_widgets::BorderedPanel;
 
-use crate::app::setup_wizard::{FormField, FormMode, SetupSource, SetupStep, SetupWizardPanel};
+use crate::app::setup_wizard::{
+    FormField, FormMode, SetupSource, SetupStep, SetupWizardPanel, LANGUAGE_OPTIONS,
+};
 use crate::ui::theme;
 
 /// Setup 向导全屏渲染入口
@@ -19,6 +21,7 @@ pub(crate) fn render_setup_wizard(f: &mut Frame, app: &crate::app::App) {
 
     match wizard.step {
         SetupStep::Choose => render_step_choose(f, wizard, lc, area),
+        SetupStep::Language => render_step_language(f, wizard, lc, area),
         SetupStep::Form => render_step_form(f, wizard, lc, area),
         SetupStep::Done => render_step_done(f, wizard, lc, area),
     }
@@ -82,6 +85,57 @@ fn render_step_choose(
         ("↑/↓".to_string(), lc.tr("setup-key-select")),
         ("Esc".to_string(), lc.tr("setup-key-quit")),
     ]));
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+fn render_step_language(
+    f: &mut Frame,
+    wizard: &SetupWizardPanel,
+    lc: &crate::i18n::LcRegistry,
+    area: Rect,
+) {
+    let inner = BorderedPanel::new(Span::styled(
+        lc.tr("setup-language-title"),
+        Style::default()
+            .fg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD),
+    ))
+    .border_style(Style::default().fg(theme::ACCENT))
+    .render(f, area);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            lc.tr("setup-language-prompt"),
+            Style::default().fg(theme::MUTED),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, (_code, name)) in LANGUAGE_OPTIONS.iter().enumerate() {
+        let is_cursor = i == wizard.language_cursor;
+        let cursor_char = if is_cursor { "❯" } else { " " };
+        let cursor_style = Style::default().fg(theme::THINKING);
+        let name_style = if is_cursor {
+            Style::default()
+                .fg(theme::THINKING)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::TEXT)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{} ", cursor_char), cursor_style),
+            Span::styled(*name, name_style),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(make_hint_line(vec![
+        ("Enter".to_string(), lc.tr("setup-key-confirm")),
+        ("\u{2191}/\u{2193}".to_string(), lc.tr("setup-key-select")),
+        ("Esc".to_string(), lc.tr("setup-key-back")),
+    ]));
+
     f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 

@@ -25,6 +25,8 @@ fn test_setup_wizard_new_defaults() {
     let wizard = SetupWizardPanel::new();
     assert_eq!(wizard.step, SetupStep::Choose);
     assert_eq!(wizard.source, SetupSource::CustomApi);
+    assert_eq!(wizard.language, "en");
+    assert_eq!(wizard.language_cursor, 0);
     assert_eq!(wizard.providers.len(), 1);
     assert_eq!(wizard.providers[0].provider_type, ProviderType::Anthropic);
     assert!(wizard.providers[0].api_key.is_empty());
@@ -200,12 +202,11 @@ fn test_choose_arrow_cycles_source() {
 }
 
 #[test]
-fn test_choose_enter_custom_advances_to_form() {
+fn test_choose_enter_custom_advances_to_language() {
     let mut wizard = SetupWizardPanel::new();
     let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Enter));
-    assert_eq!(wizard.step, SetupStep::Form);
-    assert_eq!(wizard.form_mode, FormMode::Browse);
-    assert_eq!(wizard.providers.len(), 1);
+    assert_eq!(wizard.step, SetupStep::Language);
+    assert_eq!(wizard.language_cursor, 0);
 }
 
 #[test]
@@ -213,6 +214,56 @@ fn test_choose_esc_skips() {
     let mut wizard = SetupWizardPanel::new();
     let action = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
     assert!(matches!(action, Some(SetupWizardAction::Skip)));
+}
+
+// ── Step: Language ──
+
+#[test]
+fn test_language_arrow_navigates() {
+    let mut wizard = SetupWizardPanel::new();
+    wizard.step = SetupStep::Language;
+    assert_eq!(wizard.language_cursor, 0);
+    let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Down));
+    assert_eq!(wizard.language_cursor, 1);
+    let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Down));
+    assert_eq!(wizard.language_cursor, 0); // wraps around
+    let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Up));
+    assert_eq!(wizard.language_cursor, 1); // wraps around
+}
+
+#[test]
+fn test_language_enter_selects_and_advances_to_form() {
+    let mut wizard = SetupWizardPanel::new();
+    wizard.step = SetupStep::Language;
+    wizard.language_cursor = 1; // zh-CN
+    let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Enter));
+    assert_eq!(wizard.language, "zh-CN");
+    assert_eq!(wizard.step, SetupStep::Form);
+    assert_eq!(wizard.form_mode, FormMode::Browse);
+}
+
+#[test]
+fn test_language_space_selects_and_advances() {
+    let mut wizard = SetupWizardPanel::new();
+    wizard.step = SetupStep::Language;
+    let _ = handle_setup_wizard_key(&mut wizard, make_char(' '));
+    assert_eq!(wizard.language, "en");
+    assert_eq!(wizard.step, SetupStep::Form);
+}
+
+#[test]
+fn test_language_esc_back_to_choose() {
+    let mut wizard = SetupWizardPanel::new();
+    wizard.step = SetupStep::Language;
+    let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
+    assert_eq!(wizard.step, SetupStep::Choose);
+}
+
+#[test]
+fn test_language_default_is_en() {
+    let wizard = SetupWizardPanel::new();
+    assert_eq!(wizard.language, "en");
+    assert_eq!(wizard.language_cursor, 0);
 }
 
 // ── Step: Form (Browse mode) ──
@@ -269,12 +320,12 @@ fn test_browse_enter_submit_validates() {
 }
 
 #[test]
-fn test_browse_esc_back_to_choose() {
+fn test_browse_esc_back_to_language() {
     let mut wizard = SetupWizardPanel::new();
     wizard.step = SetupStep::Form;
     wizard.form_mode = FormMode::Browse;
     let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
-    assert_eq!(wizard.step, SetupStep::Choose);
+    assert_eq!(wizard.step, SetupStep::Language);
 }
 
 // ── Step: Form (Edit mode) ──
@@ -367,5 +418,17 @@ fn test_save_setup_skips_unselected() {
     let cfg = save_setup_to(&wizard, &config_path).expect("save should succeed");
     assert_eq!(cfg.config.providers.len(), 1);
     assert_eq!(cfg.config.providers[0].provider_type, "openai");
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_save_setup_writes_language() {
+    let mut wizard = SetupWizardPanel::new();
+    wizard.providers[0].api_key = "sk-test".to_string();
+    wizard.language = "zh-CN".to_string();
+    let temp_dir = std::env::temp_dir().join(format!("zen-lang-setup-{}", uuid::Uuid::now_v7()));
+    let config_path = temp_dir.join("settings.json");
+    let cfg = save_setup_to(&wizard, &config_path).expect("save should succeed");
+    assert_eq!(cfg.config.language.as_deref(), Some("zh-CN"));
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

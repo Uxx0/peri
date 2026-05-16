@@ -3,6 +3,8 @@
 pub enum SetupStep {
     /// 选择来源
     Choose,
+    /// 选择语言
+    Language,
     /// 合并表单：多 Provider + API Key + Model Aliases
     Form,
     /// 确认完成
@@ -35,6 +37,9 @@ impl SetupSource {
         }
     }
 }
+
+/// 支持的语言选项：(code, display_name)
+pub const LANGUAGE_OPTIONS: [(&str, &str); 2] = [("en", "English"), ("zh-CN", "中文")];
 
 /// Provider 类型选择
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -223,7 +228,10 @@ pub struct SetupWizardPanel {
     /// Step 1: 来源选择
     pub source: SetupSource,
     pub choose_cursor: usize,
-    /// Step 2: 多 provider 列表
+    /// Step 2: 语言选择
+    pub language: String,
+    pub language_cursor: usize,
+    /// Step 3: 多 provider 列表
     pub providers: Vec<MigratedProvider>,
     /// 当前聚焦的 provider 索引（Edit 模式下使用）
     pub active_provider: usize,
@@ -249,6 +257,8 @@ impl SetupWizardPanel {
             step: SetupStep::Choose,
             source: SetupSource::CustomApi,
             choose_cursor: 0,
+            language: "en".to_string(),
+            language_cursor: 0,
             providers: vec![MigratedProvider::new(ProviderType::Anthropic)],
             active_provider: 0,
             form_mode: FormMode::Browse,
@@ -484,6 +494,7 @@ pub fn handle_setup_wizard_key(
 ) -> Option<SetupWizardAction> {
     match wizard.step {
         SetupStep::Choose => handle_step_choose(wizard, input),
+        SetupStep::Language => handle_step_language(wizard, input),
         SetupStep::Form => handle_step_form(wizard, input),
         SetupStep::Done => handle_step_done(wizard, input),
     }
@@ -525,13 +536,48 @@ fn handle_step_choose(
                 wizard.providers = vec![MigratedProvider::new(ProviderType::Anthropic)];
                 wizard.active_provider = 0;
             }
+            wizard.step = SetupStep::Language;
+            wizard.language_cursor = 0;
+            Some(SetupWizardAction::Redraw)
+        }
+        tui_textarea::Input { key: Key::Esc, .. } => Some(SetupWizardAction::Skip),
+        _ => None,
+    }
+}
+
+fn handle_step_language(
+    wizard: &mut SetupWizardPanel,
+    input: tui_textarea::Input,
+) -> Option<SetupWizardAction> {
+    use tui_textarea::Key;
+    match input {
+        tui_textarea::Input { key: Key::Up, .. } => {
+            wizard.language_cursor =
+                (wizard.language_cursor + LANGUAGE_OPTIONS.len() - 1) % LANGUAGE_OPTIONS.len();
+            Some(SetupWizardAction::Redraw)
+        }
+        tui_textarea::Input { key: Key::Down, .. } => {
+            wizard.language_cursor = (wizard.language_cursor + 1) % LANGUAGE_OPTIONS.len();
+            Some(SetupWizardAction::Redraw)
+        }
+        tui_textarea::Input {
+            key: Key::Enter, ..
+        }
+        | tui_textarea::Input {
+            key: Key::Char(' '),
+            ..
+        } => {
+            wizard.language = LANGUAGE_OPTIONS[wizard.language_cursor].0.to_string();
             wizard.step = SetupStep::Form;
             wizard.form_mode = FormMode::Browse;
             wizard.browse_cursor = 0;
             wizard.form_focus = FormField::ProviderType;
             Some(SetupWizardAction::Redraw)
         }
-        tui_textarea::Input { key: Key::Esc, .. } => Some(SetupWizardAction::Skip),
+        tui_textarea::Input { key: Key::Esc, .. } => {
+            wizard.step = SetupStep::Choose;
+            Some(SetupWizardAction::Redraw)
+        }
         _ => None,
     }
 }
@@ -601,9 +647,9 @@ fn handle_browse(
                 Some(SetupWizardAction::Redraw)
             }
         }
-        // Esc: 返回 Choose
+        // Esc: 返回 Language
         tui_textarea::Input { key: Key::Esc, .. } => {
-            wizard.step = SetupStep::Choose;
+            wizard.step = SetupStep::Language;
             Some(SetupWizardAction::Redraw)
         }
         _ => None,
@@ -775,6 +821,8 @@ pub fn save_setup_to(
         cfg.config.active_alias = "opus".to_string();
         cfg.config.active_provider_id = first_id;
     }
+
+    cfg.config.language = Some(wizard.language.clone());
 
     let content = serde_json::to_string_pretty(&cfg)?;
     if let Some(parent) = path.parent() {

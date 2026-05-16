@@ -194,6 +194,10 @@ setup-press-enter = 按
 setup-to-start = 开始使用
 setup-no-key = (无密钥)
 
+setup-language-title = ── Peri 设置 ── 语言
+setup-language-prompt = 选择界面语言：
+setup-language-press-enter = 按 Enter 确认
+
 # ---- Config Panel ----
 
 config-panel-title-browse =  /config — 配置

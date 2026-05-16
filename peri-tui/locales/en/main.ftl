@@ -195,6 +195,10 @@ setup-press-enter = Press
 setup-to-start = to start using
 setup-no-key = (no key)
 
+setup-language-title = ── Peri Setup ── Language
+setup-language-prompt = Choose your interface language:
+setup-language-press-enter = Press Enter to confirm
+
 # ---- Config Panel ----
 
 config-panel-title-browse =  /config — Configuration

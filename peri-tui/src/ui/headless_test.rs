@@ -1185,6 +1185,8 @@ mod setup_wizard_e2e {
 
     fn advance_to_form(wizard: &mut SetupWizardPanel) {
         let _ = handle_setup_wizard_key(wizard, make_key(Key::Enter));
+        assert_eq!(wizard.step, SetupStep::Language);
+        let _ = handle_setup_wizard_key(wizard, make_key(Key::Enter));
         assert_eq!(wizard.step, SetupStep::Form);
         assert_eq!(wizard.form_mode, FormMode::Browse);
     }
@@ -1310,7 +1312,11 @@ mod setup_wizard_e2e {
         let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
         assert_eq!(wizard.step, SetupStep::Form);
 
-        // Form → Esc → Choose
+        // Form → Esc → Language
+        let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
+        assert_eq!(wizard.step, SetupStep::Language);
+
+        // Language → Esc → Choose
         let _ = handle_setup_wizard_key(&mut wizard, make_key(Key::Esc));
         assert_eq!(wizard.step, SetupStep::Choose);
     }
