@@ -174,3 +174,4 @@ process.md
 vendor/
 
 .claude/skills/*-workspace
+.wrangler

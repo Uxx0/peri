@@ -48,6 +48,22 @@ enum Commands {
     },
     /// 更新：从 GitHub 下载并安装最新版本
     Update,
+    /// 配置同步：在设备间同步 settings/skills/mcp/plugins
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+        /// Relay server URL
+        #[arg(long, default_value = "wss://peri-sync.claude-code-best.win")]
+        server: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SyncAction {
+    /// 发送本地配置到远端设备
+    Sender,
+    /// 从远端设备接收配置
+    Receiver,
 }
 
 // ─── 环境变量注入 ──────────────────────────────────────────────────────────
@@ -121,6 +137,22 @@ fn main() -> Result<()> {
                     }
                 }
                 Ok(())
+            })
+        }
+        Some(Commands::Sync { action, server }) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(async {
+                match action {
+                    SyncAction::Sender => peri_tui::sync::run_sync_sender(&server).await,
+                    SyncAction::Receiver => peri_tui::sync::run_sync_receiver(&server).await,
+                }
+            })
+            .map(|_| println!("Sync complete"))
+            .map_err(|e| {
+                eprintln!("Sync failed: {e:#}");
+                std::process::exit(1);
             })
         }
     }
