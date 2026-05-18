@@ -237,6 +237,24 @@ impl MessagePipeline {
                     if let Some(sub) = self.subagent_stack.last_mut() {
                         Self::push_tool_start_to_subagent(sub, &tool_call_id, &name, &input, &cwd);
                     }
+                } else if name == "Agent" {
+                    // 父 Agent 调用 Agent 工具：只注册 tool_call 和 pending_tool，
+                    // 不创建 SubAgentState（SubAgentStart 事件会处理）。
+                    // 避免与 SubAgentStart 的 tool_start_internal 产生重复条目。
+                    self.finalize_current_ai();
+                    self.current_ai_tool_calls.push(ToolCallRequest::new(
+                        &tool_call_id,
+                        &name,
+                        input.clone(),
+                    ));
+                    self.pending_tools.insert(
+                        tool_call_id.to_string(),
+                        PendingTool {
+                            tool_call_id: tool_call_id.to_string(),
+                            name: name.to_string(),
+                            input,
+                        },
+                    );
                 } else {
                     self.tool_start_internal(&tool_call_id, &name, input, false);
                 }

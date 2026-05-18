@@ -1292,3 +1292,88 @@ fn test_merge_frozen_subagents_empty_is_noop() {
     merge_frozen_subagents(&[], &mut new_vms);
     assert_eq!(new_vms, original, "空 frozen_vms 不应修改 new_vms");
 }
+
+/// 回归测试：ToolStart(Agent) + SubAgentStart 不应创建重复 SubAgentState
+///
+/// 修复前：ToolStart 调用 tool_start_internal 创建 SubAgentState #1，
+/// SubAgentStart 再次调用 tool_start_internal 创建 SubAgentState #2。
+/// 导致 build_tail_vms 输出两个 SubAgentGroup（一个 frozen + 一个 running），
+/// 造成显示闪烁和聚合异常。
+#[test]
+fn test_no_duplicate_subagent_state_on_tool_start_plus_subagent_start() {
+    let mut pipeline = MessagePipeline::new("/tmp".to_string());
+
+    // 1. ToolStart(Agent) — 父 Agent 调用 Agent 工具
+    let _ = pipeline.handle_event(AgentEvent::ToolStart {
+        tool_call_id: "call_abc123".into(),
+        name: "Agent".into(),
+        display: "Agent".into(),
+        args: "".into(),
+        input: json!({"subagent_type": "code-reviewer", "prompt": "review code"}),
+        source_agent_id: None,
+    });
+
+    // ToolStart 不应创建 SubAgentState，只注册 pending_tool
+    assert_eq!(
+        pipeline.subagent_stack.len(),
+        0,
+        "ToolStart(Agent) 不应创建 SubAgentState"
+    );
+    assert!(
+        pipeline.pending_tools.contains_key("call_abc123"),
+        "ToolStart 应注册 pending_tool"
+    );
+
+    // 2. SubAgentStart — 创建 SubAgentState
+    let _ = pipeline.handle_event(AgentEvent::SubAgentStart {
+        agent_id: "code-reviewer".into(),
+        task_preview: "review code".into(),
+        is_background: false,
+    });
+
+    // SubAgentStart 创建唯一一个 SubAgentState
+    assert_eq!(
+        pipeline.subagent_stack.len(),
+        1,
+        "SubAgentStart 应创建恰好一个 SubAgentState"
+    );
+    assert_eq!(pipeline.subagent_stack[0].agent_id, "code-reviewer");
+
+    // 3. SubAgentEnd — 冻结
+    let _ = pipeline.handle_event(AgentEvent::SubAgentEnd {
+        agent_id: Some("code-reviewer".into()),
+        result: "review done".into(),
+        is_error: false,
+    });
+
+    // 只有一个 frozen VM
+    assert_eq!(
+        pipeline.frozen_subagent_vms_count(),
+        1,
+        "应恰好冻结一个 SubAgentGroup"
+    );
+    assert!(
+        !pipeline.subagent_stack[0].is_running,
+        "SubAgentState 应标记为非运行中"
+    );
+
+    // 4. ToolEnd — 清理 pending_tool，不产生额外副作用
+    let _ = pipeline.handle_event(AgentEvent::ToolEnd {
+        tool_call_id: "call_abc123".into(),
+        name: "Agent".into(),
+        output: "review done".into(),
+        is_error: false,
+        source_agent_id: None,
+    });
+
+    assert!(
+        !pipeline.pending_tools.contains_key("call_abc123"),
+        "ToolEnd 应清理 pending_tool"
+    );
+    // frozen_count 不应增加
+    assert_eq!(
+        pipeline.frozen_subagent_vms_count(),
+        1,
+        "ToolEnd 不应产生额外的 frozen VM"
+    );
+}
