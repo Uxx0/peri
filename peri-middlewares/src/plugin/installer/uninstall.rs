@@ -211,10 +211,10 @@ pub async fn cleanup_orphaned_plugins(claude_dir: &Path) -> Result<usize, Instal
                                             .as_millis()
                                             as i64;
 
-                                    if age_ms > CLEANUP_AGE_MS {
-                                        if std::fs::remove_dir_all(&version_path).is_ok() {
-                                            count += 1;
-                                        }
+                                    if age_ms > CLEANUP_AGE_MS
+                                        && std::fs::remove_dir_all(&version_path).is_ok()
+                                    {
+                                        count += 1;
                                     }
                                 }
                             }
