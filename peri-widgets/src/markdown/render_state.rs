@@ -167,10 +167,8 @@ impl TableBuilder {
             if i == n - 1 {
                 // 最后一列取剩余
                 widths.push(min + remaining);
-            } else if total_extra == 0 {
-                widths.push(min);
             } else {
-                let extra_share = (extra * remaining) / total_extra;
+                let extra_share = (extra * remaining).checked_div(total_extra).unwrap_or(0);
                 widths.push(min + extra_share);
                 remaining = remaining.saturating_sub(extra_share);
             }
