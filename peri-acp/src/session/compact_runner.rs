@@ -149,6 +149,7 @@ pub async fn run_full_compact(
             files: files.clone(),
             skills: skills.clone(),
             micro_cleared: 0,
+            messages: new_messages.clone(),
         },
     );
 
@@ -178,6 +179,7 @@ pub fn run_micro_compact(
                 files: vec![],
                 skills: vec![],
                 micro_cleared: cleared,
+                messages: messages.to_vec(),
             },
         );
     }

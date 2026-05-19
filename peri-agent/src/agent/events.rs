@@ -102,6 +102,8 @@ pub enum AgentEvent {
         skills: Vec<String>,
         /// micro-compact 清除的工具结果数量（>0 表示 micro-compact）
         micro_cleared: usize,
+        /// 压缩后的新消息列表（full compact 时非空）
+        messages: Vec<crate::messages::BaseMessage>,
     },
     /// 上下文压缩失败
     CompactError { message: String },

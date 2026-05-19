@@ -174,11 +174,13 @@ pub(crate) fn map_executor_event(event: ExecutorEvent, cwd: &str) -> Option<Agen
             files,
             skills,
             micro_cleared,
+            messages,
         } => AgentEvent::CompactCompleted {
             summary,
             files,
             skills,
             micro_cleared,
+            messages,
         },
         ExecutorEvent::CompactError { message } => AgentEvent::CompactError(message),
         ExecutorEvent::SessionEnded => return None,
@@ -362,6 +364,7 @@ pub async fn compact_task(
             files: vec![],
             skills: vec![],
             micro_cleared: 0,
+            messages: vec![],
         })
         .await
         .is_err()

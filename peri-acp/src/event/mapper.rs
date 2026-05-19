@@ -127,6 +127,7 @@ pub fn map_executor_to_peri_notifications(
             files,
             skills,
             micro_cleared,
+            ..
         } => {
             vec![(
                 "notifications/peri/compact/end",

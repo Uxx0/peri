@@ -124,6 +124,7 @@ fn test_compact_completed_serde_roundtrip() {
         ],
         skills: vec!["code-review".to_string(), "refactor".to_string()],
         micro_cleared: 0,
+        messages: vec![],
     };
     let json = serde_json::to_string(&ev).unwrap();
     assert!(json.contains(r#""type":"compact_completed""#));
@@ -136,6 +137,7 @@ fn test_compact_completed_serde_roundtrip() {
         files,
         skills,
         micro_cleared,
+        messages: _,
     } = deserialized
     {
         assert_eq!(summary, "对话摘要内容");
@@ -159,6 +161,7 @@ fn test_compact_completed_micro_serde() {
         files: vec![],
         skills: vec![],
         micro_cleared: 8,
+        messages: vec![],
     };
     let json = serde_json::to_string(&ev).unwrap();
     let deserialized: AgentEvent = serde_json::from_str(&json).unwrap();
@@ -167,6 +170,7 @@ fn test_compact_completed_micro_serde() {
         files,
         skills,
         micro_cleared,
+        messages: _,
     } = deserialized
     {
         assert!(summary.is_empty());

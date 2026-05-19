@@ -50,6 +50,8 @@ pub enum AgentEvent {
         files: Vec<peri_agent::agent::events::CompactFileInfo>,
         skills: Vec<String>,
         micro_cleared: usize,
+        /// 压缩后的新消息列表
+        messages: Vec<peri_agent::messages::BaseMessage>,
     },
     /// 上下文压缩失败，携带错误信息
     CompactError(String),

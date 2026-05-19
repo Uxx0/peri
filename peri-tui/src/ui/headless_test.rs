@@ -1673,6 +1673,7 @@ fn make_compact_done_event(summary: &str, re_inject_parts: &[&str]) -> AgentEven
         files,
         skills,
         micro_cleared: 0,
+        messages: vec![],
     }
 }
 
