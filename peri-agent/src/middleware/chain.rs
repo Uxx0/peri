@@ -1,4 +1,4 @@
-use crate::agent::react::{AgentOutput, ToolCall, ToolResult};
+use crate::agent::react::{AgentOutput, Reasoning, ToolCall, ToolResult};
 use crate::agent::state::State;
 use crate::error::AgentResult;
 use crate::middleware::r#trait::Middleware;
@@ -117,6 +117,29 @@ impl<S: State> MiddlewareChain<S> {
         Ok(())
     }
 
+    /// 顺序执行 before_model 钩子
+    ///
+    /// 在每个 ReAct step 的 LLM 调用前执行。
+    /// 遇错即停——后续中间件不执行，错误向上传播。
+    pub async fn run_before_model(&self, state: &mut S) -> AgentResult<()> {
+        for middleware in &self.middlewares {
+            middleware.before_model(state).await?;
+        }
+        Ok(())
+    }
+
+    /// 顺序执行 after_model 钩子
+    ///
+    /// 在 LLM 调用返回后、工具分发或最终答案处理前执行。
+    /// 传入完整的 `Reasoning`（思考文本、工具调用、最终答案）供中间件检查。
+    /// 遇错即停。
+    pub async fn run_after_model(&self, state: &mut S, reasoning: &Reasoning) -> AgentResult<()> {
+        for middleware in &self.middlewares {
+            middleware.after_model(state, reasoning).await?;
+        }
+        Ok(())
+    }
+
     /// 顺序执行 after_agent 钩子（每个中间件可修改 output）
     pub async fn run_after_agent(
         &self,
@@ -154,7 +177,8 @@ mod tests {
     use super::*;
     use crate::agent::state::AgentState;
     use crate::error::{AgentError, AgentResult};
-    use crate::middleware::r#trait::Middleware;
+    use crate::messages::{BaseMessage, ContentBlock, MessageId};
+    use crate::middleware::r#trait::{Middleware, NoopMiddleware};
     use async_trait::async_trait;
     use std::sync::{Arc, Mutex};
     include!("chain_test.rs");

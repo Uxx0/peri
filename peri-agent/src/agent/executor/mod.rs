@@ -243,9 +243,15 @@ impl<L: ReactLLM, S: State> ReActAgent<L, S> {
         for step in 0..self.max_iterations {
             state.set_current_step(step);
 
+            // 钩子: before_model — LLM 调用前（compact 检查点）
+            self.chain.run_before_model(state).await?;
+
             // LLM 推理
             let reasoning =
                 self::llm_step::call_llm(self, state, &tool_refs, step, &cancel).await?;
+
+            // 钩子: after_model — LLM 调用后（响应后处理）
+            self.chain.run_after_model(state, &reasoning).await?;
 
             if reasoning.needs_tool_call() {
                 // 工具分发
@@ -263,8 +269,7 @@ impl<L: ReactLLM, S: State> ReActAgent<L, S> {
                 )
                 .await;
 
-                // micro-compact 由 TUI 侧在 ContextWarning (0.70 阈值) 时统一触发
-                // 此处不再重复执行，避免同一条消息被压缩两次
+                // compact 已由 CompactMiddleware（before_model 钩子）在 call_llm 前处理
             } else {
                 // 最终回答
                 let output = self::final_answer::handle_final_answer(

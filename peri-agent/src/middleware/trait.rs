@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::agent::react::{AgentOutput, ToolCall, ToolResult};
+use crate::agent::react::{AgentOutput, Reasoning, ToolCall, ToolResult};
 use crate::agent::state::State;
 use crate::error::{AgentError, AgentResult};
 use crate::tools::BaseTool;
@@ -8,11 +8,18 @@ use crate::tools::BaseTool;
 /// 中间件 trait - 与 TypeScript AgentMiddleware 对齐
 ///
 /// 生命周期钩子执行顺序：
+/// ── Agent 生命周期级 ──
 /// 1. before_agent  - Agent 开始执行前
-/// 2. before_tool   - 每次工具调用前（可修改工具调用参数）
-/// 3. after_tool    - 每次工具调用后
-/// 4. after_agent   - Agent 完成后（可修改最终输出）
-/// 5. on_error      - 发生错误时
+///
+/// ── 每轮 ReAct 迭代 ──
+/// 2. before_model  - 每轮 LLM 调用前（在 call_llm 之前）
+/// 3. after_model   - 每轮 LLM 调用后（call_llm 返回后、工具分发/最终答案前）
+/// 4. before_tool   - 每次工具调用前（可修改工具调用参数）
+/// 5. after_tool    - 每次工具调用后
+/// ── 每轮 ReAct 迭代 ──
+///
+/// 6. after_agent   - Agent 完成后（可修改最终输出）
+/// 7. on_error      - 发生错误时
 #[async_trait]
 pub trait Middleware<S: State>: Send + Sync {
     /// 中间件名称（用于日志和调试）
@@ -68,6 +75,25 @@ pub trait Middleware<S: State>: Send + Sync {
         result: &ToolResult,
     ) -> AgentResult<()> {
         let _ = (state, tool_call, result);
+        Ok(())
+    }
+
+    /// LLM 调用前调用（在每轮 ReAct 循环的 call_llm 之前）
+    ///
+    /// 可用于上下文压缩、token 预算检查等预处理操作。
+    /// 默认空实现。
+    async fn before_model(&self, state: &mut S) -> AgentResult<()> {
+        let _ = state;
+        Ok(())
+    }
+
+    /// LLM 调用后调用（call_llm 返回后、工具分发或最终答案处理前）
+    ///
+    /// `reasoning` 包含模型的完整响应（思考文本、工具调用列表、最终答案）。
+    /// 可用于响应后处理、token 累积校验、日志记录等。
+    /// 默认空实现。
+    async fn after_model(&self, state: &mut S, reasoning: &Reasoning) -> AgentResult<()> {
+        let _ = (state, reasoning);
         Ok(())
     }
 

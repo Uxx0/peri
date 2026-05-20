@@ -12,7 +12,10 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use peri_agent::agent::events::AgentEventHandler;
+use peri_agent::agent::compact::CompactConfig;
+use peri_agent::agent::events::{AgentEvent as ExecutorEvent, AgentEventHandler};
+use peri_agent::agent::token::ContextBudget;
+use peri_agent::llm::BaseModel;
 
 /// 子 Agent 事件 handler 工厂类型
 pub type ChildHandlerFactory = Arc<dyn Fn(String) -> Arc<dyn AgentEventHandler> + Send + Sync>;
@@ -20,6 +23,7 @@ use peri_agent::agent::state::AgentState;
 use peri_agent::agent::{AgentCancellationToken, ReActAgent};
 use peri_agent::interaction::UserInteractionBroker;
 use peri_agent::llm::BaseModelReactLLM;
+use peri_middlewares::compact_middleware::CompactMiddleware;
 use peri_middlewares::prelude::*;
 use peri_middlewares::tools::{AskUserTool, TodoItem};
 
@@ -53,6 +57,15 @@ pub struct AcpAgentConfig {
     pub child_handler_factory: Option<ChildHandlerFactory>,
     /// LSP 服务器配置（由调用方从 settings.json + 插件配置组装）
     pub lsp_servers: Vec<peri_lsp::config::LspServerConfig>,
+    /// Compact 中间件配置（None = 不启用自动 compact）
+    pub compact_config: Option<CompactConfig>,
+    /// 上下文窗口预算（CompactMiddleware 需要）
+    pub compact_budget: Option<ContextBudget>,
+    /// LLM 模型（CompactMiddleware 用于 full compact 摘要生成）
+    pub compact_model: Option<Arc<dyn BaseModel>>,
+    /// 事件通道（CompactMiddleware 发送 compact 事件）
+    pub compact_event_tx:
+        Option<Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<ExecutorEvent>>>>>,
 }
 
 pub struct AcpAgentOutput {
@@ -89,6 +102,10 @@ pub fn build_agent(cfg: AcpAgentConfig) -> AcpAgentOutput {
         shared_tools,
         child_handler_factory,
         lsp_servers,
+        compact_config: mw_compact_config,
+        compact_budget: mw_compact_budget,
+        compact_model: mw_compact_model,
+        compact_event_tx: mw_compact_event_tx,
     } = cfg;
 
     // 应用 agent overrides 到系统提示词
@@ -274,6 +291,8 @@ pub fn build_agent(cfg: AcpAgentConfig) -> AcpAgentOutput {
         )));
 
     // Hook middleware groups
+    // 收集所有 hooks（在 hook_groups 被 move 之前，供 CompactMiddleware 和 HookMiddleware 共用）
+    let all_hooks: Vec<RegisteredHook> = hook_groups.iter().flatten().cloned().collect();
     let mut executor = executor;
     if !hook_groups.is_empty() {
         let hook_llm_factory: Arc<
@@ -337,6 +356,29 @@ pub fn build_agent(cfg: AcpAgentConfig) -> AcpAgentOutput {
             cwd.clone(),
             lsp_config,
         )))
+    } else {
+        executor
+    };
+
+    // CompactMiddleware（条件注册，当 compact 配置+模型+事件通道均可用时）
+    let executor = if let (Some(config), Some(budget), Some(model), Some(event_tx)) = (
+        mw_compact_config,
+        mw_compact_budget,
+        mw_compact_model,
+        mw_compact_event_tx,
+    ) {
+        let compact_mw = CompactMiddleware::new(
+            Some(model),
+            config,
+            budget,
+            cwd.clone(),
+            event_tx,
+            cancel.clone(),
+            all_hooks,
+            session_id.unwrap_or_default(),
+            provider_name.clone(),
+        );
+        executor.add_middleware(Box::new(compact_mw))
     } else {
         executor
     };

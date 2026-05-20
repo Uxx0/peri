@@ -4,8 +4,8 @@
 //! pipeline used by both TUI (via [`TransportEventSink`]) and stdio (via
 //! [`StdioEventSink`]) paths.
 //!
-//! After agent execution completes, the executor checks token thresholds and
-//! automatically triggers compact (micro or full) + resubmit as needed.
+//! Compact 由 CompactMiddleware（before_model 钩子）在 ReAct 循环内原地处理，
+//! 不再需要外层 loop + resubmit。
 
 use std::sync::Arc;
 
@@ -13,17 +13,15 @@ use peri_agent::agent::events::{AgentEvent as ExecutorEvent, AgentEventHandler};
 use peri_agent::agent::state::AgentState;
 use peri_agent::agent::token::ContextBudget;
 use peri_agent::agent::AgentCancellationToken;
-use peri_agent::agent::State;
 use peri_agent::error::AgentError;
 use peri_agent::interaction::UserInteractionBroker;
 use peri_agent::messages::BaseMessage;
 use tokio::sync::oneshot;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 
 use crate::agent::builder::{self, AcpAgentConfig};
 use crate::prompt::{build_system_prompt, PromptFeatures};
 use crate::provider::LlmProvider;
-use crate::session::compact_runner::{self, HookContext};
 use crate::session::event_sink::EventSink;
 
 /// High-level reason why prompt execution stopped, used to derive ACP `StopReason`.
@@ -127,179 +125,119 @@ pub async fn execute_prompt(
         let _ = pump_done_tx.send(());
     });
 
-    let mut current_history = history;
-    let mut total_resubmits: u32 = 0;
-    const MAX_RESUBMITS: u32 = 3;
-    let mut compacted = false;
-
-    loop {
-        // Create event handler for this round
-        let event_handler: Arc<dyn AgentEventHandler> =
-            Arc::new(peri_agent::agent::events::FnEventHandler({
-                let tx = event_tx.clone();
-                move |event: ExecutorEvent| {
-                    if let Some(tx) = tx.lock().unwrap().as_ref() {
-                        let _ = tx.send(event);
-                    }
-                }
-            }));
-
-        let features = PromptFeatures::detect();
-        let system_prompt = build_system_prompt(None, cwd, features, &plugin_agent_dirs);
-
-        let agent_output = builder::build_agent(AcpAgentConfig {
-            provider: provider.clone(),
-            cwd: cwd.to_string(),
-            system_prompt,
-            event_handler,
-            cancel: cancel.clone(),
-            permission_mode: permission_mode.clone(),
-            peri_config: Arc::new(peri_config.as_ref().clone()),
-            cron_scheduler: cron_scheduler.clone(),
-            agent_overrides: None,
-            preload_skills: Vec::new(),
-            session_id: Some(session_id.clone()),
-            broker: broker.clone(),
-            plugin_skill_dirs: plugin_skill_dirs.clone(),
-            plugin_agent_dirs: plugin_agent_dirs.clone(),
-            hook_groups: hook_groups.clone(),
-            hook_session_start: is_empty_history && total_resubmits == 0,
-            mcp_pool: mcp_pool.clone(),
-            tool_search_index: tool_search_index.clone(),
-            shared_tools: shared_tools.clone(),
-            child_handler_factory: None,
-            lsp_servers: lsp_servers.clone(),
-        });
-
-        // 转发 todo 更新为 ExecutorEvent::TodoUpdate
-        let mut todo_rx = agent_output.todo_rx;
-        let tx_for_todo = event_tx.clone();
-        tokio::spawn(async move {
-            while let Some(todos) = todo_rx.recv().await {
-                let entries: Vec<peri_agent::agent::events::TodoEntry> = todos
-                    .into_iter()
-                    .map(|t| peri_agent::agent::events::TodoEntry {
-                        content: t.content,
-                        active_form: t.active_form,
-                        status: match t.status {
-                            peri_middlewares::tools::todo::TodoStatus::Pending => {
-                                peri_agent::agent::events::TodoStatus::Pending
-                            }
-                            peri_middlewares::tools::todo::TodoStatus::InProgress => {
-                                peri_agent::agent::events::TodoStatus::InProgress
-                            }
-                            peri_middlewares::tools::todo::TodoStatus::Completed => {
-                                peri_agent::agent::events::TodoStatus::Completed
-                            }
-                        },
-                    })
-                    .collect();
-                if let Some(tx) = tx_for_todo.lock().unwrap().as_ref() {
-                    let _ = tx.send(ExecutorEvent::TodoUpdate(entries));
+    // 单次 Agent 执行（compact 由 CompactMiddleware 在循环内处理）
+    let event_handler: Arc<dyn AgentEventHandler> =
+        Arc::new(peri_agent::agent::events::FnEventHandler({
+            let tx = event_tx.clone();
+            move |event: ExecutorEvent| {
+                if let Some(tx) = tx.lock().unwrap().as_ref() {
+                    let _ = tx.send(event);
                 }
             }
-        });
+        }));
 
-        // Execute agent
-        let mut agent_state = AgentState::with_messages(cwd.to_string(), current_history);
-        let result = agent_output
-            .executor
-            .execute(agent_input.clone(), &mut agent_state, Some(cancel.clone()))
-            .await;
-        drop(agent_output.executor);
+    let features = PromptFeatures::detect();
+    let system_prompt = build_system_prompt(None, cwd, features, &plugin_agent_dirs);
 
-        let ok = result.is_ok();
-        if let Err(e) = &result {
-            error!(session_id = %session_id, error = %e, "Agent execution failed");
-        }
+    // Compact model（用于 CompactMiddleware 的 full compact 摘要生成）
+    let compact_model: Arc<dyn peri_agent::llm::BaseModel> = provider.clone().into_model().into();
 
-        if !ok || cancel.is_cancelled() {
-            let stop_reason = if cancel.is_cancelled() {
-                PromptStopReason::Cancelled
-            } else if matches!(&result, Err(AgentError::MaxIterationsExceeded(_))) {
-                PromptStopReason::MaxTurnRequests
-            } else if matches!(&result, Err(AgentError::Interrupted)) {
-                PromptStopReason::Cancelled
-            } else {
-                PromptStopReason::EndTurn
-            };
+    let agent_output = builder::build_agent(AcpAgentConfig {
+        provider: provider.clone(),
+        cwd: cwd.to_string(),
+        system_prompt,
+        event_handler,
+        cancel: cancel.clone(),
+        permission_mode: permission_mode.clone(),
+        peri_config: Arc::new(peri_config.as_ref().clone()),
+        cron_scheduler: cron_scheduler.clone(),
+        agent_overrides: None,
+        preload_skills: Vec::new(),
+        session_id: Some(session_id.clone()),
+        broker: broker.clone(),
+        plugin_skill_dirs: plugin_skill_dirs.clone(),
+        plugin_agent_dirs: plugin_agent_dirs.clone(),
+        hook_groups: hook_groups.clone(),
+        hook_session_start: is_empty_history,
+        mcp_pool: mcp_pool.clone(),
+        tool_search_index: tool_search_index.clone(),
+        shared_tools: shared_tools.clone(),
+        child_handler_factory: None,
+        lsp_servers: lsp_servers.clone(),
+        compact_config: if disable_compact {
+            None
+        } else {
+            Some(compact_config)
+        },
+        compact_budget: if disable_compact { None } else { Some(budget) },
+        compact_model: if disable_compact {
+            None
+        } else {
+            Some(compact_model)
+        },
+        compact_event_tx: Some(event_tx.clone()),
+    });
 
-            close_channel(&event_tx);
-            wait_for_pump(pump_done_rx, &session_id).await;
-            return PromptResult {
-                messages: agent_state.into_messages(),
-                ok,
-                compacted,
-                stop_reason,
-            };
-        }
-
-        // Check token budget before consuming agent_state
-        let should_auto = !disable_compact
-            && budget.should_auto_compact(agent_state.token_tracker())
-            && total_resubmits < MAX_RESUBMITS;
-        let should_micro =
-            !disable_compact && !should_auto && budget.should_warn(agent_state.token_tracker());
-        let do_compact_check = should_auto || should_micro;
-
-        let mut messages = agent_state.into_messages();
-
-        // ── Compact check ──
-        if do_compact_check && messages.len() > 1 {
-            if should_auto {
-                // Full compact + resubmit
-                info!(session_id = %session_id, "auto-compact: threshold reached, triggering full compact");
-                let all_hooks: Vec<_> = hook_groups.iter().flatten().cloned().collect();
-                let hook_ctx = HookContext {
-                    cwd: cwd.to_string(),
-                    session_id: session_id.clone(),
-                    transcript_path: String::new(),
-                    provider_name: provider.display_name().to_string(),
-                    instructions: String::new(),
-                };
-
-                match compact_runner::run_full_compact(
-                    &messages,
-                    provider.clone().into_model().as_ref(),
-                    &compact_config,
-                    cwd,
-                    &event_tx,
-                    &cancel,
-                    &all_hooks,
-                    &hook_ctx,
-                )
-                .await
-                {
-                    Ok(output) => {
-                        compacted = true;
-                        current_history = output.new_messages;
-                        total_resubmits += 1;
-                        info!(
-                            session_id = %session_id,
-                            resubmit = total_resubmits,
-                            "auto-compact: resubmitting with compacted context"
-                        );
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!(session_id = %session_id, error = %e, "auto-compact: failed, returning original messages");
-                    }
-                }
-            } else if should_micro {
-                // Micro-compact only
-                compact_runner::run_micro_compact(&mut messages, &compact_config, &event_tx);
+    // 转发 todo 更新为 ExecutorEvent::TodoUpdate
+    let mut todo_rx = agent_output.todo_rx;
+    let tx_for_todo = event_tx.clone();
+    tokio::spawn(async move {
+        while let Some(todos) = todo_rx.recv().await {
+            let entries: Vec<peri_agent::agent::events::TodoEntry> = todos
+                .into_iter()
+                .map(|t| peri_agent::agent::events::TodoEntry {
+                    content: t.content,
+                    active_form: t.active_form,
+                    status: match t.status {
+                        peri_middlewares::tools::todo::TodoStatus::Pending => {
+                            peri_agent::agent::events::TodoStatus::Pending
+                        }
+                        peri_middlewares::tools::todo::TodoStatus::InProgress => {
+                            peri_agent::agent::events::TodoStatus::InProgress
+                        }
+                        peri_middlewares::tools::todo::TodoStatus::Completed => {
+                            peri_agent::agent::events::TodoStatus::Completed
+                        }
+                    },
+                })
+                .collect();
+            if let Some(tx) = tx_for_todo.lock().unwrap().as_ref() {
+                let _ = tx.send(ExecutorEvent::TodoUpdate(entries));
             }
         }
+    });
 
-        // Done — close event channel and wait for pump
-        close_channel(&event_tx);
-        wait_for_pump(pump_done_rx, &session_id).await;
-        return PromptResult {
-            messages,
-            ok: true,
-            compacted,
-            stop_reason: PromptStopReason::EndTurn,
-        };
+    // Execute agent
+    let mut agent_state = AgentState::with_messages(cwd.to_string(), history);
+    let result = agent_output
+        .executor
+        .execute(agent_input.clone(), &mut agent_state, Some(cancel.clone()))
+        .await;
+    drop(agent_output.executor);
+
+    let ok = result.is_ok();
+    if let Err(e) = &result {
+        error!(session_id = %session_id, error = %e, "Agent execution failed");
+    }
+
+    let stop_reason = if cancel.is_cancelled() {
+        PromptStopReason::Cancelled
+    } else if matches!(&result, Err(AgentError::MaxIterationsExceeded(_))) {
+        PromptStopReason::MaxTurnRequests
+    } else if matches!(&result, Err(AgentError::Interrupted)) {
+        PromptStopReason::Cancelled
+    } else {
+        PromptStopReason::EndTurn
+    };
+
+    close_channel(&event_tx);
+    wait_for_pump(pump_done_rx, &session_id).await;
+
+    PromptResult {
+        messages: agent_state.into_messages(),
+        ok,
+        compacted: false, // compact 现在完全在 CompactMiddleware 内处理
+        stop_reason,
     }
 }
 
