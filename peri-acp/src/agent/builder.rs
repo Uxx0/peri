@@ -19,6 +19,10 @@ use peri_agent::llm::BaseModel;
 
 /// 子 Agent 事件 handler 工厂类型
 pub type ChildHandlerFactory = Arc<dyn Fn(String) -> Arc<dyn AgentEventHandler> + Send + Sync>;
+/// System prompt 构建器类型
+pub type SystemPromptBuilder = Arc<
+    dyn Fn(Option<&peri_middlewares::agent_define::AgentOverrides>, &str) -> String + Send + Sync,
+>;
 use peri_agent::agent::state::AgentState;
 use peri_agent::agent::{AgentCancellationToken, ReActAgent};
 use peri_agent::interaction::UserInteractionBroker;
@@ -210,13 +214,8 @@ pub fn build_agent(cfg: AcpAgentConfig) -> AcpAgentOutput {
     });
 
     // 系统提示构建器
-    #[allow(clippy::type_complexity)]
     let frozen_date_for_sub = frozen_date.clone();
-    let system_builder: Arc<
-        dyn Fn(Option<&peri_middlewares::agent_define::AgentOverrides>, &str) -> String
-            + Send
-            + Sync,
-    > = Arc::new(move |overrides, cwd_dir| {
+    let system_builder: SystemPromptBuilder = Arc::new(move |overrides, cwd_dir| {
         let features = crate::prompt::PromptFeatures::detect();
         crate::prompt::build_system_prompt(
             overrides,
