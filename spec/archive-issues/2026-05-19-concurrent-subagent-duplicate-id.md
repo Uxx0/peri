@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-19-concurrent-subagent-duplicate-id.md
+
 # 并发同类型 SubAgent 共享相同 ID 导致事件路由错误
 
 **状态**：Fixed

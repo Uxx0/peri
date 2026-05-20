@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-19-acp-missing-capabilities.md
+
 # ACP 协议能力缺失：Session 生命周期路由与通知变体
 
 **状态**：Fixed

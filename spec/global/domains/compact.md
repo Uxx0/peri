@@ -77,6 +77,16 @@
 **涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/app/agent_submit.rs, peri-tui/src/app/agent_ops.rs, peri-tui/src/app/agent_comm.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-12-compact-auto-continue-scenarios
+**摘要:** Compact 自动继续功能在不应触发的场景（手动 /compact、Done 后 auto-compact）下仍然 resubmit
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** auto-continue, compact 触发来源, resubmit 控制, instructions 参数
+**问题本质:** handle_compact_done 的 resubmit 逻辑不区分 compact 触发来源——手动 /compact 和 Done 后 auto-compact 也被错误地 resubmit。用户手动压缩后期望停下来查看结果，agent 完成任务后 compact 再用原始输入重新执行没有意义。
+**通用模式:** 异步操作的触发来源（auto vs manual）需要作为上下文传递到完成后处理逻辑。用 instructions 参数区分来源，通过独立 flag（compact_should_resubmit）控制后续行为。两个合理的 resubmit 场景（auto-compact 在 agent 执行中、后台任务完成后）和两个不合理的场景（手动 compact、Done 后 compact）需要精确区分。
+**涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/app/agent_ops.rs, peri-tui/src/app/agent_comm.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

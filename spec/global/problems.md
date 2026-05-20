@@ -538,12 +538,14 @@
 
 ### 大文件拆分
 - [LLM 适配器模块化：anthropic.rs 1983 行、openai.rs 1065 行，按职责维度拆分为子模块](domains/agent.md#issue_2026-05-14-llm-adapter-modularization) — agent
+- [超长函数拆分：event.rs（1120 行）和 agent_ops.rs（890 行）等 5 个超长单函数拆分](domains/code-architecture.md#issue_2026-05-14-mega-functions-split) — code-architecture
 
 ### 时序耦合
 - [Background task 完成后未触发 agent continuation（竞态条件）：pre_done_bg_completions 缓冲乱序到达](domains/agent.md#issue_2026-05-13-background-task-completion-race-condition) — agent
 
 ### 模块化
 - [LLM 适配器模块化：anthropic.rs 1983 行、openai.rs 1065 行，按职责维度拆分为子模块](domains/agent.md#issue_2026-05-14-llm-adapter-modularization) — agent
+- [超长函数拆分：event.rs（1120 行）和 agent_ops.rs（890 行）等 5 个超长单函数拆分](domains/code-architecture.md#issue_2026-05-14-mega-functions-split) — code-architecture
 
 ### 竞态条件
 - [Background task 完成后未触发 agent continuation（竞态条件）：pre_done_bg_completions 缓冲乱序到达](domains/agent.md#issue_2026-05-13-background-task-completion-race-condition) — agent
@@ -698,6 +700,91 @@
 ### 领域类型分离
 - [langfuse-client/src/types.rs 所有类型定义集中（1008 行）](domains/langfuse.md#issue_2026-05-17-langfuse-types-monolithic) — langfuse
 
+### ACP 路由
+- [ACP 协议能力缺失：Session 生命周期路由、能力声明、SessionUpdate 通知变体](domains/acp.md#issue_2026-05-19-acp-missing-capabilities) — acp
+
+### CJK
+- [Markdown 表格第一列中文多时列宽过窄，CJK 字符显示为竖排](domains/tui-widgets.md#issue_2026-05-18-md-table-cjk-column-too-narrow) — tui-widgets
+
+### ConfigOptionUpdate
+- [ACP 状态变更后不发通知：ConfigOptionUpdate / AvailableCommandsUpdate / SessionInfoUpdate](domains/acp.md#issue_2026-05-19-acp-missing-state-notifications) — acp
+
+### PromptResult
+- [ACP PromptResponse 的 StopReason 全部硬编码为 EndTurn，无法区分取消/超限/正常完成](domains/acp.md#issue_2026-05-19-acp-stopreason-hardcoded-endturn) — acp
+
+### Session 生命周期
+- [ACP 协议能力缺失：Session 生命周期路由、能力声明、SessionUpdate 通知变体](domains/acp.md#issue_2026-05-19-acp-missing-capabilities) — acp
+
+### SessionUpdate
+- [ACP 协议能力缺失：Session 生命周期路由、能力声明、SessionUpdate 通知变体](domains/acp.md#issue_2026-05-19-acp-missing-capabilities) — acp
+- [ACP 状态变更后不发通知：ConfigOptionUpdate / AvailableCommandsUpdate / SessionInfoUpdate](domains/acp.md#issue_2026-05-19-acp-missing-state-notifications) — acp
+
+### StopReason
+- [ACP PromptResponse 的 StopReason 全部硬编码为 EndTurn，无法区分取消/超限/正常完成](domains/acp.md#issue_2026-05-19-acp-stopreason-hardcoded-endturn) — acp
+
+### SubAgent ID 重复
+- [并发同类型 SubAgent 共享相同 ID，导致事件路由错误到第一个实例](domains/agent.md#issue_2026-05-19-concurrent-subagent-duplicate-id) — agent
+
+### SubAgent 重复卡片
+- [SubAgent 完成后显示重复卡片：ToolStart 和 SubAgentStart 事件双重创建 SubAgentState](domains/message-pipeline.md#issue_2026-05-18-subagent-duplicate-state-on-completion) — message-pipeline
+
+### ToolStart/SubAgentStart 竞态
+- [SubAgent 完成后显示重复卡片：ToolStart 和 SubAgentStart 事件双重创建 SubAgentState](domains/message-pipeline.md#issue_2026-05-18-subagent-duplicate-state-on-completion) — message-pipeline
+
+### auto-continue
+- [Compact 自动继续功能在不应触发的场景（手动 /compact、Done 后 auto-compact）下仍然 resubmit](domains/compact.md#issue_2026-05-12-compact-auto-continue-scenarios) — compact
+
+### compact 触发来源
+- [Compact 自动继续功能在不应触发的场景（手动 /compact、Done 后 auto-compact）下仍然 resubmit](domains/compact.md#issue_2026-05-12-compact-auto-continue-scenarios) — compact
+
+### instructions 参数
+- [Compact 自动继续功能在不应触发的场景（手动 /compact、Done 后 auto-compact）下仍然 resubmit](domains/compact.md#issue_2026-05-12-compact-auto-continue-scenarios) — compact
+
+### resubmit 控制
+- [Compact 自动继续功能在不应触发的场景（手动 /compact、Done 后 auto-compact）下仍然 resubmit](domains/compact.md#issue_2026-05-12-compact-auto-continue-scenarios) — compact
+
+### tool_call_id
+- [并发同类型 SubAgent 共享相同 ID，导致事件路由错误到第一个实例](domains/agent.md#issue_2026-05-19-concurrent-subagent-duplicate-id) — agent
+
+### 列宽缩放
+- [Markdown 表格第一列中文多时列宽过窄，CJK 字符显示为竖排](domains/tui-widgets.md#issue_2026-05-18-md-table-cjk-column-too-narrow) — tui-widgets
+
+### 单函数过长
+- [超长函数拆分：event.rs（1120 行）和 agent_ops.rs（890 行）等 5 个超长单函数拆分](domains/code-architecture.md#issue_2026-05-14-mega-functions-split) — code-architecture
+
+### 双重创建
+- [SubAgent 完成后显示重复卡片：ToolStart 和 SubAgentStart 事件双重创建 SubAgentState](domains/message-pipeline.md#issue_2026-05-18-subagent-duplicate-state-on-completion) — message-pipeline
+
+### 多客户端
+- [ACP 状态变更后不发通知：ConfigOptionUpdate / AvailableCommandsUpdate / SessionInfoUpdate](domains/acp.md#issue_2026-05-19-acp-missing-state-notifications) — acp
+
+### 并发路由
+- [并发同类型 SubAgent 共享相同 ID，导致事件路由错误到第一个实例](domains/agent.md#issue_2026-05-19-concurrent-subagent-duplicate-id) — agent
+
+### 枚举映射
+- [ACP PromptResponse 的 StopReason 全部硬编码为 EndTurn，无法区分取消/超限/正常完成](domains/acp.md#issue_2026-05-19-acp-stopreason-hardcoded-endturn) — acp
+
+### 最小宽度
+- [Markdown 表格第一列中文多时列宽过窄，CJK 字符显示为竖排](domains/tui-widgets.md#issue_2026-05-18-md-table-cjk-column-too-narrow) — tui-widgets
+
+### 终止原因
+- [ACP PromptResponse 的 StopReason 全部硬编码为 EndTurn，无法区分取消/超限/正常完成](domains/acp.md#issue_2026-05-19-acp-stopreason-hardcoded-endturn) — acp
+
+### 能力声明
+- [ACP 协议能力缺失：Session 生命周期路由、能力声明、SessionUpdate 通知变体](domains/acp.md#issue_2026-05-19-acp-missing-capabilities) — acp
+
+### 认知复杂度
+- [超长函数拆分：event.rs（1120 行）和 agent_ops.rs（890 行）等 5 个超长单函数拆分](domains/code-architecture.md#issue_2026-05-14-mega-functions-split) — code-architecture
+
+### 表格渲染
+- [Markdown 表格第一列中文多时列宽过窄，CJK 字符显示为竖排](domains/tui-widgets.md#issue_2026-05-18-md-table-cjk-column-too-narrow) — tui-widgets
+
+### 身份传播
+- [并发同类型 SubAgent 共享相同 ID，导致事件路由错误到第一个实例](domains/agent.md#issue_2026-05-19-concurrent-subagent-duplicate-id) — agent
+
+### 状态同步
+- [ACP 状态变更后不发通知：ConfigOptionUpdate / AvailableCommandsUpdate / SessionInfoUpdate](domains/acp.md#issue_2026-05-19-acp-missing-state-notifications) — acp
+
 ## 更新记录
 
 - 2026-05-13: 首次创建，归档 22 个 issue，提取 14 条领域认知
@@ -709,3 +796,4 @@
 - 2026-05-17: 归档 12 个 issue，新增 ACP 领域，22 个新关键词条目
 - 2026-05-17: 补充归档 2 个 Fixed issue（LLM 适配器模块化 + 后台任务竞态）
 - 2026-05-18: 归档 11 个 Fixed issue（agent 1 + tui 4 + acp 1 + langfuse 1 + message-pipeline 1 + plugin 1 + code-architecture 2），13 个新关键词条目
+- 2026-05-20: 归档 7 个 issue，新增 27 个关键词索引

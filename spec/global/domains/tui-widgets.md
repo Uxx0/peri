@@ -79,6 +79,19 @@ TUI tick 事件
 **归档:** [链接](../../archive/feature_20260427_F001_ratatui-widget-lib/)
 **归档日期:** 2026-04-30
 
+## Issue 经验附录
+
+### issue_2026-05-18-md-table-cjk-column-too-narrow
+
+**摘要:** Markdown 表格第一列中文多时列宽过窄，CJK 字符显示为竖排
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** CJK, 表格渲染, 列宽缩放, 最小宽度
+**问题本质:** scale_col_widths() 纯比例缩放分配列宽，下限 max(1) 对 CJK 字符（宽度 2 个显示列）太低——窄列每行只能放 1-2 个字，显示为不可读的竖排。纯 ASCII（字符宽度 1）在相同缩放下仍可读，问题只影响 CJK。
+**通用模式:** 比例缩放的列宽分配必须考虑最小可读宽度（chunk_width ≥ 6-8 显示列）。终端 UI 中 CJK 字符占 2 列宽度（unicode-width crate），最小宽度阈值必须以显示列而非字符数为单位。
+**涉及文件:** peri-widgets/src/markdown/render_state.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

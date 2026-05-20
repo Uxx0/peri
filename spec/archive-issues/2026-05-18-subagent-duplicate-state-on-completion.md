@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-18-subagent-duplicate-state-on-completion.md
+
 # SubAgent 完成后显示重复卡片 + 状态切换闪烁
 
 **状态**：Fixed

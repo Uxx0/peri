@@ -512,6 +512,18 @@ launch_agent 工具调用
 **涉及文件:** peri-agent/src/agent/executor/tool_dispatch.rs, peri-middlewares/src/subagent/tool/define.rs, peri-tui/src/app/agent.rs
 **CLAUDE.md 链接:** true
 
+### issue_2026-05-19-concurrent-subagent-duplicate-id
+
+**摘要:** 并发同类型 SubAgent 共享相同 ID，导致事件路由错误到第一个实例
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** SubAgent ID 重复, 并发路由, tool_call_id, 身份传播
+**问题本质:** 四级链路中每一层都用 subagent_type（类型名）替代唯一实例 ID——LLM 生成的唯一 tool_call_id 被映射层 `..` 丢弃，SourceAgentIdHandler 用 subagent_type 做 source_agent_id，Pipeline 用 subagent_type 做 routing key 和 pending_tools key。并发两个相同类型的 SubAgent 得到完全相同的标识，所有事件路由到第一个实例。
+**通用模式:** 任何由 LLM 生成的唯一标识（如 tool_call_id）必须在整条事件链路中保持，不能被中间层丢弃或替换为类型名。并发场景下，类型名不能替代实例 ID。事件路由必须用唯一实例 ID 精确匹配，不能用 `find()` 按类型返回第一个匹配项。
+**架构影响:** 四级链路的身份传播失败暴露了事件系统的设计缺陷——每一层都在重新生成或替换标识符，而非透传。修复需将 tool_call_id 贯穿 4 层（define → agent.rs 映射 → events.rs 字段 → Pipeline routing），agent_id 降级为仅用于显示。
+**涉及文件:** peri-middlewares/src/subagent/tool/define.rs, peri-middlewares/src/subagent/tool/mod.rs, peri-tui/src/app/agent.rs, peri-tui/src/app/events.rs, peri-tui/src/app/message_pipeline/mod.rs
+**CLAUDE.md 链接:** true
+
 ---
 
 ## 相关 Feature

@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-18-md-table-cjk-column-too-narrow.md
+
 # Markdown 表格第一列中文多时断行过窄，显示为竖排
 
 **状态**：Fixed

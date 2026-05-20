@@ -99,6 +99,18 @@
 **涉及文件:** peri-tui/src/command/mod.rs, peri-tui/src/sync/mod.rs, peri-tui/src/ui/main_ui/panels/mod.rs, peri-middlewares/src/mcp/mod.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-14-mega-functions-split
+
+**摘要:** 超长函数拆分：event.rs（1120 行）和 agent_ops.rs（890 行）等 5 个超长单函数拆分
+**状态:** Closed
+**归档日期:** 2026-05-20
+**关键词:** 大文件拆分, 模块化, 单函数过长, 认知复杂度
+**问题本质:** 5 个巨型函数（总计 ~6791 行）各自承担 5-20 种职责，认知复杂度极高，修改时难以理解和测试。所有逻辑平铺在一个函数体内，无法独立测试任何事件分支。
+**通用模式:** 按职责类型（键盘/鼠标/粘贴）拆分为独立 handler 函数；面板按类型垂直拆分为独立文件；LLM invoke 按阶段（构建请求/解析响应）提取子函数。拆分后函数自然定位到对应子模块，无需大型分发器。AOP 关注点（如 `request_rebuild()`）在拆分后会被各 handler 单独调用，需确保一致性。
+**架构影响:** `run_universal_agent` 被 ACP 架构整体替代，event.rs 从 1447 行减为 event/ 子目录。这表明架构升级可以自然消灭超长函数——不需要手动拆分。
+**涉及文件:** peri-tui/src/event.rs, peri-tui/src/app/agent_ops.rs, peri-tui/src/app/panel_ops.rs, peri-agent/src/llm/anthropic.rs, peri-tui/src/app/agent.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

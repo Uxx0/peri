@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-14-mega-functions-split.md
+
 # 超长函数拆分：event.rs 和 agent_ops.rs 各有 1000+ 行单函数
 
 **状态**：Closed

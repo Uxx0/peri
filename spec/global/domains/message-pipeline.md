@@ -172,6 +172,17 @@ reconcile_tail(round_start_vm_idx)
 **涉及文件:** peri-tui/src/app/message_pipeline.rs, peri-tui/src/ui/message_view.rs
 **说明:** 纯代码组织优化（注意 TRAP 约束：Ephemeral VM 锚点机制、prefix_len vs round_start_vm_idx 维度区分、RebuildAll 只能在非 Pipeline 层触发），无领域认知提炼。
 
+### issue_2026-05-18-subagent-duplicate-state-on-completion
+
+**摘要:** SubAgent 完成后显示重复卡片：ToolStart 和 SubAgentStart 事件双重创建 SubAgentState
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** SubAgent 重复卡片, ToolStart/SubAgentStart 竞态, 双重创建
+**问题本质:** ToolStart（name="Agent"）和 SubAgentStart 两个事件都调用 tool_start_internal() 创建 SubAgentState。SubAgentEnd 只冻结第一个匹配项，第二个残留为 is_running=true，直到 Done 才清理。
+**通用模式:** 当同一语义实体有多个事件入口点时，必须明确单一创建职责。事件之间不是"累加"关系——应做"去重"判断。修复方案是让 ToolStart 仅注册 tool_call/pending_tool，由 SubAgentStart 独占 SubAgentState 创建职责。
+**涉及文件:** peri-tui/src/app/message_pipeline/mod.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

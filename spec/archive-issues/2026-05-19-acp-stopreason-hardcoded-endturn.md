@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-19-acp-stopreason-hardcoded-endturn.md
+
 # ACP StopReason 全部硬编码为 EndTurn
 
 **状态**：Fixed
