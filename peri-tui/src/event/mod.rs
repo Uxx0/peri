@@ -2,10 +2,15 @@
 // Split from the original monolithic event.rs (1447 lines) into:
 //   mouse.rs   — mouse coordinate helpers + clipboard functions
 //   keyboard.rs — key event handler
-//   mod.rs     — macros, Action, event loop, dispatcher, OAuth handling
+//   macros.rs  — panel dispatch macros (with_global_panels!, with_session_panels!)
+//   mod.rs     — Action, event loop, dispatcher, OAuth handling
 
 pub mod keyboard;
+mod macros;
 pub mod mouse;
+
+use crate::with_global_panels;
+use crate::with_session_panels;
 
 use anyhow::Result;
 use ratatui::crossterm::event::{self, Event, MouseButton, MouseEventKind};
@@ -14,45 +19,6 @@ use tui_textarea::{Input, Key};
 
 use crate::app::panel_manager::{EventResult, PanelKind};
 use crate::app::App;
-
-// ── Macros ──────────────────────────────────────────────────────────────────
-
-/// Executes a panel dispatch on `global_panels`, automatically handling
-/// `mem::take` borrow avoidance.
-///
-/// Usage: `with_global_panels!(app, |pm, ctx| { ... })` — `pm` is `&mut PanelManager`.
-#[macro_export]
-macro_rules! with_global_panels {
-    ($app:expr, |$pm:ident, $ctx:ident| $body:expr) => {{
-        let mut $pm = std::mem::take(&mut $app.global_panels);
-        let mut $ctx = $crate::app::panel_manager::PanelContext {
-            services: &mut $app.services,
-            session_mgr: &mut $app.session_mgr,
-        };
-        let result = { $body };
-        $app.global_panels = $pm;
-        result
-    }};
-}
-
-/// Executes a panel dispatch on the active session's `session_panels`,
-/// automatically handling `mem::take` borrow avoidance.
-///
-/// Usage: `with_session_panels!(app, |sp, ctx| { ... })` — `sp` is `&mut PanelManager`.
-#[macro_export]
-macro_rules! with_session_panels {
-    ($app:expr, |$sp:ident, $ctx:ident| $body:expr) => {{
-        let active_idx = $app.session_mgr.active;
-        let mut $sp = std::mem::take(&mut $app.session_mgr.sessions[active_idx].session_panels);
-        let mut $ctx = $crate::app::panel_manager::PanelContext {
-            services: &mut $app.services,
-            session_mgr: &mut $app.session_mgr,
-        };
-        let result = { $body };
-        $app.session_mgr.sessions[active_idx].session_panels = $sp;
-        result
-    }};
-}
 
 // ── Action ──────────────────────────────────────────────────────────────────
 
