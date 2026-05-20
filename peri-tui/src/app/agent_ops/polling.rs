@@ -1,0 +1,242 @@
+//! Agent polling functions — poll_agent, poll_background_events, poll_cron_triggers.
+//! Extracted from original agent_ops.rs (2026-05-20 split).
+
+use super::super::*;
+
+use crate::app::message_pipeline::PipelineAction;
+use crate::app::App;
+
+impl App {
+    pub fn poll_agent(&mut self) -> bool {
+        // 优先处理延迟的后台任务 continuation（由 BackgroundTaskCompleted 处理器设置）
+        // 只有在 loading=false 时才 take()，避免 loading=true（如 compact 中）时
+        // continuation 被消费但未使用而永久丢失
+        if !self.session_mgr.sessions[self.session_mgr.active]
+            .ui
+            .loading
+        {
+            if let Some(continuation) = self.session_mgr.sessions[self.session_mgr.active]
+                .agent
+                .pending_bg_continuation
+                .take()
+            {
+                tracing::info!("auto-submitting background task continuation");
+                self.submit_message(continuation);
+                return true;
+            }
+        }
+
+        // Check for events from ACP notification channel (primary path)
+        let has_acp = self.session_mgr.sessions[self.session_mgr.active]
+            .agent
+            .acp_notification_rx
+            .is_some();
+        let has_legacy_rx = self.session_mgr.sessions[self.session_mgr.active]
+            .agent
+            .agent_rx
+            .is_some();
+
+        if !has_acp && !has_legacy_rx {
+            return false;
+        }
+
+        let mut updated = false;
+
+        // 节流检查（每帧开始时，确保上一批 chunk 的尾部也被显示）
+        {
+            let prefix_len = self.session_mgr.sessions[self.session_mgr.active]
+                .messages
+                .round_start_vm_idx;
+            if let Some(action) = self.session_mgr.sessions[self.session_mgr.active]
+                .messages
+                .pipeline
+                .check_throttle(prefix_len)
+            {
+                self.apply_pipeline_action(action);
+                updated = true;
+            }
+        }
+
+        loop {
+            // Try ACP notification channel first (new path)
+            let acp_result = self.session_mgr.sessions[self.session_mgr.active]
+                .agent
+                .acp_notification_rx
+                .as_mut()
+                .map(|rx| rx.try_recv());
+            if let Some(Ok(notif)) = acp_result {
+                let (ev_updated, should_break, should_return) = self.handle_acp_notification(notif);
+                if ev_updated {
+                    updated = true;
+                }
+                if should_return {
+                    return true;
+                }
+                if should_break {
+                    break;
+                }
+                continue;
+            }
+            // channel empty or not available, fall through to legacy
+
+            // Try legacy agent_rx channel (backward compat)
+            let result = self.session_mgr.sessions[self.session_mgr.active]
+                .agent
+                .agent_rx
+                .as_mut()
+                .map(|rx| rx.try_recv());
+            match result {
+                Some(Ok(event)) => {
+                    let (ev_updated, should_break, should_return) = self.handle_agent_event(event);
+                    if ev_updated {
+                        updated = true;
+                    }
+                    if should_return {
+                        return true;
+                    }
+                    if should_break {
+                        break;
+                    }
+                }
+                Some(Err(mpsc::error::TryRecvError::Empty)) | None => break,
+                Some(Err(mpsc::error::TryRecvError::Disconnected)) => {
+                    // 清理 pipeline 状态（残留 SubAgent 栈等）
+                    self.session_mgr.sessions[self.session_mgr.active]
+                        .messages
+                        .pipeline
+                        .done();
+                    // 重置 subagent_depth，防止残留计数过滤后续 TokenUsageUpdate
+                    self.session_mgr.sessions[self.session_mgr.active]
+                        .agent
+                        .subagent_depth = 0;
+
+                    // 后台任务场景：spawn closure 结束后丢弃最后一个 sender 导致通道关闭。
+                    // 如果有后台任务，说明 BackgroundTaskCompleted 已处理或通道竞态关闭，
+                    // 不应显示 "连接异常断开" 错误。静默清理并结束 loading 状态。
+                    if self.session_mgr.sessions[self.session_mgr.active]
+                        .agent
+                        .agent_done_pending_bg
+                        || self.session_mgr.sessions[self.session_mgr.active].background_task_count
+                            > 0
+                    {
+                        tracing::info!(
+                            agent_done = self.session_mgr.sessions[self.session_mgr.active]
+                                .agent
+                                .agent_done_pending_bg,
+                            bg_count = self.session_mgr.sessions[self.session_mgr.active]
+                                .background_task_count,
+                            "channel disconnected during background task flow, suppressing error"
+                        );
+                        self.session_mgr.sessions[self.session_mgr.active]
+                            .agent
+                            .agent_done_pending_bg = false;
+                        self.session_mgr.sessions[self.session_mgr.active].background_task_count =
+                            0;
+                        self.session_mgr.sessions[self.session_mgr.active]
+                            .agent
+                            .pre_done_bg_completions
+                            .clear();
+                        self.session_mgr.sessions[self.session_mgr.active]
+                            .agent
+                            .agent_rx = None;
+                        self.cleanup_agent_state(None);
+                        return true;
+                    }
+
+                    let vm = MessageViewModel::tool_block(
+                        "error".to_string(),
+                        "agent-error".to_string(),
+                        Some(self.services.lc.tr("app-agent-disconnected")),
+                        true,
+                    );
+                    self.apply_pipeline_action(PipelineAction::AddMessage(vm));
+                    self.session_mgr.sessions[self.session_mgr.active]
+                        .agent
+                        .agent_rx = None;
+                    self.cleanup_agent_state(Some(
+                        "ERROR: agent channel disconnected unexpectedly",
+                    ));
+                    return true;
+                }
+            }
+        }
+
+        updated
+    }
+
+    /// 每帧调用：消费后台事件通道（MCP OAuth 等异步任务发送的事件），返回是否有 UI 更新
+    pub fn poll_background_events(&mut self) -> bool {
+        let events: Vec<_> = match self.services.bg_event_rx.as_mut() {
+            Some(rx) => {
+                let mut evts = Vec::new();
+                loop {
+                    match rx.try_recv() {
+                        Ok(event) => evts.push(event),
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            self.services.bg_event_rx = None;
+                            break;
+                        }
+                    }
+                }
+                evts
+            }
+            None => return false,
+        };
+        let mut updated = false;
+        for event in events {
+            let (ev_updated, _should_break, should_return) = self.handle_agent_event(event);
+            if ev_updated {
+                updated = true;
+            }
+            if should_return {
+                return true;
+            }
+        }
+        updated
+    }
+
+    /// 每帧调用：检查 cron 触发事件，空闲时自动提交 prompt
+    pub fn poll_cron_triggers(&mut self) {
+        let cron_triggers: Vec<_> = self
+            .services
+            .cron
+            .trigger_rx
+            .as_mut()
+            .map(|rx| {
+                let mut triggers = Vec::new();
+                while let Ok(trigger) = rx.try_recv() {
+                    triggers.push(trigger);
+                }
+                triggers
+            })
+            .unwrap_or_default();
+        for trigger in cron_triggers {
+            if !self.session_mgr.sessions[self.session_mgr.active]
+                .ui
+                .loading
+            {
+                self.submit_message(trigger.prompt);
+            } else {
+                // Agent 正在执行，缓冲触发事件等待 Done 后自动发送
+                const MAX_PENDING: usize = 10;
+                if self.session_mgr.sessions[self.session_mgr.active]
+                    .messages
+                    .pending_messages
+                    .len()
+                    < MAX_PENDING
+                {
+                    tracing::debug!(prompt = %trigger.prompt, "cron trigger buffered (agent busy)");
+                    self.session_mgr.sessions[self.session_mgr.active]
+                        .messages
+                        .pending_messages
+                        .push(trigger.prompt);
+                } else {
+                    tracing::warn!("pending_messages 已达上限 {}，丢弃 cron 触发", MAX_PENDING);
+                }
+            }
+        }
+    }
+}
+
+// #[cfg(test)] block moved to mod.rs
