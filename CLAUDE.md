@@ -250,6 +250,14 @@ session/new → chrono::Local::now() → frozen_date
 
 **Skills**：搜索顺序 `~/.claude/skills/` → `skillsDir` → `./.claude/skills/` → 插件 skills。`SkillsMiddleware.with_extra_dirs()` 是插件扩展点。
 
+**[TRAP]** Manifest `skills` 字段语义：`skills` 数组条目是相对于插件根目录的路径（如 `"./skills/"`、`"skills/tdd"`），不是 skill 名称。`extract_skills_paths` 用 `base_dir.join(entry)` 解析路径。如果路径本身含 `SKILL.md` 则直接作为 skill 目录；否则视为容器目录，扫描其子目录找含 `SKILL.md` 的。绝不能把条目当名称拼接到 `base_dir/skills/` 下——会生成 `base_dir/skills/./skills/` 这样的无效路径。
+
+**[TRAP]** Manifest `commands` 字段类型：Claude Code 插件 manifest 的 `commands` 支持混合数组（字符串路径 + 对象），如 `["./commands/", {"path":"x.md","name":"x"}]`。`PluginManifest.commands` 类型是 `Option<Vec<PluginCommandEntry>>`（`PluginCommandEntry` 枚举：`Path(String)` | `Full(PluginCommand)`）。`extract_commands` 必须用 match 分支处理两种变体：`Path` 变体支持目录扫描（扫描 .md 文件）和单文件路径；`Full` 变体使用显式 name/description。禁止假设所有条目都是 `PluginCommand` 对象——字符串路径是 Claude Code 插件的常见格式（如 ECC 的 `"commands": ["./commands/"]`）。
+
+**[TRAP]** Agent 目录回退扫描：`extract_agents_paths` 在 manifest 无 `agents` 字段时必须回退扫描插件根目录下的 `agents/` 和 `.agents/` 子目录。Claude Code 插件（如 ECC）常把 agent 定义放在 `.agents/` 目录但不在 manifest 中声明。新增 agent 目录约定时必须同步更新回退扫描的目录列表。
+
+**[TRAP]** 插件 MCP `.mcp.json` 回退：`extract_mcp_servers` 有两层加载逻辑——先处理 manifest `mcpServers` 字段（内联配置或文件路径引用），结果为空时回退加载 `install_path/.mcp.json`。当 manifest 声明 `mcpServers: {}`（空对象）时，`manifest.mcp_servers` 是 `Some(empty HashMap)`，迭代无结果后 `result.is_empty()` 为 true，会正确走到 `.mcp.json` 回退。MCP pool 初始化（`McpClientPool::run_initialize`）通过 `load_merged_config_full` 独立调用 `load_enabled_plugins_aggregated`，不依赖 TUI 层传递插件 MCP 数据。
+
 ## SubAgents
 
 `.claude/agents/{agent_id}/agent.md` 定义。`tools` 为空继承父工具（排除 Agent 防递归），有值仅保留允许列表，`disallowedTools` 额外排除。插件 agent 通过 `scan_agents_with_extra_dirs` 追加搜索路径。
@@ -278,7 +286,47 @@ session/new → chrono::Local::now() → frozen_date
 
 ## CLI 参数
 
-`-a` 启用 HITL 审批。运行时 `Shift+Tab` 切换权限模式，`Alt+M` 切换模型。支持多 session 分屏。
+对齐 Claude Code 核心参数体系。所有 camelCase 参数同时支持 kebab-case 别名（如 `--allowedTools` = `--allowed-tools`）。clap 4 derive 解析。
+
+**参数列表**：
+
+| 参数 | 说明 | 模式 |
+|------|------|------|
+| `-p/--print [PROMPT]` | 非交互模式：执行单轮问答后输出到 stdout 并退出 | print only |
+| `--output-format` | 输出格式：text / json / stream-json（配合 `-p`） | print only |
+| `--max-turns` | 最大 agentic 轮数（配合 `-p`） | print only |
+| `--bare` | 极简模式：跳过 hooks/LSP/插件/MCP 初始化（配合 `-p`） | print only |
+| `--permission-mode` | 权限模式：bypass / default / dont-ask / accept-edit / auto-mode | both |
+| `--dangerously-skip-permissions` | 绕过所有权限检查（等同 permission-mode bypass） | both |
+| `--model` | 指定模型（别名如 sonnet 或全名） | both |
+| `--effort` | 推理强度：low / medium / high / max | both |
+| `-c/--continue` | 继续当前目录最近的对话 | TUI |
+| `-r/--resume [ID]` | 按 session ID 恢复对话 | TUI |
+| `--session-id` | 指定会话 ID | TUI |
+| `-n/--name` | 设置会话显示名称 | TUI |
+| `--no-session-persistence` | 禁用会话持久化 | TUI |
+| `--allowedTools` | 允许的工具列表 | both |
+| `--disallowedTools` | 禁止的工具列表 | both |
+| `--settings` | 加载额外 settings 文件或 JSON 字符串 | both |
+| `-a/--approve` | 启用 HITL 审批模式（等同 --permission-mode default） | TUI |
+| `-y/--yolo` | 向后兼容，无操作（YOLO 已是默认行为） | TUI |
+
+**子命令**：`plugin list [--json]` / `plugin install <name@marketplace> [--scope user/project/local]` / `plugin uninstall <id>`。`acp`/`update`/`sync` 子命令保持不变。
+
+**`-p` 模式架构**：复用 ACP executor（`peri_acp::session::executor::execute_prompt()`），通过自定义 `EventSink` 实现（`PrintEventSink`）收集事件并输出。不启动 TUI、不维持 session。`PrintBroker` 自动批准所有交互。
+
+**TUI 模式参数接入**：`TuiOptions` 结构体桥接 CLI 解析到 `run_tui()`/`run_app()`。`--permission-mode`/`--dangerously-skip-permissions` 映射到 `SharedPermissionMode`，`--model` 通过 `LlmProvider::from_config_for_alias` 覆盖，`--settings` 通过 `inject_settings_override()` 合并。`-p` 专属参数在 TUI 模式下产生警告（`validate_args`）。
+
+**核心文件**：
+| 文件 | 职责 |
+|------|------|
+| `peri-tui/src/main.rs` | Cli struct（clap derive）+ 命令分发 + TuiOptions 桥接 |
+| `peri-tui/src/cli_args.rs` | OutputFormat/EffortLevel/PluginScope 枚举 + RunOptions + validate_args |
+| `peri-tui/src/cli_print.rs` | `-p` 模式：PrintBroker + PrintEventSink + PrintCollector |
+| `peri-tui/src/cli_plugin.rs` | plugin list/install/uninstall 子命令实现 |
+| `peri-tui/src/cli_integration_test.rs` | CLI 参数解析集成测试（9 个） |
+
+运行时 `Shift+Tab` 切换权限模式，`Alt+M` 切换模型。支持多 session 分屏。
 
 ## 编码规范
 
