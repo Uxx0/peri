@@ -3,6 +3,7 @@ use std::process::Command;
 use crate::commit::{parse_co_authors, CommitType, FileChange, ParsedCommit};
 
 /// Build the `git log` command with time window and format.
+#[allow(dead_code)]
 fn build_git_command(repo: &str, since: &str, until: &str) -> Command {
     let mut cmd = Command::new("git");
     cmd.args([
@@ -20,6 +21,7 @@ fn build_git_command(repo: &str, since: &str, until: &str) -> Command {
 }
 
 /// Run git log and parse output into Vec<ParsedCommit>.
+#[allow(dead_code)]
 pub fn fetch_commits(repo: &str, since: &str, until: &str) -> Result<Vec<ParsedCommit>, String> {
     let output = build_git_command(repo, since, until)
         .output()
@@ -35,22 +37,17 @@ pub fn fetch_commits(repo: &str, since: &str, until: &str) -> Result<Vec<ParsedC
 }
 
 /// Parse the raw git log output into structured commits.
+#[allow(dead_code)]
 fn parse_log_output(raw: &str) -> Result<Vec<ParsedCommit>, String> {
     let mut commits = Vec::new();
-    // Split on @@COMMIT@@ to get each commit block
-    let blocks: Vec<&str> = raw.split("@@COMMIT@@").collect();
-
-    for block in blocks.iter().skip(1) {
-        // skip empty first split
+    for block in raw.split("@@COMMIT@@").skip(1) {
         let block = block.trim();
         if block.is_empty() {
             continue;
         }
-        if let Some(commit) = parse_single_commit(block) {
-            commits.push(commit);
-        }
+        let commit = parse_single_commit(block)?;
+        commits.push(commit);
     }
-
     Ok(commits)
 }
 
@@ -65,26 +62,40 @@ fn parse_log_output(raw: &str) -> Result<Vec<ParsedCommit>, String> {
 /// @@NUMSTAT@@
 /// <added>\t<deleted>\t<file>
 /// ...
-fn parse_single_commit(block: &str) -> Option<ParsedCommit> {
-    // Split at @@NUMSTAT@@ marker
-    let parts: Vec<&str> = block.splitn(2, "@@NUMSTAT@@").collect();
-    let header = parts.first()?.trim();
-    let numstat = parts.get(1).map(|s| s.trim()).unwrap_or("");
+fn parse_single_commit(block: &str) -> Result<ParsedCommit, String> {
+    let numstat_pos = block
+        .rfind("@@NUMSTAT@@")
+        .ok_or_else(|| "Missing @@NUMSTAT@@ marker in block".to_string())?;
+    let header = block[..numstat_pos].trim();
+    let numstat = block[numstat_pos + "@@NUMSTAT@@".len()..].trim();
 
     let mut header_lines = header.lines();
 
-    let hash = header_lines.next()?.trim().to_string();
-    let author_name = header_lines.next()?.trim().to_string();
-    let author_email = header_lines.next()?.trim().to_string();
-    let subject = header_lines.next()?.trim().to_string();
-    // Remaining lines are the body
-    let body: Vec<&str> = header_lines.collect();
-    let body_str = body.join("\n");
+    let hash = header_lines
+        .next()
+        .ok_or("Missing hash")?
+        .trim()
+        .to_string();
+    let author_name = header_lines
+        .next()
+        .ok_or("Missing author name")?
+        .trim()
+        .to_string();
+    let author_email = header_lines
+        .next()
+        .ok_or("Missing author email")?
+        .trim()
+        .to_string();
+    let subject = header_lines
+        .next()
+        .ok_or("Missing subject")?
+        .trim()
+        .to_string();
+    let body_str = header_lines.collect::<Vec<_>>().join("\n");
 
     let commit_type = CommitType::from_subject(&subject);
     let co_authors = parse_co_authors(&body_str);
 
-    // Parse numstat lines: <added>\t<deleted>\t<filename>
     let files: Vec<FileChange> = numstat
         .lines()
         .filter_map(|line| {
@@ -102,7 +113,7 @@ fn parse_single_commit(block: &str) -> Option<ParsedCommit> {
         })
         .collect();
 
-    Some(ParsedCommit {
+    Ok(ParsedCommit {
         hash,
         author_name,
         author_email,
@@ -172,5 +183,23 @@ chore: bump version
 ";
         let commit = parse_single_commit(block).unwrap();
         assert_eq!(commit.files.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_commit_body_contains_sentinel() {
+        let block = "\
+jkl012
+Dave
+dave@corp.com
+fix: handle edge case
+Fixed the @@NUMSTAT@@ parsing bug.
+Also mentioned @@COMMIT@@ in the code review.
+@@NUMSTAT@@
+5\t3\tsrc/parser.rs
+";
+        let commit = parse_single_commit(block).unwrap();
+        assert_eq!(commit.hash, "jkl012");
+        assert_eq!(commit.files.len(), 1);
+        assert_eq!(commit.files[0].added, 5);
     }
 }
