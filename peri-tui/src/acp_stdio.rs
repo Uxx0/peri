@@ -788,7 +788,22 @@ pub async fn run_acp_stdio(cwd: String) -> anyhow::Result<()> {
             },
             agent_client_protocol::on_receive_request!(),
         )
-        .connect_to(Stdio::new())
+        .connect_to(
+            Stdio::new().with_debug({
+                let ctx_for_cancel = ctx_clone.clone();
+                move |line: &str, _direction: agent_client_protocol_tokio::LineDirection| {
+                    if line.trim() == r#"{"type":"cancel"}"# {
+                        let guard = ctx_for_cancel.sessions.read();
+                        for (sid, s) in guard.iter() {
+                            if let Some(ref token) = s.cancel_token {
+                                token.cancel();
+                                tracing::info!(session_id = %sid, "Cancelled via type:cancel");
+                            }
+                        }
+                    }
+                }
+            }),
+        )
         .await
         .map_err(|e| anyhow::anyhow!("ACP error: {e}"))
 }
