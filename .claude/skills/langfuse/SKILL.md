@@ -8,126 +8,143 @@ allowed-tools:
   - Bash(bunx langfuse-cli api * --help *)
   - Bash(bunx langfuse-cli api * list *)
   - Bash(bunx langfuse-cli api * get *)
+  - Bash(bun .claude/skills/langfuse/scripts/analyze.ts *)
 ---
 
 # Langfuse
 
-This skill helps you use Langfuse effectively across all common workflows: instrumenting applications, migrating prompts, debugging traces, and accessing data programmatically.
-
-## Core Principles
-
-Follow these principles for ALL Langfuse work:
-
-1. **Documentation First**: NEVER implement based on memory. Always fetch current docs before writing code (Langfuse updates frequently) See the section below on how to access documentation.
-2. **CLI for Data Access**: Use `langfuse-cli` when querying/modifying Langfuse data. See the section below on how to use the CLI. 
-3. **Best Practices by Use Case**: Check the relevant reference file below for use-case-specific guidelines before implementing
-4. **Use latest Langfuse versions**: Unless the user specified otherwise or there's a good reason, always use the latest version of Langfuse SDKs/APIs.
-
-
-## Use case specific references
-
-- instrumenting an existing function/application: references/instrumentation.md
-- migrating prompts from a codebase into Langfuse: references/prompt-migration.md
-- capturing user feedback (thumbs, ratings, implicit signals) as scores on traces: references/user-feedback.md
-- further tips on using the Langfuse CLI: references/cli.md
-- upgrading or migrating Langfuse SDKs to the latest version: references/sdk-upgrade.md
-- judge calibration (LLM-as-a-Judge reliability, simple accuracy checks, advanced split-based validation, confusion matrices, and metric ingestion): references/judge-calibration.md
-- systematic error analysis — reading traces, building failure taxonomy, deciding what to fix: references/error-analysis.md
-- submitting feedback about this skill: references/skill-feedback.md
-
-
 ## 1. Langfuse API via CLI
 
-Use the `langfuse-cli` to interact with the full Langfuse REST API from the command line. Run via bunx (no install required, auto-loads `.env`):
-
-Start by discovering the schema and available arguments:
+Use `langfuse-cli` to interact with the full Langfuse REST API. Run via bunx (auto-loads `.env`):
 
 ```bash
-bunx langfuse-cli api __schema
-bunx langfuse-cli api <resource> --help
-bunx langfuse-cli api <resource> <action> --help
+bunx langfuse-cli api __schema                              # Discover all resources
+bunx langfuse-cli api <resource> --help                     # List actions for a resource
+bunx langfuse-cli api <resource> <action> --help            # Show args for an action
+bunx langfuse-cli api <resource> <action> [options]         # Execute
 ```
 
 ### Credentials
 
-bunx automatically loads the project `.env` file. Ensure it contains:
+bunx automatically loads `.env`. Ensure it contains:
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com  # Required. EU cloud: cloud.langfuse.com, US cloud: us.cloud.langfuse.com, or self-hosted URL
+LANGFUSE_HOST=https://cloud.langfuse.com  # Required
 ```
 
-If using `LANGFUSE_BASE_URL` instead of `LANGFUSE_HOST`, set `LANGFUSE_HOST` to the same value. If credentials are missing, ask the user to add them to `.env` (do not ask them to paste keys into chat for security reasons). Keys are found in Langfuse UI → Settings → API Keys.
+If credentials are missing, ask the user to add them to `.env`. Do not ask to paste keys in chat.
 
-### Detailed CLI Reference
+### CLI Tips
 
-For common workflows, tips, and full usage patterns, see [references/cli.md](references/cli.md).
+- Use `--json` for machine-readable output
+- Use `--curl` to preview HTTP request without executing
+- Prefer `observations-v2s` over `observations`, `score-v2s` over `scores`
 
-## 2. Langfuse Documentation
+## 2. Cost Analysis
 
-Three methods to access Langfuse docs, in order of preference. **Always prefer your application's native web fetch and search tools** (e.g., `WebFetch`, `WebSearch`, `mcp_fetch`, etc.) over `curl` when available. The URLs and patterns below work with any fetching method — the `curl` examples are just illustrative.
+### Analyze Script
 
-### 2a. Documentation Index (llms.txt)
+```bash
+bun .claude/skills/langfuse/scripts/analyze.ts [N]              # Overview + trace table + flags
+bun .claude/skills/langfuse/scripts/analyze.ts --tools [N]      # Tool call analysis
+bun .claude/skills/langfuse/scripts/analyze.ts --growth [N]     # Context growth trend
+bun .claude/skills/langfuse/scripts/analyze.ts --report [N]     # Full report (all 7 sections)
+bun .claude/skills/langfuse/scripts/analyze.ts --trace-id <id>  # Single trace detail
+```
 
-Fetch the full index of all documentation pages:
+### Report Sections
+
+| # | Section | What it shows |
+|---|---------|---------------|
+| 1 | Overview | Aggregate stats, cache efficiency, output/input ratio |
+| 2 | Per-Trace Table | Input/output/cache/latency per trace |
+| 3 | Tool Analysis | Frequency, avg latency, redundancy detection, tool→context growth |
+| 4 | Context Growth | Per-trace token trend (visual bar chart), session accumulation, cross-trace growth rate |
+| 5 | System Prompt Occupancy | Section breakdown with estimated tokens, system vs conversation ratio |
+| 6 | Most Expensive Trace | Per-LLM-call detail with delta |
+| 7 | Summary & Flags | Auto-detected issues (low cache, redundant tools, slow calls, etc.) |
+
+### Red Flags
+
+| Pattern | Threshold | Root Cause |
+|---------|-----------|------------|
+| Cache hit rate < 90% | Single trace | System prompt instability, cold start, or structure changing across turns |
+| Effective new tokens > 20K | Single trace | Tool results or context growing unbounded |
+| Output/Input ratio > 5% | Single trace | Model over-explaining |
+| Output/Input ratio < 0.1% | Single trace | Massive input for tiny output — unnecessary context |
+| LLM calls > 10 for simple task | Single trace | Agent looping or retrying |
+| Single LLM call > 60s | Per-call | Model generating too much for the task |
+
+### Optimization Checklist
+
+After analysis, evaluate:
+
+1. **System Prompt Weight** — >40% of context → trim; largest section → shorten or lazy-load; stale CLAUDE.md TRAPs → archive
+2. **Context Accumulation** — tool results retained across turns?; micro-compact threshold right?; redundant reads?
+3. **Agent Loop Efficiency** — redundant tool calls?; sequential reads → batch?; broad exploration → targeted search?
+4. **Task Decomposition** — complex task → focused sub-tasks?; sub-agents to reduce context pressure?
+
+### Reflection Output Format
+
+```
+## Cost Reflection
+
+### Metrics
+- Traces analyzed: N
+- Total input: X tokens (Y% cache hit)
+- Total output: Z tokens
+- Avg LLM calls per trace: M
+
+### Findings
+1. [Pattern with specific trace example]
+2. [Another pattern]
+
+### Recommendations
+1. [Actionable optimization] — estimated savings: ~X tokens/trace
+2. [Another recommendation]
+```
+
+## 3. Langfuse Documentation
+
+### 3a. Documentation Index (llms.txt)
 
 ```bash
 curl -s https://langfuse.com/llms.txt
 ```
 
-Returns a structured list of every doc page with titles and URLs. Use this to discover the right page for a topic, then fetch that page directly.
+Returns structured list of every doc page. Use to discover the right page, then fetch it.
 
-Alternatively, you can start on `https://langfuse.com/docs` and explore the site to find the page you need.
+### 3b. Fetch Pages as Markdown
 
-### 2b. Fetch Individual Pages as Markdown
-
-Any page listed in llms.txt can be fetched as markdown by appending `.md` to its path or by using `Accept: text/markdown` in the request headers. Use this when you know which page contains the information needed. Returns clean markdown with code examples and configuration details.
+Append `.md` to any doc path:
 
 ```bash
 curl -s "https://langfuse.com/docs/observability/overview.md"
-curl -s "https://langfuse.com/docs/observability/overview" -H "Accept: text/markdown"
 ```
 
-### 2c. Search Documentation
-
-When you need to find information across all docs and github issues/discussions without knowing the specific page:
-
-```bash
-curl -s "https://langfuse.com/api/search-docs?query=<url-encoded-query>"
-```
-
-Example:
+### 3c. Search Documentation
 
 ```bash
 curl -s "https://langfuse.com/api/search-docs?query=How+do+I+trace+LangGraph+agents"
 ```
 
-Returns a JSON response with:
+Returns matching documents with URLs, titles, and excerpts. Also indexes GitHub Issues/Discussions.
 
-- `query`: the original query
-- `answer`: a JSON string containing an array of matching documents, each with:
-  - `url`: link to the doc page
-  - `title`: page title
-  - `source.content`: array of relevant text excerpts from the page
+### Workflow
 
-Search is a great fallback if you cannot find the relevant pages or need more context. Especially useful when debugging issues as all GitHub Issues and Discussions are also indexed. Responses can be large — extract only the relevant portions.
+1. Start with **llms.txt** to orient
+2. **Fetch specific pages** when identified
+3. Fall back to **search** when topic is unclear
 
-### Documentation Workflow
+## Use Case References
 
-1. Start with **llms.txt** to orient — scan for relevant page titles
-2. **Fetch specific pages** when you identify the right one
-3. Fall back to **search** when the topic is unclear and you want more context
-
-## Skill Feedback
-
-When the user expresses that something about this skill is not working as expected, gives incorrect guidance, is missing information, or could be improved — offer to submit feedback to the Langfuse skill maintainers. This includes when:
-
-- The skill gave wrong or outdated instructions
-- A workflow didn't produce the expected result
-- The user wishes the skill covered something it doesn't
-- The user explicitly says something like "this should work differently" or "this is wrong"
-
-**Do NOT trigger this** for issues with Langfuse itself (the product) — only for issues with this skill's instructions and behavior.
-
-When triggered, follow the process in [references/skill-feedback.md](references/skill-feedback.md).
+- instrumenting an application: references/instrumentation.md
+- migrating prompts: references/prompt-migration.md
+- user feedback as scores: references/user-feedback.md
+- CLI tips: references/cli.md
+- SDK upgrade: references/sdk-upgrade.md
+- judge calibration: references/judge-calibration.md
+- error analysis: references/error-analysis.md
+- skill feedback: references/skill-feedback.md
