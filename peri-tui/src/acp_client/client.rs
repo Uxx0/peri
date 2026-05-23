@@ -229,7 +229,10 @@ impl AcpTuiClient {
     /// Submit a user message to the current session.
     /// Note: prompt() is called from the spawned async task that already
     /// has a session via new_session(), so current_session_id is guaranteed Some.
-    pub async fn prompt(&self, text: &str) -> Result<(), String> {
+    pub async fn prompt(
+        &self,
+        content: &peri_agent::messages::MessageContent,
+    ) -> Result<(), String> {
         let session_id = self
             .current_session_id
             .lock()
@@ -238,7 +241,7 @@ impl AcpTuiClient {
             .ok_or("no active session")?;
         let params = json!({
             "sessionId": session_id,
-            "message": { "role": "user", "content": text },
+            "message": { "role": "user", "content": content },
         });
         self.transport
             .send_request("session/prompt", params)

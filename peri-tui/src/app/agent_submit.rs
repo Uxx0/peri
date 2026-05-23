@@ -55,6 +55,20 @@ impl App {
                 ],
             )
         };
+
+        // 构建发送给 LLM 的 MessageContent（含附件图片 blocks）
+        let message_content = if attachments.is_empty() {
+            peri_agent::messages::MessageContent::text(input.clone())
+        } else {
+            let mut blocks = vec![peri_agent::messages::ContentBlock::text(input.clone())];
+            for att in attachments {
+                blocks.push(peri_agent::messages::ContentBlock::image_base64(
+                    &att.media_type,
+                    &att.base64_data,
+                ));
+            }
+            peri_agent::messages::MessageContent::Blocks(blocks)
+        };
         self.session_mgr.sessions[self.session_mgr.active]
             .messages
             .pipeline
@@ -191,7 +205,7 @@ impl App {
             // Clone what we need for the async task
             let acp_client_clone = acp_client.clone();
             let model_clone = self.services.model_name.clone();
-            let input_clone = input.clone();
+            let message_content_clone = message_content.clone();
             let cwd_clone = cwd.clone();
             // 恢复的历史 thread_id：存在时用 load_session 加载历史上下文
             let existing_thread_id = self.session_mgr.sessions[self.session_mgr.active]
@@ -231,7 +245,7 @@ impl App {
                     }
                 }
                 tracing::info!("ACP submit: calling prompt...");
-                match client.prompt(&input_clone).await {
+                match client.prompt(&message_content_clone).await {
                     Ok(()) => tracing::info!("ACP submit: prompt completed"),
                     Err(e) => tracing::error!(error = %e, "ACP submit: prompt FAILED"),
                 }

@@ -187,7 +187,7 @@ pub async fn run_print(
         &provider,
         peri_config_arc,
         &cwd,
-        prompt_text,
+        peri_agent::messages::MessageContent::text(prompt_text),
         None, // no frozen data
         vec![],
         vec![], // incoming_recalls

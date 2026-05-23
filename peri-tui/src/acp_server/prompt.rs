@@ -53,11 +53,10 @@ pub(crate) async fn execute_prompt(
     let message = params
         .get("message")
         .ok_or_else(|| AcpError::new(-32602, "missing message"))?;
-    let content = message
+    let content: peri_agent::messages::MessageContent = message
         .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+        .map(|v| serde_json::from_value(v.clone()).unwrap_or_default())
+        .unwrap_or_default();
 
     // Create cancel token and register in sessions.
     let cancel = AgentCancellationToken::new();

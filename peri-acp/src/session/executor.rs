@@ -16,7 +16,7 @@ use peri_agent::agent::AgentCancellationToken;
 use peri_agent::agent::State;
 use peri_agent::error::AgentError;
 use peri_agent::interaction::UserInteractionBroker;
-use peri_agent::messages::BaseMessage;
+use peri_agent::messages::{BaseMessage, MessageContent};
 use tokio::sync::oneshot;
 use tracing::{debug, error};
 
@@ -90,7 +90,7 @@ pub async fn execute_prompt(
     provider: &LlmProvider,
     peri_config: Arc<crate::provider::PeriConfig>,
     cwd: &str,
-    content: String,
+    content: MessageContent,
     frozen: Option<FrozenSessionData>,
     history: Vec<BaseMessage>,
     incoming_recalls: Vec<String>,
@@ -114,19 +114,18 @@ pub async fn execute_prompt(
     lsp_servers: Vec<peri_lsp::config::LspServerConfig>,
     langfuse_session: Option<Arc<LangfuseSession>>,
 ) -> PromptResult {
-    let trace_input = content.clone();
+    let trace_input = content.text_content();
     let agent_input = if incoming_recalls.is_empty() {
-        peri_agent::agent::react::AgentInput::text(content)
+        peri_agent::agent::react::AgentInput::blocks(content)
     } else {
-        use peri_agent::messages::{ContentBlock, MessageContent};
+        use peri_agent::messages::ContentBlock;
         let reminder_text = format!(
             "<system-reminder>\n{}\n</system-reminder>",
             incoming_recalls.join("\n")
         );
-        peri_agent::agent::react::AgentInput::blocks(MessageContent::blocks(vec![
-            ContentBlock::text(content),
-            ContentBlock::text(reminder_text),
-        ]))
+        let mut blocks = content.content_blocks();
+        blocks.push(ContentBlock::text(reminder_text));
+        peri_agent::agent::react::AgentInput::blocks(MessageContent::blocks(blocks))
     };
 
     // Compact config and context budget (computed once)

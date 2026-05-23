@@ -228,6 +228,7 @@ pub async fn run_acp_stdio(cwd: String) -> anyhow::Result<()> {
         parse_permission_mode,
     };
     use peri_agent::agent::AgentCancellationToken;
+    use peri_agent::messages::{ContentBlock as PeriContentBlock, MessageContent};
 
     let ctx_clone = ctx.clone();
 
@@ -368,13 +369,27 @@ pub async fn run_acp_stdio(cwd: String) -> anyhow::Result<()> {
                 let ctx = ctx_clone.clone();
                 async move |req: PromptRequest, responder, cx: ConnectionTo<Client>| {
                     let sid = req.session_id.0.to_string();
-                    let content: String = req.prompt.iter().filter_map(|b| {
-                        if let agent_client_protocol::schema::ContentBlock::Text(t) = b {
-                            Some(t.text.as_str())
+                    // Convert ACP SDK ContentBlocks to peri-agent MessageContent
+                    let content = if req.prompt.is_empty() {
+                        MessageContent::text("")
+                    } else {
+                        let blocks: Vec<PeriContentBlock> = req.prompt.iter().filter_map(|b| {
+                            match b {
+                                agent_client_protocol::schema::ContentBlock::Text(t) => {
+                                    Some(PeriContentBlock::text(&t.text))
+                                }
+                                agent_client_protocol::schema::ContentBlock::Image(img) => {
+                                    Some(PeriContentBlock::image_base64(&img.mime_type, &img.data))
+                                }
+                                _ => None, // Audio/ResourceLink/Resource not supported yet
+                            }
+                        }).collect();
+                        if blocks.is_empty() {
+                            MessageContent::text("")
                         } else {
-                            None
+                            MessageContent::Blocks(blocks)
                         }
-                    }).collect::<Vec<&str>>().join("");
+                    };
 
                     // --- capture session-scoped data under the read lock ---
                     let (agent_cwd, history, is_empty_history, thread_id, frozen) = {
