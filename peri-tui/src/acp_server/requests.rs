@@ -71,6 +71,7 @@ pub(crate) async fn handle_request(
                     frozen_claude_local_md: None,
                     frozen_skill_summary: None,
                     frozen_date: None,
+                    recall_items: Vec::new(),
                 },
             );
 
@@ -260,6 +261,7 @@ pub(crate) async fn handle_request(
                         frozen_claude_local_md: None,
                         frozen_skill_summary: None,
                         frozen_date: None,
+                        recall_items: Vec::new(),
                     },
                 );
             }
@@ -365,6 +367,7 @@ pub(crate) async fn handle_request(
                         frozen_claude_local_md: None,
                         frozen_skill_summary: None,
                         frozen_date: None,
+                        recall_items: Vec::new(),
                     },
                 );
                 info!(session_id = %req_session_id, "Session resumed (new)");
@@ -410,6 +413,7 @@ pub(crate) async fn handle_request(
                     frozen_claude_local_md: None,
                     frozen_skill_summary: None,
                     frozen_date: None,
+                    recall_items: Vec::new(),
                 },
             );
 

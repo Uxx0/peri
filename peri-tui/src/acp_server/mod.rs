@@ -49,6 +49,8 @@ pub(crate) struct SessionState {
     pub(crate) frozen_claude_local_md: Option<String>,
     pub(crate) frozen_skill_summary: Option<String>,
     pub(crate) frozen_date: Option<String>,
+    /// Recall items from previous turn (injected as <system-reminder> in next user message).
+    pub(crate) recall_items: Vec<String>,
 }
 
 // ── Server config ────────────────────────────────────────────────────────────

@@ -80,10 +80,11 @@ pub(crate) async fn execute_prompt(
         frozen_claude_local_md,
         frozen_skill_summary,
         frozen_date,
+        incoming_recalls,
     ) = {
-        let sessions = sessions.lock().await;
+        let mut sessions = sessions.lock().await;
         let state = sessions
-            .get(&session_id)
+            .get_mut(&session_id)
             .ok_or_else(|| AcpError::new(-32602, "session not found"))?;
         (
             state.cwd.clone(),
@@ -95,6 +96,7 @@ pub(crate) async fn execute_prompt(
             state.frozen_claude_local_md.clone(),
             state.frozen_skill_summary.clone(),
             state.frozen_date.clone(),
+            std::mem::take(&mut state.recall_items),
         )
     };
     let history_len = history.len();
@@ -123,7 +125,7 @@ pub(crate) async fn execute_prompt(
         content,
         frozen,
         history,
-        vec![], // incoming_recalls
+        incoming_recalls,
         is_empty,
         permission_mode.clone(),
         event_sink,
@@ -157,6 +159,7 @@ pub(crate) async fn execute_prompt(
                 }
             }
             state.history = result.messages;
+            state.recall_items = result.recall_items;
             state.cancel_token = None;
         }
     }
