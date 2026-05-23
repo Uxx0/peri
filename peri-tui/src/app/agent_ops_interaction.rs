@@ -267,8 +267,9 @@ fn extract_option_descriptions(
 ) -> Vec<Option<String>> {
     let container_key = if is_multi { "anyOf" } else { "oneOf" };
     let Some(arr) = params
-        .get("mode")
-        .and_then(|m| m.get("requestedSchema"))
+        // 对齐 transport_broker::inject_option_descriptions 的 JSON 路径：
+        // requestedSchema 在顶层，不在 mode 下面（mode 是 serde flatten 的字符串 "form"）
+        .get("requestedSchema")
         .and_then(|s| s.get("properties"))
         .and_then(|p| p.get(prop_id))
         .and_then(|prop| {

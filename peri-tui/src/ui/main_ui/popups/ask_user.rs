@@ -143,6 +143,9 @@ pub(crate) fn render_ask_user_popup(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    // 自定义输入前加空行分隔
+    lines.push(Line::from(""));
+
     // 自定义输入作为最后一个编号选项
     {
         let custom_num = option_count + 1;
