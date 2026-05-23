@@ -126,12 +126,10 @@ pub(super) fn messages_to_json(adapter: &ChatOpenAI, messages: &[BaseMessage]) -
                     content_to_openai(content, adapter.supports_thinking_content);
 
                 // 所有 assistant 消息都包含 reasoning_content 字段，确保 thinking 内容跨轮次不丢失
-                // 同时设置 reasoning 字段（GLM 系列模型使用此字段名）
                 if tool_calls.is_empty() {
                     let mut msg = json!({ "role": "assistant", "content": serialized_content });
                     let reasoning_val = json!(reasoning_text.as_deref().unwrap_or(""));
-                    msg["reasoning_content"] = reasoning_val.clone();
-                    msg["reasoning"] = reasoning_val;
+                    msg["reasoning_content"] = reasoning_val;
                     result.push(msg);
                 } else {
                     let tcs: Vec<Value> = tool_calls
@@ -153,8 +151,7 @@ pub(super) fn messages_to_json(adapter: &ChatOpenAI, messages: &[BaseMessage]) -
                         "tool_calls": tcs
                     });
                     let reasoning_val = json!(reasoning_text.as_deref().unwrap_or(""));
-                    msg["reasoning_content"] = reasoning_val.clone();
-                    msg["reasoning"] = reasoning_val;
+                    msg["reasoning_content"] = reasoning_val;
                     result.push(msg);
                 }
             }
@@ -381,7 +378,8 @@ pub(super) fn build_request_body(
         "stream": streaming
     });
 
-    if streaming {
+    // Qwen 兼容 API 需要通过 stream_options.include_usage 在流式末尾获取 Token 消耗
+    if streaming && adapter.model.to_lowercase().contains("qwen") {
         body["stream_options"] = json!({"include_usage": true});
     }
 
@@ -403,6 +401,11 @@ pub(super) fn build_request_body(
     // DeepSeek thinking 模式（deepseek-v4-pro 等）
     if adapter.thinking_enabled {
         body["thinking"] = json!({ "type": "enabled" });
+        // kimi k2.6 不支持 thinking 和 reasoning_effort 同时出现
+        if adapter.model.to_lowercase().contains("kimi") {
+            body.as_object_mut()
+                .and_then(|b| b.remove("reasoning_effort"));
+        }
     }
 
     // LiteLLM session tracking：通过 metadata.session_id 按 session 聚合多次请求

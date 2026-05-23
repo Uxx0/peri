@@ -132,39 +132,20 @@ fn test_malformed_tool_args_preserved() {
     );
 }
 
-/// context_window: gpt-4 系列应返回 128K
+/// context_window: 所有模型统一返回 200K
 #[test]
-fn test_context_window_gpt4() {
-    let llm = ChatOpenAI::new("sk-test", "gpt-4o");
-    assert_eq!(llm.context_window_inner(), 128_000);
-}
-
-/// context_window: gpt-3.5-turbo 应返回 16K
-#[test]
-fn test_context_window_gpt35() {
-    let llm = ChatOpenAI::new("sk-test", "gpt-3.5-turbo");
-    assert_eq!(llm.context_window_inner(), 16_385);
-}
-
-/// context_window: o1 系列应返回 200K
-#[test]
-fn test_context_window_o1() {
-    let llm = ChatOpenAI::new("sk-test", "o1-preview");
-    assert_eq!(llm.context_window_inner(), 200_000);
-}
-
-/// context_window: deepseek 系列应返回 128K
-#[test]
-fn test_context_window_deepseek() {
-    let llm = ChatOpenAI::new("sk-test", "deepseek-r1");
-    assert_eq!(llm.context_window_inner(), 128_000);
-}
-
-/// context_window: 未知模型回退默认 200K
-#[test]
-fn test_context_window_unknown() {
-    let llm = ChatOpenAI::new("sk-test", "custom-model");
-    assert_eq!(llm.context_window_inner(), 200_000);
+fn test_context_window_all_models() {
+    for model in &[
+        "gpt-4o",
+        "gpt-3.5-turbo",
+        "o1-preview",
+        "deepseek-r1",
+        "custom-model",
+        "o3-mini",
+    ] {
+        let llm = ChatOpenAI::new("sk-test", *model);
+        assert_eq!(llm.context_window_inner(), 200_000, "model={model}");
+    }
 }
 
 // ── Builder method tests ──
@@ -234,13 +215,6 @@ fn test_new_default_no_reasoning_effort() {
     let llm = ChatOpenAI::new("key", "gpt-4o");
     assert!(llm.reasoning_effort.is_none());
     assert_eq!(llm.base_url, "https://api.openai.com/v1");
-}
-
-/// context_window: o3 系列应返回 200K
-#[test]
-fn test_context_window_o3() {
-    let llm = ChatOpenAI::new("sk-test", "o3-mini");
-    assert_eq!(llm.context_window_inner(), 200_000);
 }
 
 /// 验证多轮 tool call 对话的消息序列：每个 tool 消息前面必须是 assistant with tool_calls

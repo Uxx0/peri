@@ -85,6 +85,12 @@ scripts/start-relay.sh               # 启动 Relay Server（端口 8080）
 
 **[TRAP]** DeepSeek `unknown variant 'thinking'`：不要把 `Reasoning` block 序列化为 `{"type":"thinking"}` 发给不支持的 provider。**[TRAP]** `reasoning_content must be passed back`：过滤 `Reasoning` 时必须同时作为顶层字段回传。两个陷阱互相关联。（详见 spec/global/domains/agent.md#issue_2026-05-12-glm-reasoning-field-not-parsed，spec/global/domains/agent.md#issue_2026-05-14-deepseek-anthropic-thinking-block-dropped，spec/global/domains/agent.md#issue_2026-05-12-thinking-reasoning-dataflow-issues）
 
+**OpenAI 兼容适配层 Provider 特定处理**（`invoke.rs` `build_request_body`/`messages_to_json`）：
+
+- **`reasoning` 字段已移除**：`messages_to_json` 中 assistant 消息仅回传 `reasoning_content`（OpenAI 标准字段），不再同时设置 `reasoning`。GLM 等需要 `reasoning` 字段的模型在接收端（`parse_assistant_message`）仍兼容双字段解析。
+- **`stream_options` 仅 Qwen**：`stream_options.include_usage` 仅在模型名含 `qwen` 时发送（Qwen API 需要此字段在流式末尾返回 usage），其他 provider 不发送。
+- **Kimi thinking/reasoning_effort 互斥**：Kimi k2.6 不支持 `thinking` 和 `reasoning_effort` 同时出现（400 Bad Request）。当 `thinking_enabled` 为 true 且模型名含 `kimi` 时，请求体中移除 `reasoning_effort`。
+
 ## 系统提示词稳定性（第一优先级）
 
 **[原则] 系统提示词稳定性是第一优先级**：会话开始后，系统提示词必须完全稳定、不可变更。任何在会话进行中修改系统提示词的行为（包括通过 runtime config、模型切换、技能加载、中间件注入等方式间接改变其内容）都是禁止的。系统提示词内容的任何变化都会导致 Prompt Cache 失效、模型行为漂移，严重影响会话质量。

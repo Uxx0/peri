@@ -99,19 +99,6 @@ impl ChatOpenAI {
 
     /// 模型的上下文窗口大小（token 数），作为固有方法提供给 BaseModel 和 ReactLLM trait
     fn context_window_inner(&self) -> u32 {
-        let model = self.model.to_lowercase();
-        if model.contains("gpt-4") {
-            return 128_000;
-        }
-        if model.starts_with("o1") || model.starts_with("o3") {
-            return 200_000;
-        }
-        if model.contains("gpt-3.5") {
-            return 16_385;
-        }
-        if model.starts_with("deepseek") {
-            return 128_000;
-        }
         200_000
     }
 
