@@ -350,3 +350,15 @@ fn test_preserved_system_messages_keep_original_ids() {
         "第二个 System 消息应保留原始 ID"
     );
 }
+
+#[test]
+fn test_compact_middleware_reset_micro_compact_flag() {
+    let mw = make_middleware();
+    // 设置标志为 true
+    mw.micro_compact_done.store(true, Ordering::SeqCst);
+    assert!(mw.micro_compact_done.load(Ordering::SeqCst));
+
+    // reset 后应恢复为 false
+    mw.reset();
+    assert!(!mw.micro_compact_done.load(Ordering::SeqCst));
+}

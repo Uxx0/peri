@@ -86,6 +86,12 @@ impl CompactMiddleware {
             || !self.config.auto_compact_enabled
     }
 
+    /// Reset per-turn state for reuse across prompts.
+    pub fn reset(&self) {
+        self.micro_compact_done
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
     fn send_event(&self, event: ExecutorEvent) {
         if let Some(tx) = self.event_tx.lock().unwrap().as_ref() {
             let _ = tx.send(event);

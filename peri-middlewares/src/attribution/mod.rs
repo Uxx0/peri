@@ -49,9 +49,14 @@ impl GitAttributionMiddleware {
         AttributionState::new(model_name.to_string()).co_authored_by()
     }
 
-    /// 获取当前 attribution text（用于调试）
+    /// 获取当前 attribution text��用于调试）
     pub fn current_attribution_text(&self) -> String {
         self.state.lock().unwrap().co_authored_by()
+    }
+
+    /// Clear per-turn state for reuse across prompts.
+    pub fn reset(&self) {
+        self.pending_old_content.lock().unwrap().clear();
     }
 }
 
@@ -112,5 +117,29 @@ impl<S: State> Middleware<S> for GitAttributionMiddleware {
     async fn before_agent(&self, _state: &mut S) -> AgentResult<()> {
         // Attribution 指令已在 system prompt 中注入，无需再向消息历史写入。
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_git_attribution_reset_clears_pending() {
+        let mw = GitAttributionMiddleware::new("test-model");
+        // 插入一些待处理内容
+        mw.pending_old_content
+            .lock()
+            .unwrap()
+            .insert("file1.rs".to_string(), "old content".to_string());
+        mw.pending_old_content
+            .lock()
+            .unwrap()
+            .insert("file2.rs".to_string(), "more content".to_string());
+        assert_eq!(mw.pending_old_content.lock().unwrap().len(), 2);
+
+        // reset 后应清空
+        mw.reset();
+        assert!(mw.pending_old_content.lock().unwrap().is_empty());
     }
 }
