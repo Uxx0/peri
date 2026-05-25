@@ -204,3 +204,121 @@
             "Tool 结果应包含 skill 全文内容"
         );
     }
+
+    #[tokio::test]
+    async fn test_auto_detect_skill_from_human_message() {
+        // Arrange: 模拟主 Agent 场景——skill_names 为空，但 state 中有包含 /skill-name 的 Human 消息
+        let dir = tempdir().unwrap();
+        let skills_dir = dir.path().join(".claude").join("skills");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        // 使用不与全局 ~/.claude/skills/ 冲突的名称
+        write_skill(&skills_dir, "test-diagnose-auto", "自动检测技能");
+
+        let mw = SkillPreloadMiddleware::new(vec![], dir.path().to_str().unwrap());
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        // 模拟 executor 添加用户消息
+        state.add_message(BaseMessage::human("帮我用 /test-diagnose-auto 调试一下"));
+
+        // Act
+        mw.before_agent(&mut state).await.unwrap();
+
+        // Assert: 应自动检测并注入 Ai + Tool = 2 条消息，加上原始 Human 消息共 3 条
+        assert_eq!(state.messages().len(), 3, "应注入 2 条消息（Ai + Tool），加上原始 Human 消息共 3 条");
+        assert!(matches!(&state.messages()[0], BaseMessage::Human { .. }), "第一条应为 Human");
+        assert!(
+            matches!(&state.messages()[1], BaseMessage::Ai { .. }),
+            "第二条应为 Ai（fake Read）"
+        );
+        assert!(
+            matches!(&state.messages()[2], BaseMessage::Tool { .. }),
+            "第三条应为 Tool（skill 内容）"
+        );
+        let tool_content = state.messages()[2].content();
+        assert!(
+            tool_content.contains("Skill content for test-diagnose-auto"),
+            "Tool 结果应包含 skill 全文"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auto_detect_multiple_skills() {
+        let dir = tempdir().unwrap();
+        let skills_dir = dir.path().join(".claude").join("skills");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        write_skill(&skills_dir, "skill-a", "技能 A");
+        write_skill(&skills_dir, "skill-b", "技能 B");
+
+        let mw = SkillPreloadMiddleware::new(vec![], dir.path().to_str().unwrap());
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        state.add_message(BaseMessage::human("/skill-a /skill-b 帮我看看"));
+
+        mw.before_agent(&mut state).await.unwrap();
+
+        // 1 Human + 1 Ai + 2 Tool = 4 条
+        assert_eq!(state.messages().len(), 4, "2 个 skill 应注入 Ai + 2 Tool = 3 条，加 Human 共 4 条");
+        assert_eq!(state.messages()[1].tool_calls().len(), 2, "Ai 消息应有 2 个 ToolUse");
+    }
+
+    #[tokio::test]
+    async fn test_auto_detect_no_matching_skill() {
+        let dir = tempdir().unwrap();
+        // 不创建任何 skill 文件
+
+        let mw = SkillPreloadMiddleware::new(vec![], dir.path().to_str().unwrap());
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        state.add_message(BaseMessage::human("/nonexistent-skill 不存在"));
+
+        mw.before_agent(&mut state).await.unwrap();
+
+        // 只有原始 Human 消息，无注入
+        assert_eq!(state.messages().len(), 1, "找不到 skill 时不应注入任何消息");
+    }
+
+    #[tokio::test]
+    async fn test_auto_detect_no_human_message() {
+        let dir = tempdir().unwrap();
+        let mw = SkillPreloadMiddleware::new(vec![], dir.path().to_str().unwrap());
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        // 不添加任何消息
+
+        mw.before_agent(&mut state).await.unwrap();
+
+        assert_eq!(state.messages().len(), 0, "无 Human 消息时应 no-op");
+    }
+
+    #[test]
+    fn test_extract_skill_names_basic() {
+        let names = extract_skill_names_from_text("/diagnose");
+        assert_eq!(names, vec!["diagnose"]);
+    }
+
+    #[test]
+    fn test_extract_skill_names_multiple() {
+        let names = extract_skill_names_from_text("/diagnose /fix-issue /caveman");
+        assert_eq!(names, vec!["diagnose", "fix-issue", "caveman"]);
+    }
+
+    #[test]
+    fn test_extract_skill_names_in_sentence() {
+        let names = extract_skill_names_from_text("帮我用 /diagnose 调试一下这个问题");
+        assert_eq!(names, vec!["diagnose"]);
+    }
+
+    #[test]
+    fn test_extract_skill_names_no_match() {
+        let names = extract_skill_names_from_text("普通消息没有 skill");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_extract_skill_names_slash_only() {
+        let names = extract_skill_names_from_text("/");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_extract_skill_names_rejects_path_like() {
+        // /foo/bar is one whitespace token; "foo/bar" contains '/' → rejected
+        let names = extract_skill_names_from_text("/foo/bar");
+        assert!(names.is_empty(), "/foo/bar 含 '/' 应被整体拒绝");
+    }

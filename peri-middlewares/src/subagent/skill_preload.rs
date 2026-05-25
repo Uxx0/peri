@@ -8,6 +8,31 @@ use peri_agent::middleware::r#trait::Middleware;
 
 use crate::skills::{list_skills, load_global_skills_dir};
 
+/// 从文本中提取 `/skill-name` 模式的 skill 名称
+///
+/// 支持格式：
+/// - `/skill-name` — 单个 skill
+/// - `/skill-a /skill-b` — 多个 skill（空格分隔）
+/// - 消息中任意位置出现即可（不限于行首）
+///
+/// 仅匹配由 `/` 开头、后跟 `[a-zA-Z0-9_-]` 的 token。
+pub fn extract_skill_names_from_text(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .filter_map(|word| {
+            let name = word.strip_prefix('/')?;
+            if !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// SkillPreloadMiddleware - 将指定 skill 全文以 fake Read 工具调用注入到 agent state
 ///
 /// 在 `before_agent` 时，根据 `skill_names` 列表找到对应 SKILL.md 文件，
@@ -68,12 +93,29 @@ impl<S: State> Middleware<S> for SkillPreloadMiddleware {
     }
 
     async fn before_agent(&self, state: &mut S) -> AgentResult<()> {
-        if self.skill_names.is_empty() {
+        // 确定要预加载的 skill 名称列表
+        let skill_names = if !self.skill_names.is_empty() {
+            // SubAgent 路径：使用构造时传入的显式列表
+            self.skill_names.clone()
+        } else {
+            // 主 Agent 路径：从最后一条 Human 消息中自动检测 /skill-name token
+            let last_human = state
+                .messages()
+                .iter()
+                .rev()
+                .find(|m| matches!(m, BaseMessage::Human { .. }));
+            match last_human {
+                Some(msg) => extract_skill_names_from_text(&msg.content()),
+                None => return Ok(()),
+            }
+        };
+
+        if skill_names.is_empty() {
             return Ok(());
         }
 
         let dirs = self.resolve_dirs();
-        let names_lower: Vec<String> = self.skill_names.iter().map(|s| s.to_lowercase()).collect();
+        let names_lower: Vec<String> = skill_names.iter().map(|s| s.to_lowercase()).collect();
 
         // 在 blocking 线程中扫描目录 + 读取文件内容
         let skill_contents = tokio::task::spawn_blocking(move || {
