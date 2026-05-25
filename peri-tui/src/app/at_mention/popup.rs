@@ -89,7 +89,7 @@ fn truncate_middle(path: &str, max_width: usize) -> String {
     let remaining = max_width - sep_width;
 
     // 前半部分取 ceil(remaining/2) 列宽，后半取 floor(remaining/2)
-    let head_width = (remaining + 1) / 2;
+    let head_width = remaining.div_ceil(2);
     let tail_width = remaining - head_width;
 
     let head: String = take_width(path, head_width);

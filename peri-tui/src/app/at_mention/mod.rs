@@ -19,6 +19,12 @@ pub struct AtMentionState {
     pub cancel_token: Option<CancellationToken>,
 }
 
+impl Default for AtMentionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AtMentionState {
     pub fn new() -> Self {
         Self {
