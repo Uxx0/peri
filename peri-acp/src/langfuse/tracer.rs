@@ -50,6 +50,12 @@ pub struct LangfuseTracer {
     /// SubAgent 栈：保存当前活动的 subagent observation IDs
     /// 支持 subagent 嵌套调用（subagent 中再调用 subagent）
     pub(crate) subagent_stack: Vec<SubAgentContext>,
+    /// Compact Span 上下文（非 None 表示正在 compact 操作中）
+    compact_span: Option<CompactSpanContext>,
+    /// 当前活跃的 LLM step 编号（用于将 LlmRetrying 关联到正确 generation）
+    active_step: Option<usize>,
+    /// 当前 step 的 LLM 重试记录（每次 on_llm_start 清空）
+    retry_attempts: Vec<RetryAttempt>,
 }
 
 /// SubAgent 追踪上下文
@@ -70,6 +76,22 @@ pub(crate) struct SubAgentContext {
     pub(crate) pending_tools: HashMap<String, PendingTool>,
 }
 
+/// Compact Span 上下文（CompactStarted → CompactCompleted/Error 期间存续）
+pub(crate) struct CompactSpanContext {
+    /// Compact Span 的 Observation ID
+    pub(crate) span_id: String,
+    /// Compact 开始时间
+    pub(crate) start_time: String,
+}
+
+/// 单次 LLM 重试记录
+pub(crate) struct RetryAttempt {
+    pub(crate) attempt: usize,
+    pub(crate) max_attempts: usize,
+    pub(crate) delay_ms: u64,
+    pub(crate) error: String,
+}
+
 impl LangfuseTracer {
     /// 从共享 Session 构造 per-turn Tracer
     pub fn new(session: Arc<LangfuseSession>, session_id: String) -> Self {
@@ -85,6 +107,9 @@ impl LangfuseTracer {
             tools_batch_end_time: None,
             final_answer: String::new(),
             subagent_stack: Vec::new(),
+            compact_span: None,
+            active_step: None,
+            retry_attempts: Vec::new(),
         }
     }
 
@@ -327,6 +352,8 @@ impl LangfuseTracer {
             step,
             (gen_id, messages.to_vec(), tools.to_vec(), start_time),
         );
+        self.active_step = Some(step);
+        self.retry_attempts.clear();
     }
 
     /// LLM 调用结束：同步创建 Generation 事件
@@ -379,6 +406,29 @@ impl LangfuseTracer {
             map
         });
 
+        let gen_metadata = if self.retry_attempts.is_empty() {
+            None
+        } else {
+            let retries: Vec<serde_json::Value> = self
+                .retry_attempts
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "attempt": r.attempt,
+                        "max_attempts": r.max_attempts,
+                        "delay_ms": r.delay_ms,
+                        "error": r.error,
+                    })
+                })
+                .collect();
+            Some(serde_json::json!({
+                "retry_count": self.retry_attempts.len(),
+                "retries": retries,
+            }))
+        };
+        self.active_step = None;
+        self.retry_attempts.clear();
+
         let body = GenerationBody {
             id: Some(gen_id.clone()),
             trace_id: Some(self.trace_id.clone()),
@@ -398,7 +448,7 @@ impl LangfuseTracer {
             id: gen_id.clone(),
             timestamp: end_time,
             body,
-            metadata: None,
+            metadata: gen_metadata,
         };
         if let Err(e) = self.session.batcher.try_add(event) {
             tracing::warn!(error = %e, trace_id = %self.trace_id, gen_id = %gen_id, "langfuse: generation 入队失败（背压丢弃）");
@@ -522,6 +572,148 @@ impl LangfuseTracer {
         // 重新获取可变借用
         let (_, _, end_time_ref, _) = self.current_tools_context();
         *end_time_ref = Some(end_time);
+    }
+
+    /// LLM 重试：记录重试信息，最终在 on_llm_end 时写入 Generation metadata
+    pub fn on_llm_retrying(
+        &mut self,
+        attempt: usize,
+        max_attempts: usize,
+        delay_ms: u64,
+        error: &str,
+    ) {
+        self.retry_attempts.push(RetryAttempt {
+            attempt,
+            max_attempts,
+            delay_ms,
+            error: error.to_string(),
+        });
+    }
+
+    /// Compact 开始：创建 compact Span（子 span 挂载到当前 agent observation）
+    pub fn on_compact_start(&mut self) {
+        let span_id = uuid::Uuid::now_v7().to_string();
+        let start_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+        let body = SpanBody {
+            id: Some(span_id.clone()),
+            trace_id: Some(self.trace_id.clone()),
+            name: Some("compact".to_string()),
+            start_time: Some(start_time.clone()),
+            end_time: None,
+            parent_observation_id: Some(self.current_agent_id()),
+            input: None,
+            output: None,
+            status_message: None,
+            metadata: None,
+            level: None,
+            version: Some(VERSION.to_string()),
+            environment: None,
+            session_id: Some(self.session_id.clone()),
+        };
+        let event = IngestionEvent::SpanCreate {
+            id: uuid::Uuid::now_v7().to_string(),
+            timestamp: start_time.clone(),
+            body,
+            metadata: None,
+        };
+        if let Err(e) = self.session.batcher.try_add(event) {
+            tracing::warn!(error = %e, trace_id = %self.trace_id, "langfuse: compact span 入队失败（背压丢弃）");
+        }
+
+        self.compact_span = Some(CompactSpanContext {
+            span_id,
+            start_time,
+        });
+    }
+
+    /// Compact 完成/错误：更新 compact Span 的 output + end_time（或 error status）
+    ///
+    /// `summary`: full compact 时为摘要文本，micro compact 时为空
+    /// `files_count`: 保留的文件数量
+    /// `skills_count`: 保留的 Skill 数量
+    /// `micro_cleared`: >0 表示 micro compact（清除的工具结果数）
+    /// `is_error`: 是否为压缩失败
+    /// `error_message`: 失败时的错误信息
+    pub fn on_compact_end(
+        &mut self,
+        summary: &str,
+        files_count: usize,
+        skills_count: usize,
+        micro_cleared: usize,
+        is_error: bool,
+        error_message: &str,
+    ) {
+        let Some(ctx) = self.compact_span.take() else {
+            return;
+        };
+        let end_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+        let compact_type = if micro_cleared > 0 { "micro" } else { "full" };
+        let summary_preview: String = summary.chars().take(200).collect();
+
+        let output = if is_error {
+            serde_json::json!({
+                "type": compact_type,
+                "error": error_message,
+            })
+        } else if micro_cleared > 0 {
+            serde_json::json!({
+                "type": compact_type,
+                "micro_cleared": micro_cleared,
+            })
+        } else {
+            serde_json::json!({
+                "type": compact_type,
+                "summary": summary_preview,
+                "files_count": files_count,
+                "skills_count": skills_count,
+            })
+        };
+
+        let status_message = if is_error {
+            Some(if error_message.is_empty() {
+                "error".to_string()
+            } else {
+                error_message.to_string()
+            })
+        } else {
+            None
+        };
+
+        let body = SpanBody {
+            id: Some(ctx.span_id),
+            trace_id: Some(self.trace_id.clone()),
+            name: Some("compact".to_string()),
+            start_time: Some(ctx.start_time),
+            end_time: Some(end_time.clone()),
+            parent_observation_id: Some(self.current_agent_id()),
+            input: None,
+            output: Some(output),
+            status_message,
+            metadata: if !is_error && micro_cleared == 0 {
+                Some(serde_json::json!({
+                    "summary_full": summary,
+                    "files_count": files_count,
+                    "skills_count": skills_count,
+                }))
+            } else {
+                None
+            },
+            level: None,
+            version: Some(VERSION.to_string()),
+            environment: None,
+            session_id: Some(self.session_id.clone()),
+        };
+        let event = IngestionEvent::SpanUpdate {
+            id: uuid::Uuid::now_v7().to_string(),
+            timestamp: end_time,
+            body,
+            metadata: None,
+        };
+        if let Err(e) = self.session.batcher.try_add(event) {
+            tracing::warn!(error = %e, trace_id = %self.trace_id, "langfuse: compact span 更新入队失败（背压丢弃）");
+        }
     }
 
     /// 对话轮次结束：更新 agent-run Observation 输出和结束时间，并强制 flush。

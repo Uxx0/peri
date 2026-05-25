@@ -224,6 +224,38 @@ pub async fn execute_prompt(
                     ExecutorEvent::TextChunk { chunk, .. } => {
                         tracer.lock().on_text_chunk(chunk);
                     }
+                    ExecutorEvent::LlmRetrying {
+                        attempt,
+                        max_attempts,
+                        delay_ms,
+                        error,
+                    } => {
+                        tracer
+                            .lock()
+                            .on_llm_retrying(*attempt, *max_attempts, *delay_ms, error);
+                    }
+                    ExecutorEvent::CompactStarted => {
+                        tracer.lock().on_compact_start();
+                    }
+                    ExecutorEvent::CompactCompleted {
+                        summary,
+                        files,
+                        skills,
+                        micro_cleared,
+                        ..
+                    } => {
+                        tracer.lock().on_compact_end(
+                            summary,
+                            files.len(),
+                            skills.len(),
+                            *micro_cleared,
+                            false,
+                            "",
+                        );
+                    }
+                    ExecutorEvent::CompactError { message } => {
+                        tracer.lock().on_compact_end("", 0, 0, 0, true, message);
+                    }
                     _ => {}
                 }
             }

@@ -205,3 +205,94 @@ async fn test_concurrent_subagents_independent_context() {
     assert!(tracer.subagent_stack.is_empty());
     assert_eq!(tracer.current_agent_id(), main_id);
 }
+
+// === Test 10: Compact 生命周期——full compact 正常完成 ===
+#[tokio::test]
+async fn test_compact_full_lifecycle() {
+    let mut tracer = make_tracer();
+
+    // Compact 开始前 compact_span 为空
+    assert!(tracer.compact_span.is_none());
+
+    tracer.on_compact_start();
+    assert!(tracer.compact_span.is_some());
+
+    tracer.on_compact_end("这是摘要内容", 3, 2, 0, false, "");
+    // 完成后 compact_span 被清空
+    assert!(tracer.compact_span.is_none());
+}
+
+// === Test 11: Compact 生命周期——错误路径 ===
+#[tokio::test]
+async fn test_compact_error_lifecycle() {
+    let mut tracer = make_tracer();
+
+    tracer.on_compact_start();
+    assert!(tracer.compact_span.is_some());
+
+    tracer.on_compact_end("", 0, 0, 0, true, "LLM 调用超时");
+    assert!(tracer.compact_span.is_none());
+}
+
+// === Test 12: Compact 生命周期——micro compact ===
+#[tokio::test]
+async fn test_compact_micro_lifecycle() {
+    let mut tracer = make_tracer();
+
+    // micro compact 不使用 on_compact_start（由 CompactCompleted 直接携带 micro_cleared）
+    // 但 on_compact_end 仍能正确识别
+    tracer.on_compact_end("", 0, 0, 8, false, "");
+    assert!(tracer.compact_span.is_none());
+}
+
+// === Test 13: LlmRetrying 累积 → generation metadata ===
+#[tokio::test]
+async fn test_llm_retry_accumulates_to_metadata() {
+    let mut tracer = make_tracer();
+
+    // 第一轮 LLM 调用，无重试
+    tracer.on_llm_start(0, &[], &[]);
+    assert!(tracer.retry_attempts.is_empty());
+    tracer.on_llm_end(0, "gpt-4o", "OpenAI", "result", None);
+    assert!(tracer.retry_attempts.is_empty());
+    assert!(tracer.active_step.is_none());
+
+    // 第二轮 LLM 调用，有 2 次重试
+    tracer.on_llm_start(1, &[], &[]);
+    assert_eq!(tracer.active_step, Some(1));
+    assert!(tracer.retry_attempts.is_empty());
+
+    tracer.on_llm_retrying(1, 3, 200, "timeout");
+    tracer.on_llm_retrying(2, 3, 400, "rate_limit");
+    assert_eq!(tracer.retry_attempts.len(), 2);
+    assert_eq!(tracer.retry_attempts[0].attempt, 1);
+    assert_eq!(tracer.retry_attempts[1].error, "rate_limit");
+
+    // on_llm_end 后重试记录被清空，active_step 重置
+    tracer.on_llm_end(1, "gpt-4o", "OpenAI", "result after retry", None);
+    assert!(tracer.retry_attempts.is_empty());
+    assert!(tracer.active_step.is_none());
+}
+
+// === Test 14: on_llm_start 清空上一轮的 retry_attempts ===
+#[tokio::test]
+async fn test_llm_start_clears_retry_attempts() {
+    let mut tracer = make_tracer();
+
+    tracer.on_llm_start(0, &[], &[]);
+    tracer.on_llm_retrying(1, 3, 100, "error");
+    assert_eq!(tracer.retry_attempts.len(), 1);
+
+    // 新一轮 LLM 调用清空 retry_attempts
+    tracer.on_llm_start(1, &[], &[]);
+    assert!(tracer.retry_attempts.is_empty());
+    assert_eq!(tracer.active_step, Some(1));
+}
+
+// === Test 15: on_compact_end 无 compact span 时静默返回 ===
+#[tokio::test]
+async fn test_compact_end_without_start_no_panic() {
+    let mut tracer = make_tracer();
+    tracer.on_compact_end("summary", 1, 0, 0, false, "");
+    // 不应 panic
+}
