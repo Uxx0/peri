@@ -356,7 +356,7 @@ session/new → chrono::Local::now() → frozen_date
 | `peri-tui/src/cli_plugin.rs` | plugin list/install/uninstall 子命令实现 |
 | `peri-tui/src/cli_integration_test.rs` | CLI 参数解析集成测试（9 个） |
 
-运行时 `Shift+Tab` 切换权限模式，`Alt+M` 切换模型。支持多 session 分屏。
+运行时 `Shift+Tab` 切换权限模式，`Ctrl+T` 切换模型，`Ctrl+Shift+T` 切换 Provider。支持多 session 分屏。
 
 ## 编码规范
 
@@ -371,6 +371,7 @@ session/new → chrono::Local::now() → frozen_date
 - 终端列宽用 `unicode-width` crate（CJK 占 2 列）
 - **终端 UI 鼠标坐标转换**：鼠标事件坐标是显示列（unicode-width），光标位置是字符索引，需逐字符累加转换。Block padding/border 和水平滚动也要纳入偏移计算。（详见 spec/global/domains/tui.md#issue_2026-05-12-textarea-mouse-click-cursor-misposition-cjk）
 - **快捷键设计**：禁止 `Shift+字母`（编辑态等同大写输入）。全局用 `Ctrl+字母`，面板用方向键/Space/Enter/Esc。
+- **快捷键跨平台兼容 [TRAP]**：`Alt+Enter`/`Alt+M`/`Alt+Shift+M` 在 Windows 终端被截获（Alt+Enter 触发全屏切换、Alt 激活菜单栏），应用无法收到事件。新增快捷键必须优先用 `Ctrl+字母`，避免 `Alt` 修饰键。macOS Option 键产生组合字符（如 Option+M → `µ`），`KeyBinding` 系统通过 `macos_char` 字段兼容两种路径。快捷键标签在 UI 中统一用 `Ctrl+字母` 形式，不按平台差异化显示。
 - **面板系统**：`PanelManager` + `PanelComponent` trait（`panel_manager.rs`/`panel_component.rs`），新增面板只需定义变体 + 实现 trait。面板内禁止渲染提示行，由 `status_bar_hints()` 统一描述。面板内列表组件使用统一的 `ListState` 管理（选中/滚动/过滤），支持鼠标交互（滚轮/点击/拖拽）。
 - **`Event::Paste`**：独立于 key event 链，必须单独拦截。
 - **翻页快捷键**：不使用 PageUp/PageDown 做滚动。macOS 终端会将 Cmd+Backspace 映射为 Ctrl+U（非 PageUp），导致误触发滚动。滚动统一用 `Ctrl+U`/`Ctrl+D`（textarea 空时）。PageUp/PageDown 静默消费不传 textarea。Ctrl+U 在 textarea 有内容时执行 `delete_line_by_head`（删除到行首，匹配 macOS Cmd+Backspace 标准行为）。禁止添加 PageUp/PageDown 滚动行为。
