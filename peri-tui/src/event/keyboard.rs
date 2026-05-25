@@ -451,12 +451,10 @@ pub fn handle_key_event(
             }
         }
 
-        // Up: hint navigation > history restore (only first row) > textarea cursor
-        Input { key: Key::Up, .. }
-            if !app.session_mgr.sessions[app.session_mgr.active].ui.loading =>
-        {
+        // Up: hint navigation > history browse (only first row) > textarea cursor
+        Input { key: Key::Up, .. } => {
             let hint_count = app.hint_candidates_count();
-            if hint_count > 0 {
+            if hint_count > 0 && !app.session_mgr.sessions[app.session_mgr.active].ui.loading {
                 let cur = app.session_mgr.sessions[app.session_mgr.active]
                     .ui
                     .hint_cursor
@@ -490,11 +488,9 @@ pub fn handle_key_event(
         }
 
         // Down: hint navigation > history restore (only last row) > textarea cursor
-        Input { key: Key::Down, .. }
-            if !app.session_mgr.sessions[app.session_mgr.active].ui.loading =>
-        {
+        Input { key: Key::Down, .. } => {
             let hint_count = app.hint_candidates_count();
-            if hint_count > 0 {
+            if hint_count > 0 && !app.session_mgr.sessions[app.session_mgr.active].ui.loading {
                 let cur = app.session_mgr.sessions[app.session_mgr.active]
                     .ui
                     .hint_cursor
