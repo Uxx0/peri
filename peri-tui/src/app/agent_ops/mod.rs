@@ -331,6 +331,7 @@ impl App {
                 output,
                 tool_calls_count,
                 duration_ms,
+                child_thread_id,
             } => self.handle_background_task_completed(
                 task_id,
                 agent_name,
@@ -338,6 +339,7 @@ impl App {
                 output,
                 tool_calls_count,
                 duration_ms,
+                child_thread_id,
             ),
             AgentEvent::LspDiagnostics {
                 errors,

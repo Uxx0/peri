@@ -122,6 +122,8 @@ pub enum AgentEvent {
         output: String,
         tool_calls_count: usize,
         duration_ms: u64,
+        /// 子 agent 唯一实例 ID（child_thread_id / uuid7），用于精确匹配并发同类型后台 agent
+        child_thread_id: Option<String>,
     },
     /// MCP 面板异步操作完成
     McpActionCompleted {

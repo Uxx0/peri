@@ -2857,6 +2857,7 @@ async fn test_background_task_notification() {
         output: "LGTM".into(),
         tool_calls_count: 3,
         duration_ms: 1500,
+        child_thread_id: None,
     });
     app.process_pending_events();
 
@@ -3590,6 +3591,7 @@ async fn test_diagnostic_bg_subagent_group_disappears() {
         output: "LGTM".into(),
         tool_calls_count: 5,
         duration_ms: 3000,
+        child_thread_id: None,
     });
     app.process_pending_events();
     bg_diag_print_vms(
@@ -4049,6 +4051,7 @@ async fn test_bg_completed_before_done_triggers_continuation() {
         output: "LGTM no issues".into(),
         tool_calls_count: 3,
         duration_ms: 500,
+        child_thread_id: None,
     });
     app.push_agent_event(AgentEvent::Done);
     app.process_pending_events();
@@ -4098,6 +4101,7 @@ async fn test_multiple_bg_completed_before_done() {
         output: "result A".into(),
         tool_calls_count: 2,
         duration_ms: 100,
+        child_thread_id: None,
     });
     // 第二个后台任务完成：count 1→0，暂存
     app.push_agent_event(AgentEvent::BackgroundTaskCompleted {
@@ -4107,6 +4111,7 @@ async fn test_multiple_bg_completed_before_done() {
         output: "result B".into(),
         tool_calls_count: 1,
         duration_ms: 200,
+        child_thread_id: None,
     });
     app.push_agent_event(AgentEvent::Done);
     app.process_pending_events();
@@ -4171,6 +4176,7 @@ async fn test_bg_completed_after_done_unchanged() {
         output: "done".into(),
         tool_calls_count: 1,
         duration_ms: 300,
+        child_thread_id: None,
     });
     app.process_pending_events();
 
@@ -4292,6 +4298,7 @@ async fn test_background_agents_lifecycle() {
         output: "done".into(),
         tool_calls_count: 1,
         duration_ms: 100,
+        child_thread_id: Some("inst-001".into()),
     });
     app.process_pending_events();
     assert_eq!(
@@ -4317,6 +4324,7 @@ async fn test_background_agents_lifecycle() {
         output: "done".into(),
         tool_calls_count: 1,
         duration_ms: 100,
+        child_thread_id: Some("inst-002".into()),
     });
     app.process_pending_events();
     assert!(

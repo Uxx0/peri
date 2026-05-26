@@ -120,6 +120,7 @@ pub(crate) fn map_executor_event(event: ExecutorEvent, cwd: &str) -> Option<Agen
             output: result.output,
             tool_calls_count: result.tool_calls_count,
             duration_ms: result.duration_ms,
+            child_thread_id: result.child_thread_id,
         },
         ExecutorEvent::LspDiagnostics {
             errors,

@@ -57,29 +57,37 @@ impl App {
         output: String,
         tool_calls_count: usize,
         duration_ms: u64,
+        child_thread_id: Option<String>,
     ) -> (bool, bool, bool) {
-        // 检查被移除的 agent 是否���当前聚焦的
-        let was_focused = self.session_mgr.sessions[self.session_mgr.active]
-            .focused_instance_id
-            .as_deref()
-            .map(|id| {
+        // 优先按 child_thread_id 匹配 background_agents，回退到 agent_name
+        if let Some(ref ctid) = child_thread_id {
+            if let Some(pos) = self.session_mgr.sessions[self.session_mgr.active]
+                .background_agents
+                .iter()
+                .position(|a| a.instance_id == *ctid)
+            {
                 self.session_mgr.sessions[self.session_mgr.active]
                     .background_agents
-                    .iter()
-                    .any(|a| a.agent_name == agent_name && a.instance_id == id)
-            })
-            .unwrap_or(false);
-
-        // 按 agent_name 移除第一个匹配项
-        if let Some(pos) = self.session_mgr.sessions[self.session_mgr.active]
-            .background_agents
-            .iter()
-            .position(|a| a.agent_name == agent_name)
-        {
-            self.session_mgr.sessions[self.session_mgr.active]
+                    .remove(pos);
+            }
+        } else {
+            // 回退：按 agent_name 匹配
+            if let Some(pos) = self.session_mgr.sessions[self.session_mgr.active]
                 .background_agents
-                .remove(pos);
+                .iter()
+                .position(|a| a.agent_name == agent_name)
+            {
+                self.session_mgr.sessions[self.session_mgr.active]
+                    .background_agents
+                    .remove(pos);
+            }
         }
+
+        // 聚焦检查：用 child_thread_id 直接比较 focused_instance_id
+        let was_focused = child_thread_id.as_deref()
+            == self.session_mgr.sessions[self.session_mgr.active]
+                .focused_instance_id
+                .as_deref();
 
         // 聚焦检查：如果被移除的是当前聚焦的 agent，退出聚焦
         if was_focused {
@@ -91,6 +99,7 @@ impl App {
         tracing::info!(
             task_id = %task_id,
             agent_name = %agent_name,
+            child_thread_id = ?child_thread_id,
             success = success,
             bg_count_before = self.session_mgr.sessions[self.session_mgr.active].background_agents.len() + 1,
             bg_count_after = self.session_mgr.sessions[self.session_mgr.active].background_agents.len(),
@@ -139,44 +148,40 @@ impl App {
         }
 
         // 尝试在 view_messages 中找到匹配的 SubAgentGroup 并更新。
-        // 对于同名并发 bg agent（同一 agent_name 的多个实例），优先选择
-        // final_result.is_none() 的组（尚未被之前的完成事件更新过），
-        // 避免第一个完成事件更新了第一个组后，第二个完成事件 break 在
-        // 已标记 is_running=false 的第一个组上而找不到第二个组。
         let short_id = &task_id[..8.min(task_id.len())];
         let mut found_and_updated = false;
         let session = &mut self.session_mgr.sessions[self.session_mgr.active];
 
-        // 第一遍：精确匹配——找 is_running && agent_id 匹配 && final_result 为空的目标
-        for vm in &mut session.messages.view_messages {
-            if let MessageViewModel::SubAgentGroup {
-                agent_id,
-                is_running,
-                is_background,
-                total_steps,
-                bg_hash: _,
-                final_result,
-                is_error,
-                ..
-            } = vm
-            {
-                if *is_background
-                    && *is_running
-                    && agent_id == &agent_name
-                    && final_result.is_none()
+        // 第一遍：按 instance_id 精确匹配（child_thread_id → SubAgentGroup.instance_id）
+        if let Some(ref ctid) = child_thread_id {
+            for vm in &mut session.messages.view_messages {
+                if let MessageViewModel::SubAgentGroup {
+                    instance_id,
+                    is_running,
+                    is_background,
+                    total_steps,
+                    bg_hash: _,
+                    final_result,
+                    is_error,
+                    ..
+                } = vm
                 {
-                    *is_running = false;
-                    *final_result = Some(output.clone());
-                    *is_error = !success;
-                    *total_steps = tool_calls_count;
-                    found_and_updated = true;
-                    break;
+                    if *is_background
+                        && *is_running
+                        && instance_id.as_deref() == Some(ctid.as_str())
+                    {
+                        *is_running = false;
+                        *final_result = Some(output.clone());
+                        *is_error = !success;
+                        *total_steps = tool_calls_count;
+                        found_and_updated = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // 第二遍（兜底）：如果没有找到 final_result 为空的匹配项，
-        // 回退到原始逻辑——接受第一个 is_running && agent_id 匹配的组
+        // 第二遍（兜底）：按 agent_name 匹配 is_running && final_result 为空的 SubAgentGroup
         if !found_and_updated {
             for vm in &mut session.messages.view_messages {
                 if let MessageViewModel::SubAgentGroup {
@@ -250,6 +255,7 @@ impl App {
             tracing::debug!(
                 task_id = %&task_id[..8.min(task_id.len())],
                 agent_name = %agent_name,
+                child_thread_id = ?child_thread_id,
                 subagent_count_in_view = subagent_count,
                 frozen_count,
                 background_agents_count = self.session_mgr.sessions[self.session_mgr.active].background_agents.len(),
