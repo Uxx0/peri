@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-26-sync-subagent-cancel-fix-attempts-log.md
+
 # 同步 SubAgent Ctrl+C 中断——排查与修复记录
 
 **状态**：Fixed

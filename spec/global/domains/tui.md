@@ -829,6 +829,16 @@ submit_message(text)
 **涉及文件:** peri-widgets/src/markdown/mod.rs, peri-widgets/src/theme/mod.rs, peri-widgets/src/message_block/highlight.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-26-login-panel-hardcoded-chinese-no-i18n
+**摘要:** Login 面板硬编码中文字符串未走 i18n，切换英文后仍显示中文
+**状态:** Fixed
+**归档日期:** 2026-05-26
+**关键词:** i18n, hardcoded Chinese, LcRegistry, login panel
+**问题本质:** 新增面板/组件时未遵循 i18n 规范，status_bar_hints 和渲染函数直接使用中文字面量，对应 FTL key 已存在但未被引用
+**通用模式:** 新增 UI 文本必须使用 LcRegistry::tr()，禁止硬编码任何自然语言字符串。新增面板/组件的 checklist 应包含 i18n 检查项。
+**涉及文件:** peri-tui/src/app/login_panel/component.rs, peri-tui/src/ui/main_ui/panels/login.rs, peri-tui/locales/en/main.ftl, peri-tui/locales/zh-CN/main.ftl
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

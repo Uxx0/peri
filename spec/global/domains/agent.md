@@ -569,6 +569,38 @@ launch_agent 工具调用
 **涉及文件:** peri-middlewares/src/subagent/tool/define.rs, background.rs, agent_events_bg.rs
 **CLAUDE.md 链接:** true
 
+### issue_2026-05-26-sync-subagent-cancel-fix-attempts-log
+**摘要:** 同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件
+**状态:** Fixed
+**归档日期:** 2026-05-26
+**关键词:** SubAgent Ctrl+C, handle_interrupted, in_subagent guard, event routing
+**问题本质:** `in_subagent()` 守卫设计意图是忽略子 agent 自身的中断，但错误地捕获了父 agent 在 sync SubAgent 执行期间的 Ctrl+C 中断——信号链路全部正确，问题在末端事件处理层静默丢弃
+**通用模式:** "UI 卡住"不等于"信号没到"。症状和根因可能在不同层级。二分法追踪比深度假设更高效——从信号链中点开始追踪，而非起点或终点。一次到位的完整诊断 > 多轮逐步追踪。
+**架构影响:** in_subagent() 守卫的语义需要区分"子 agent 被取消"和"父 agent 在等待子 agent 时被取消"两种场景。新增事件守卫时必须考虑所有触发路径。
+**涉及文件:** peri-tui/src/app/agent_ops/lifecycle.rs, peri-agent/src/agent/tool_dispatch.rs, peri-tui/src/app/agent.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-25-fake-read-tool-message-anthropic-400
+**摘要:** AtMention/SkillPreload 注入的 fake Read 工具消息导致 Anthropic API 400 错误
+**状态:** Fixed
+**归档日期:** 2026-05-26
+**关键词:** Anthropic 400, fake Read, tool_result, messages_to_anthropic
+**问题本质:** middleware 注入 Ai[ToolUse] → Tool[ToolResult] 消息序列时，Anthropic 适配器将 Tool 消息转为 user role 的 tool_result block，如果成为 messages[0] 则违反 Anthropic API 约束
+**通用模式:** Anthropic 和 OpenAI 的 Tool 消息格式差异导致消息注入类 middleware 在两个 API 上的行为不同。所有在消息历史中注入 fake tool 交互的 middleware 必须确保消息不会成为 API messages 数组的第一条。
+**架构影响:** fake Read 消息注入是跨 middleware 的通用模式（AtMention、SkillPreload），Anthropic 适配器需对此做防御性处理。
+**涉及文件:** peri-middlewares/src/at_mention/mod.rs, peri-middlewares/src/subagent/skill_preload.rs, peri-agent/src/llm/anthropic/invoke.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-25-skill-preload-no-tool-calls-in-history
+**摘要:** 主 Agent SkillPreloadMiddleware preload_skills 硬编码为空，/skill-name 不注入全文
+**状态:** Closed/Fixed
+**归档日期:** 2026-05-26
+**关键词:** SkillPreloadMiddleware, fake Read, preload_skills, middleware self-detection
+**问题本质:** executor 构建主 Agent 时 preload_skills 硬编码 Vec::new()，导致 before_agent early return；SubAgent 路径通过 frontmatter skills 字段正确传递
+**通用模式:** 主 Agent 与 SubAgent 的 middleware 初始化路径可能不同步。主 Agent 特有功能应优先使用 middleware 自检测模式（从消息内容推断），而非依赖外部传参。
+**涉及文件:** peri-acp/src/session/executor.rs, peri-acp/src/agent/builder.rs, peri-middlewares/src/subagent/skill_preload.rs, peri-tui/src/app/agent_submit.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

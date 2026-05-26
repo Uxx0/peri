@@ -111,6 +111,16 @@
 **涉及文件:** peri-middlewares/src/compact_middleware.rs, peri-acp/src/session/compact_runner.rs, peri-acp/src/session/executor.rs, peri-tui/src/acp_server/compact.rs
 **CLAUDE.md 链接:** true
 
+### issue_2026-05-26-manual-compact-long-loading-skeleton
+**摘要:** 手动 /compact 后聊天区域长时间显示 loading 骨架屏（30s+）
+**状态:** Fixed
+**归档日期:** 2026-05-26
+**关键词:** compact loading, set_loading, manual vs auto compact
+**问题本质:** handle_compact_completed() 在 full compact 路径故意不调 set_loading(false)——设计对 auto-compact 正确（executor 循环继续→Done 清除），对手动 compact 错误（独立操作无 Done 事件）
+**通用模式:** 同一处理函数服务于两条执行路径时，必须区分路径语义。auto-compact 嵌套在 ReAct 循环内（有后续 Done/Error），manual compact 是独立操作（需自行清理 loading）。缺少路径标志导致状态泄漏。
+**涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/acp_server/compact.rs, peri-tui/src/app/agent_comm.rs, peri-tui/src/command/session/compact.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-26-manual-compact-long-loading-skeleton.md
+
 # 手动 /compact 后聊天区域长时间显示 loading 骨架屏
 
 **状态**：Fixed

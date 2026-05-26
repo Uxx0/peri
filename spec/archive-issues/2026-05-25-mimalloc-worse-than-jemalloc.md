@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-25-mimalloc-worse-than-jemalloc.md
+
 # mimalloc 替换后内存峰值反而高于 jemalloc，普通对话即达 100MB+
 
 **状态**：已关闭

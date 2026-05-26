@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-25-fake-read-tool-message-anthropic-400.md
+
 # SkillPreload / AtMention 注入的 fake Read 工具消息导致 Anthropic API 400 错误
 
 **状态**：Fixed

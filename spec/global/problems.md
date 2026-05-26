@@ -71,9 +71,11 @@
 ### SubAgent
 - [Background Agent 工具继承缺失——子 agent 仅能使用 TodoWrite](domains/agent.md#issue_2026-05-11-background-agent-missing-tools) — agent
 - [同步子 Agent（Normal/Fork）事件溢出到主 Agent 消息流](domains/agent.md#issue_2026-05-13-sync-subagent-events-leak-to-parent) — agent
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
 
 ### in_subagent
 - [同步子 Agent（Normal/Fork）事件溢出到主 Agent 消息流](domains/agent.md#issue_2026-05-13-sync-subagent-events-leak-to-parent) — agent
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
 
 ### StateSnapshot 守卫
 - [同步子 Agent（Normal/Fork）事件溢出到主 Agent 消息流](domains/agent.md#issue_2026-05-13-sync-subagent-events-leak-to-parent) — agent
@@ -116,6 +118,7 @@
 
 ### SkillPreloadMiddleware
 - [主 Agent 中间件链缺少 SkillPreloadMiddleware，预加载失效](domains/system-prompt.md#issue_2026-05-13-missing-skillpreload-in-main-agent) — system-prompt
+- [主 Agent SkillPreloadMiddleware preload_skills 硬编码为空，/skill-name 不注入全文](domains/agent.md#issue_2026-05-25-skill-preload-no-tool-calls-in-history) — agent
 
 ### 中间件链缺失
 - [主 Agent 中间件链缺少 SkillPreloadMiddleware，预加载失效](domains/system-prompt.md#issue_2026-05-13-missing-skillpreload-in-main-agent) — system-prompt
@@ -966,6 +969,7 @@
 
 ### 事件路由
 - [Ctrl+C 中断后支持撤回并重发上一条用户消息](domains/agent.md#issue_2026-05-25-interrupt-undo-last-user-message) — agent
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
 
 ### 历史回滚
 - [Ctrl+C 中断后支持撤回并重发上一条用户消息](domains/agent.md#issue_2026-05-25-interrupt-undo-last-user-message) — agent
@@ -985,8 +989,67 @@
 ### 竞态
 - [并发 Background Agent 只收到一次完成通知，父 Agent 永久等待](domains/agent.md#issue_2026-05-24-concurrent-bg-agent-only-one-completion) — agent
 
+### SubAgent Ctrl+C
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
+
+### handle_interrupted
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
+
+### 二分法追踪
+- [同步 SubAgent Ctrl+C 中断——handle_interrupted() 的 in_subagent() 守卫静默吞掉父 Agent 中断事件](domains/agent.md#issue_2026-05-26-sync-subagent-cancel-fix-attempts-log) — agent
+
+### Anthropic 400
+- [AtMention/SkillPreload 注入的 fake Read 工具消息导致 Anthropic API 400 错误](domains/agent.md#issue_2026-05-25-fake-read-tool-message-anthropic-400) — agent
+
+### fake Read
+- [AtMention/SkillPreload 注入的 fake Read 工具消息导致 Anthropic API 400 错误](domains/agent.md#issue_2026-05-25-fake-read-tool-message-anthropic-400) — agent
+- [主 Agent SkillPreloadMiddleware preload_skills 硬编码为空，/skill-name 不注入全文](domains/agent.md#issue_2026-05-25-skill-preload-no-tool-calls-in-history) — agent
+
+### messages_to_anthropic
+- [AtMention/SkillPreload 注入的 fake Read 工具消息导致 Anthropic API 400 错误](domains/agent.md#issue_2026-05-25-fake-read-tool-message-anthropic-400) — agent
+
+### preload_skills
+- [主 Agent SkillPreloadMiddleware preload_skills 硬编码为空，/skill-name 不注入全文](domains/agent.md#issue_2026-05-25-skill-preload-no-tool-calls-in-history) — agent
+
+### middleware self-detection
+- [主 Agent SkillPreloadMiddleware preload_skills 硬编码为空，/skill-name 不注入全文](domains/agent.md#issue_2026-05-25-skill-preload-no-tool-calls-in-history) — agent
+
+### compact loading
+- [手动 /compact 后聊天区域长时间显示 loading 骨架屏（30s+）](domains/compact.md#issue_2026-05-26-manual-compact-long-loading-skeleton) — compact
+
+### set_loading
+- [手动 /compact 后聊天区域长时间显示 loading 骨架屏（30s+）](domains/compact.md#issue_2026-05-26-manual-compact-long-loading-skeleton) — compact
+
+### manual vs auto compact
+- [手动 /compact 后聊天区域长时间显示 loading 骨架屏（30s+）](domains/compact.md#issue_2026-05-26-manual-compact-long-loading-skeleton) — compact
+
+### 路径标志
+- [手动 /compact 后聊天区域长时间显示 loading 骨架屏（30s+）](domains/compact.md#issue_2026-05-26-manual-compact-long-loading-skeleton) — compact
+
+### mimalloc
+- [mimalloc 替换 jemalloc 后内存峰值反而更高，回退到系统默认分配器](domains/code-architecture.md#issue_2026-05-25-mimalloc-worse-than-jemalloc) — code-architecture
+
+### global allocator
+- [mimalloc 替换 jemalloc 后内存峰值反而更高，回退到系统默认分配器](domains/code-architecture.md#issue_2026-05-25-mimalloc-worse-than-jemalloc) — code-architecture
+
+### 内存分配器
+- [mimalloc 替换 jemalloc 后内存峰值反而更高，回退到系统默认分配器](domains/code-architecture.md#issue_2026-05-25-mimalloc-worse-than-jemalloc) — code-architecture
+
+### 基准测试
+- [mimalloc 替换 jemalloc 后内存峰值反而更高，回退到系统默认分配器](domains/code-architecture.md#issue_2026-05-25-mimalloc-worse-than-jemalloc) — code-architecture
+
+### hardcoded Chinese
+- [Login 面板硬编码中文字符串未走 i18n，切换英文后仍显示中文](domains/tui.md#issue_2026-05-26-login-panel-hardcoded-chinese-no-i18n) — tui
+
+### login panel
+- [Login 面板硬编码中文字符串未走 i18n，切换英文后仍显示中文](domains/tui.md#issue_2026-05-26-login-panel-hardcoded-chinese-no-i18n) — tui
+
+### LcRegistry
+- [Login 面板硬编码中文字符串未走 i18n，切换英文后仍显示中文](domains/tui.md#issue_2026-05-26-login-panel-hardcoded-chinese-no-i18n) — tui
+
 ## 更新记录
 
+- 2026-05-26: 归档 6 个 issue（agent 3 + compact 1 + code-architecture 1 + tui 1），新增 22 个关键词索引
 - 2026-05-25: 归档 4 个 issue，新增关键词索引
 - 2026-05-13: 首次创建，归档 22 个 issue，提取 14 条领域认知
 - 2026-05-14: 第二次归档，归档 12 个 issue，提取 8 条领域认知（agent 2 + message-pipeline 2 + system-prompt 4）

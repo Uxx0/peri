@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-25-skill-preload-no-tool-calls-in-history.md
+
 # SkillPreload 未将工具调用附加到主 Agent 消息历史
 
 **状态**：Closed/Fixed

@@ -123,6 +123,17 @@
 **涉及文件:** peri-tui/src/app/mod.rs, peri-tui/src/app/modules_*.inc, peri-tui/src/app/plugin_panel/, peri-tui/src/app/agent_ops/, peri-tui/src/app/mcp_panel/, peri-tui/src/app/message_pipeline/
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-25-mimalloc-worse-than-jemalloc
+**摘要:** mimalloc 替换 jemalloc 后内存峰值反而更高，回退到系统默认分配器
+**状态:** 已关闭
+**归档日期:** 2026-05-26
+**关键词:** mimalloc, jemalloc, RSS, global allocator
+**问题本质:** mimalloc 在本项目工作负载（大量 Arc 克隆 + 临时 arena 分配）下内存膨胀速度比 jemalloc 更快，不符合"更积极归还"预期
+**通用模式:** 全局分配器替换需基于实际工作负载基准测试，不能仅凭理论特性选择。Rust async + Arc 密集型应用的分配模式可能与通用基准差异显著。
+**技术决策:** 最终采用系统默认分配器（macOS malloc / Linux glibc malloc），移除所有第三方全局分配器。/heapdump 命令随 mimalloc 一起移除。
+**涉及文件:** Cargo.toml, peri-tui/Cargo.toml, peri-tui/src/main.rs, peri-tui/src/app/thread_ops.rs, peri-tui/src/command/core/heapdump.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

@@ -1,3 +1,5 @@
+> 归档于 2026-05-26，原路径 spec/issues/2026-05-26-login-panel-hardcoded-chinese-no-i18n.md
+
 # Login 面板硬编码中文未走 i18n
 
 **状态**：Fixed
