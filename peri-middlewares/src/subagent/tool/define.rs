@@ -1148,28 +1148,15 @@ impl BaseTool for SubAgentTool {
             }
         };
 
-        let child_cancel_for_select = child_cancel.clone();
-        let prompt_len = prompt.len();
-        let exec_fut =
-            agent_builder.execute(AgentInput::text(prompt), &mut state, Some(child_cancel));
         tracing::info!(
             "[DEADLOCK] SubAgentTool: START child execute, agent_id={}, prompt_len={}",
             agent_id,
-            prompt_len
+            prompt.len()
         );
         let exec_start = std::time::Instant::now();
-        let exec_result = tokio::select! {
-            biased;
-            _ = child_cancel_for_select.cancelled() => {
-                tracing::info!(
-                    "[DEADLOCK] SubAgentTool: child cancelled after {:.1?}, agent_id={}",
-                    exec_start.elapsed(),
-                    agent_id
-                );
-                Err(peri_agent::error::AgentError::Interrupted)
-            }
-            result = exec_fut => result,
-        };
+        let exec_result = agent_builder
+            .execute(AgentInput::text(prompt), &mut state, Some(child_cancel))
+            .await;
         tracing::info!(
             "[DEADLOCK] SubAgentTool: END child execute ({:.1?}), agent_id={}, is_ok={}",
             exec_start.elapsed(),
