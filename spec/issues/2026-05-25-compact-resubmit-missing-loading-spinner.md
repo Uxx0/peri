@@ -1,6 +1,6 @@
 # Compact 后 Resubmit 缺少 Loading Spinner
 
-**状态**：Prepare
+**状态**：Closed
 **优先级**：中
 **创建日期**：2026-05-25
 

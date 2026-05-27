@@ -1,6 +1,6 @@
 # 后台 SubAgent 统一管理栏
 
-**状态**：Open
+**状态**：Fixed
 **优先级**：中
 **类型**：Feature
 **创建日期**：2026-05-26
@@ -12,6 +12,7 @@
 ## 期望行为
 
 在状态栏下方新增一个后台 agent 列表栏，支持：
+
 - 显示所有正在运行的后台 SubAgent（每行一个）+ "main" 主会话入口
 - 用独立快捷键从输入框跳转到此区域
 - 上下键选择、Enter 进入该 agent 的聚焦视图
@@ -45,6 +46,7 @@
 ### 1. 数据模型
 
 将 `background_task_count: usize` 替换为：
+
 ```rust
 struct RunningBgAgent {
     agent_id: String,       // SubAgent 的 agent_id (如 "code-reviewer")
@@ -82,6 +84,7 @@ background_agents: Vec<RunningBgAgent>,
 ### 4. 聚焦视图
 
 进入某个后台 agent 的聚焦视图后：
+
 - **消息区域**：只显示该 agent（由 `instance_id` 匹配）的 SubAgentGroup/ToolCallGroup 消息
 - **输入框边框**：颜色变为该 agent 的标识色，上边框右侧显示 `[agent_name]`
 - **自动退出**：收到该 agent 的 `BackgroundTaskCompleted` 事件时自动切回 main 视图

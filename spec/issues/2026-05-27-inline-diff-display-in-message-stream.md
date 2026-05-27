@@ -1,6 +1,6 @@
 # 消息流中内嵌 Diff 视图显示
 
-**状态**：Open
+**状态**：Fixed
 **优先级**：中
 **创建日期**：2026-05-27
 
@@ -11,11 +11,13 @@ Write/Edit 工具调用执行后，消息流中只显示纯文本结果（如 "A
 ## 症状详情
 
 **当前行为**：
+
 - Edit 工具返回纯文本如 `"Replaced text (same line count) to src/main.rs"`
 - Write 工具返回纯文本如 `"Wrote 42 lines to src/main.rs"`
 - 消息流中无 diff 视觉表示，用户需要自己打开文件或执行 git diff 才能查看变更
 
 **期望行为**：
+
 - Edit/Write 工具执行后，消息流中显示结构化 diff 视图
 - 视图包含：行号、`+`/`-` 前缀、绿色新增/红色删除着色、hunk 头部 (`@@`)
 - 支持单词级 diff（在增/删行内高亮具体变化的单词片段）
@@ -95,6 +97,7 @@ for hunk in diff.unified_diff().header(&old_path, &new_path).iter_hunks() {
 ```
 
 `similar` 支持：
+
 - 行级 diff + 内联 word diff（`TextDiff::from_words()`）
 - Unified diff 格式
 - 上下文行数配置
