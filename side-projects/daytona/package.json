@@ -1,0 +1,13 @@
+{
+    "name": "daytona",
+    "private": true,
+    "devDependencies": {
+        "@types/bun": "latest"
+    },
+    "peerDependencies": {
+        "typescript": "^6"
+    },
+    "dependencies": {
+        "@daytona/sdk": "^0.182.0"
+    }
+}
