@@ -59,7 +59,8 @@ impl App {
         ratatui::crossterm::terminal::enable_raw_mode()?;
         ratatui::crossterm::execute!(
             std::io::stdout(),
-            ratatui::crossterm::terminal::EnterAlternateScreen
+            ratatui::crossterm::terminal::EnterAlternateScreen,
+            ratatui::crossterm::event::EnableMouseCapture
         )?;
 
         match status {

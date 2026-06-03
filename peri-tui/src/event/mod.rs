@@ -257,6 +257,9 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
         Event::Resize(_, _) => {
             // Width sync is now driven by render_messages (compares cache.width vs text_area.width)
             app.session_mgr.current_mut().ui.text_selection.clear();
+            // Windows ConPTY 在某些 resize 场景也会重置鼠标捕获状态
+            #[cfg(windows)]
+            let _ = execute!(std::io::stdout(), EnableMouseCapture);
         }
         Event::Key(key_event) => {
             return keyboard::handle_key_event(app, key_event);
