@@ -51,10 +51,9 @@ impl TelegramClient {
                                         self.record_chat(msg.chat.id);
 
                                         let channel_msg = ChannelMessage {
-                                            source: "telegram".to_string(),
-                                            message: text,
-                                            chat_id: msg.chat.id,
-                                            username: msg.from.and_then(|u| u.username),
+                                            source: "telegram-bridge".to_string(),
+                                            chat_id: msg.chat.id.to_string(),
+                                            text,
                                         };
 
                                         // Send MCP notification: notifications/claude/channel

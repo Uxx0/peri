@@ -55,13 +55,12 @@ pub struct TelegramResponse<T> {
     pub result: Option<T>,
 }
 
-/// MCP channel notification content
+/// MCP channel notification content (must match peri's ChannelNotification)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMessage {
     pub source: String,
-    pub message: String,
-    pub chat_id: i64,
-    pub username: Option<String>,
+    pub chat_id: String,
+    pub text: String,
 }
 
 /// MCP permission request
