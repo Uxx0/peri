@@ -7,6 +7,12 @@
         "context7": {
             "command": "npx",
             "args": ["-y", "@upstash/context7-mcp"]
+        },
+        "telegram-bridge": {
+            "command": "/home/unx0/opencode-workspace/peri/target/release/telegram-bridge",
+            "env": {
+                "TELEGRAM_BOT_TOKEN": ""
+            }
         }
     }
 }

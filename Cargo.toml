@@ -7,7 +7,7 @@ members = [
     "langfuse-client",
     "peri-widgets",
     "peri-lsp",
-    "side-projects/git-graph",
+    "side-projects/git-graph", "side-projects/telegram-bridge",
 ]
 resolver = "2"
 

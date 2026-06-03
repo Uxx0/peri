@@ -359,6 +359,13 @@ impl App {
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join(".claude");
 
+        // 构建 ChannelHandler（用于接收 MCP channel 通知）
+        let channel_handler = self.services.channel_state.clone().map(|cs| {
+            Arc::new(
+                peri_middlewares::mcp::channel_handler::ChannelHandler::new(cs),
+            )
+        });
+
         tokio::spawn(async move {
             McpClientPool::run_initialize(
                 pool,
@@ -366,7 +373,7 @@ impl App {
                 &claude_home,
                 init_tx,
                 Some(oauth_cb),
-                None,
+                channel_handler,
             )
             .await;
         });

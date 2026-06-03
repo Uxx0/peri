@@ -13,8 +13,10 @@ use crate::{with_global_panels, with_session_panels};
 
 use anyhow::Result;
 use ratatui::crossterm::event::{
-    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+    self, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEventKind,
 };
+use ratatui::crossterm::execute;
 use std::time::Duration;
 use tui_textarea::{Input, Key};
 
@@ -242,6 +244,10 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
     match ev {
         Event::FocusGained => {
             app.focused = true;
+            // Windows Terminal + ConPTY has a known issue: mouse capture is
+            // reset after focus switch (Alt+Tab, minimize, etc.). Re-enable
+            // here so mouse scroll continues to work after regaining focus.
+            let _ = execute!(std::io::stdout(), EnableMouseCapture);
             return Ok(Some(Action::Redraw));
         }
         Event::FocusLost => {
